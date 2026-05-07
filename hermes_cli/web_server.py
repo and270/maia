@@ -1,5 +1,5 @@
 """
-Hermes Agent — Web UI server.
+Coorporate Hermes web UI server.
 
 Provides a FastAPI backend serving the Vite/React frontend and REST API
 endpoints for managing configuration, environment variables, and sessions.
@@ -64,7 +64,7 @@ except ImportError:
 WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
 
-app = FastAPI(title="Hermes Agent", version=__version__)
+app = FastAPI(title="Coorporate Hermes", version=__version__)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -346,6 +346,7 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "code_execution": "agent",
     "prompt_caching": "agent",
     "goals": "agent",
+    "observability": "logging",
     # Only `telegram.reactions` currently lives under telegram — fold it in
     # with the other messaging-platform config (discord) so it isn't an
     # orphan tab of one field.
@@ -2371,10 +2372,21 @@ class CronJobCreate(BaseModel):
     schedule: str
     name: str = ""
     deliver: str = "local"
+    authorization: Optional[dict] = None
 
 
 class CronJobUpdate(BaseModel):
     updates: dict
+
+
+class CronAuthorizationDecision(BaseModel):
+    approve: bool = True
+    note: str = ""
+
+
+class KnowledgeApprovalDecision(BaseModel):
+    approve: bool = True
+    note: str = ""
 
 
 @app.get("/api/cron/jobs")
@@ -2397,7 +2409,8 @@ async def create_cron_job(body: CronJobCreate):
     from cron.jobs import create_job
     try:
         job = create_job(prompt=body.prompt, schedule=body.schedule,
-                         name=body.name, deliver=body.deliver)
+                         name=body.name, deliver=body.deliver,
+                         authorization=body.authorization)
         return job
     except Exception as e:
         _log.exception("POST /api/cron/jobs failed")
@@ -2440,12 +2453,78 @@ async def trigger_cron_job(job_id: str):
     return job
 
 
+@app.post("/api/cron/jobs/{job_id}/authorize")
+async def authorize_cron_job(job_id: str, body: CronAuthorizationDecision):
+    from agent.governance import actor_display, can_authorize, current_actor
+    from cron.jobs import authorize_job, get_job
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    auth = job.get("authorization")
+    if not auth:
+        raise HTTPException(status_code=400, detail="Job does not require authorization")
+    actor = current_actor()
+    allowed, reason = can_authorize(auth, actor=actor)
+    if not allowed:
+        raise HTTPException(status_code=403, detail=reason)
+    updated = authorize_job(
+        job_id,
+        bool(body.approve),
+        actor=actor_display(actor),
+        note=body.note or None,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return updated
+
+
 @app.delete("/api/cron/jobs/{job_id}")
 async def delete_cron_job(job_id: str):
     from cron.jobs import remove_job
     if not remove_job(job_id):
         raise HTTPException(status_code=404, detail="Job not found")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Governed knowledge endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/knowledge/layers")
+async def get_knowledge_layers():
+    from agent.enterprise_knowledge import knowledge_layers_summary
+
+    return knowledge_layers_summary()
+
+
+@app.get("/api/knowledge/approvals")
+async def get_knowledge_approvals(status: str = "pending"):
+    from agent.enterprise_knowledge import list_knowledge_approvals
+
+    if status not in {"pending", "approved", "denied", "all"}:
+        raise HTTPException(status_code=400, detail="status must be pending, approved, denied, or all")
+    return {"approvals": list_knowledge_approvals(status)}
+
+
+@app.post("/api/knowledge/approvals/{approval_id}/decide")
+async def decide_knowledge_approval_endpoint(approval_id: str, body: KnowledgeApprovalDecision):
+    from agent.enterprise_knowledge import decide_knowledge_approval
+    from agent.governance import current_actor
+
+    result = decide_knowledge_approval(
+        approval_id,
+        approve=bool(body.approve),
+        note=body.note or None,
+        actor=current_actor(),
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=int(result.get("status_code") or 400),
+            detail=result.get("error") or "Knowledge approval failed",
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,14 @@
 """
-Backup and import commands for hermes CLI.
+Backup and import commands for the Coorporate Hermes CLI.
 
-`hermes backup` creates a zip archive of the entire ~/.hermes/ directory
-(excluding the hermes-agent repo and transient files).
+`coorporate backup` creates a zip archive of the entire HERMES_HOME directory
+(excluding the codebase repo and transient files).
 
-`hermes import` restores from a backup zip, overlaying onto the current
+`coorporate import` restores from a backup zip, overlaying onto the current
 HERMES_HOME root.
 """
+
+from __future__ import annotations
 
 import json
 import logging
@@ -14,12 +16,14 @@ import os
 import shutil
 import sqlite3
 import sys
+import tarfile
 import tempfile
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, Iterable, List, Optional
 
 from hermes_constants import get_default_hermes_root, get_hermes_home, display_hermes_home
 
@@ -63,6 +67,81 @@ _EXCLUDED_NAMES = {
 
 # zipfile.open() drops Unix mode bits on extract; restore tightens these to 0600.
 _SECRET_FILE_NAMES = {".env", "auth.json", "state.db"}
+_MIGRATION_REVIEW_DIR = "migration"
+_MIGRATION_SENSITIVE_KEYS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
+
+
+@dataclass(frozen=True)
+class _ArchiveEntry:
+    name: str
+    size: int
+    member: Any
+
+
+class _ReadableArchive:
+    """Small safe reader facade over zip and tar/tar.gz archives."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.kind = ""
+        self._handle: zipfile.ZipFile | tarfile.TarFile | None = None
+        self._entries: list[_ArchiveEntry] = []
+
+    def __enter__(self) -> "_ReadableArchive":
+        if zipfile.is_zipfile(self.path):
+            zf = zipfile.ZipFile(self.path, "r")
+            self.kind = "zip"
+            self._handle = zf
+            self._entries = [
+                _ArchiveEntry(info.filename, info.file_size, info)
+                for info in zf.infolist()
+                if not info.is_dir()
+            ]
+            return self
+
+        if tarfile.is_tarfile(self.path):
+            tf = tarfile.open(self.path, "r:*")
+            self.kind = "tar"
+            self._handle = tf
+            # Only regular files are migrated.  Symlinks, hardlinks, devices,
+            # fifos, and other special members are ignored to prevent archive
+            # tricks from escaping the review workflow.
+            self._entries = [
+                _ArchiveEntry(member.name, int(member.size or 0), member)
+                for member in tf.getmembers()
+                if member.isfile()
+            ]
+            return self
+
+        raise ValueError("archive must be a zip, tar, tar.gz, or tgz file")
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._handle is not None:
+            self._handle.close()
+
+    @property
+    def entries(self) -> list[_ArchiveEntry]:
+        return self._entries
+
+    def open(self, entry: _ArchiveEntry):
+        if self._handle is None:
+            raise RuntimeError("archive is not open")
+        if self.kind == "zip":
+            return self._handle.open(entry.member)  # type: ignore[union-attr]
+        extracted = self._handle.extractfile(entry.member)  # type: ignore[union-attr]
+        if extracted is None:
+            raise OSError(f"could not read archive member {entry.name!r}")
+        return extracted
 
 
 def _should_exclude(rel_path: Path) -> bool:
@@ -83,6 +162,281 @@ def _should_exclude(rel_path: Path) -> bool:
         return True
 
     return False
+
+
+def _common_archive_prefix(names: Iterable[str]) -> str:
+    files = [n.replace("\\", "/") for n in names if n and not n.endswith("/")]
+    if not files:
+        return ""
+    parts_list = [PurePosixPath(n).parts for n in files]
+    first_parts = {p[0] for p in parts_list if len(p) > 1}
+    if len(first_parts) == 1:
+        prefix = first_parts.pop()
+        if prefix in (".hermes", "hermes"):
+            return prefix + "/"
+    return ""
+
+
+def _safe_archive_relative_path(raw_name: str, prefix: str = "") -> tuple[Optional[Path], str]:
+    """Return a safe relative path for an archive member.
+
+    Archive names are POSIX-style even on Windows.  This routine rejects
+    absolute paths, drive-like prefixes, and ``..`` traversal before converting
+    to a local ``Path``.
+    """
+
+    name = raw_name.replace("\\", "/")
+    while name.startswith("./"):
+        name = name[2:]
+    if prefix and name.startswith(prefix):
+        name = name[len(prefix):]
+    while name.startswith("./"):
+        name = name[2:]
+    if not name:
+        return None, "empty path"
+
+    posix = PurePosixPath(name)
+    parts = posix.parts
+    if parts and parts[0] in (".hermes", "hermes") and len(parts) > 1:
+        parts = parts[1:]
+        posix = PurePosixPath(*parts)
+    if posix.is_absolute() or not parts:
+        return None, "absolute path blocked"
+    if parts[0].endswith(":"):
+        return None, "drive path blocked"
+    if any(part in ("", ".", "..") for part in parts):
+        return None, "path traversal blocked"
+    return Path(*parts), ""
+
+
+def _rel_under(rel: Path, dirname: str) -> Optional[Path]:
+    parts = rel.parts
+    if not parts or parts[0] != dirname:
+        return None
+    if len(parts) == 1:
+        return None
+    return Path(*parts[1:])
+
+
+def _copy_archive_entry(reader: _ReadableArchive, entry: _ArchiveEntry, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with reader.open(entry) as src, open(target, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    if target.name in _SECRET_FILE_NAMES:
+        os.chmod(target, 0o600)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(part in lowered for part in _MIGRATION_SENSITIVE_KEYS)
+
+
+def _redact_imported_value(key: str, value: Any) -> Any:
+    if _is_sensitive_key(key):
+        return ""
+    if isinstance(value, dict):
+        return {str(k): _redact_imported_value(str(k), v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_imported_value(key, item) for item in value]
+    return value
+
+
+def _safe_imported_mcp_config(server_config: Any, imported_at: str) -> Optional[dict[str, Any]]:
+    if not isinstance(server_config, dict):
+        return None
+    sanitized = {
+        str(key): _redact_imported_value(str(key), value)
+        for key, value in server_config.items()
+    }
+    sanitized["enabled"] = False
+    sanitized["migration_review_required"] = True
+    sanitized["migration"] = {
+        "source": "upstream-hermes-export",
+        "imported_at": imported_at,
+        "review_required": True,
+    }
+    return sanitized
+
+
+def _load_yaml_member(reader: _ReadableArchive, entry: _ArchiveEntry) -> dict[str, Any]:
+    try:
+        import yaml
+
+        with reader.open(entry) as src:
+            raw = src.read()
+        parsed = yaml.safe_load(raw.decode("utf-8", errors="replace")) or {}
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception as exc:
+        logger.warning("Could not parse imported YAML %s: %s", entry.name, exc)
+        return {}
+
+
+def _merge_imported_mcp_servers(
+    imported_servers: dict[str, Any],
+    *,
+    imported_at: str,
+) -> list[str]:
+    if not imported_servers:
+        return []
+
+    from hermes_cli.config import load_config, save_config
+
+    cfg = load_config()
+    current = cfg.setdefault("mcp_servers", {})
+    if not isinstance(current, dict):
+        current = {}
+        cfg["mcp_servers"] = current
+
+    imported_names: list[str] = []
+    for raw_name, server_config in sorted(imported_servers.items()):
+        name = str(raw_name).strip()
+        if not name:
+            continue
+        sanitized = _safe_imported_mcp_config(server_config, imported_at)
+        if sanitized is None:
+            continue
+        target_name = name
+        suffix = 2
+        while target_name in current:
+            target_name = f"{name}-imported-{suffix}"
+            suffix += 1
+        current[target_name] = sanitized
+        imported_names.append(target_name)
+
+    if imported_names:
+        save_config(cfg)
+    return imported_names
+
+
+def _run_hermes_export_migration(args) -> None:
+    """Stage an upstream Hermes export without overwriting guardrails."""
+
+    archive_path = Path(args.zipfile).expanduser().resolve()
+    if not archive_path.is_file():
+        print(f"Error: File not found: {archive_path}")
+        sys.exit(1)
+
+    hermes_root = get_default_hermes_root()
+    hermes_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+    migration_root = hermes_root / _MIGRATION_REVIEW_DIR / f"hermes-import-{stamp}"
+    memories_root = migration_root / "memories"
+    skills_root = migration_root / "skills-review"
+    review_root = migration_root / "review"
+    report_path = migration_root / "report.json"
+
+    report: dict[str, Any] = {
+        "archive": str(archive_path),
+        "mode": "from_hermes_export",
+        "imported_at": stamp,
+        "guardrails": {
+            "existing_config_preserved": True,
+            "skills_staged_for_review": True,
+            "mcp_servers_disabled_by_default": True,
+            "secrets_not_activated": True,
+        },
+        "memories": [],
+        "skills": [],
+        "review_files": [],
+        "mcp_servers": [],
+        "skipped": [],
+    }
+
+    imported_config_servers: dict[str, Any] = {}
+
+    try:
+        with _ReadableArchive(archive_path) as archive:
+            prefix = _common_archive_prefix(entry.name for entry in archive.entries)
+            for entry in archive.entries:
+                rel, reason = _safe_archive_relative_path(entry.name, prefix)
+                if rel is None:
+                    report["skipped"].append({"path": entry.name, "reason": reason})
+                    continue
+
+                memory_rel = _rel_under(rel, "memories")
+                if memory_rel is not None:
+                    target = memories_root / memory_rel
+                    _copy_archive_entry(archive, entry, target)
+                    report["memories"].append(str(target.relative_to(migration_root)))
+                    continue
+
+                skill_rel = _rel_under(rel, "skills")
+                if skill_rel is not None:
+                    target = skills_root / skill_rel
+                    _copy_archive_entry(archive, entry, target)
+                    report["skills"].append(str(target.relative_to(migration_root)))
+                    continue
+
+                if rel == Path("config.yaml"):
+                    cfg = _load_yaml_member(archive, entry)
+                    servers = cfg.get("mcp_servers")
+                    if isinstance(servers, dict):
+                        imported_config_servers.update(servers)
+                    target = review_root / "config.yaml"
+                    _copy_archive_entry(archive, entry, target)
+                    report["review_files"].append(str(target.relative_to(migration_root)))
+                    continue
+
+                if rel.name in {".env", "auth.json"} or rel.parts[:1] == ("mcp-tokens",):
+                    target = review_root / rel
+                    _copy_archive_entry(archive, entry, target)
+                    report["review_files"].append(str(target.relative_to(migration_root)))
+                    continue
+
+                report["skipped"].append({
+                    "path": str(rel),
+                    "reason": "not part of the guarded Hermes export migration allowlist",
+                })
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
+
+    imported_mcp = _merge_imported_mcp_servers(
+        imported_config_servers,
+        imported_at=stamp,
+    )
+    report["mcp_servers"] = imported_mcp
+
+    migration_root.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+    try:
+        from agent.audit_log import record_audit_event
+
+        record_audit_event(
+            "migration.hermes_export_staged",
+            action="migration.stage",
+            resource=str(archive_path),
+            outcome="staged",
+            metadata={
+                "migration_root": str(migration_root),
+                "report": str(report_path),
+                "memories": len(report["memories"]),
+                "skills": len(report["skills"]),
+                "review_files": len(report["review_files"]),
+                "mcp_servers": len(imported_mcp),
+                "skipped": len(report["skipped"]),
+            },
+        )
+    except Exception:
+        pass
+
+    print("Hermes export migration staged.")
+    print(f"  Archive:       {archive_path}")
+    print(f"  Review folder: {migration_root}")
+    print(f"  Report:        {report_path}")
+    print(f"  Memories:      {len(report['memories'])} staged")
+    print(f"  Skills:        {len(report['skills'])} staged for review")
+    print(f"  MCP servers:   {len(imported_mcp)} imported disabled")
+    if report["review_files"]:
+        print(f"  Review files:  {len(report['review_files'])} copied but not activated")
+    if report["skipped"]:
+        print(f"  Skipped:       {len(report['skipped'])} entries")
+    print()
+    print("Next steps:")
+    print("  1. Review the migration report and staged skills before activation.")
+    print("  2. Re-enter any secrets in .env or MCP server env blocks through the Keys panel.")
+    print("  3. Keep governance.default_file_policy: deny for production folder access.")
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +600,7 @@ def run_backup(args) -> None:
         if len(errors) > 10:
             print(f"  ... and {len(errors) - 10} more")
 
-    print(f"\nRestore with: hermes import {out_path.name}")
+    print(f"\nRestore with: coorporate import {out_path.name}")
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +659,11 @@ def _detect_prefix(zf: zipfile.ZipFile) -> str:
 
 
 def run_import(args) -> None:
-    """Restore a Hermes backup from a zip file."""
+    """Restore a Coorporate Hermes backup or migrate an upstream Hermes export."""
+    if getattr(args, "from_hermes_export", False):
+        _run_hermes_export_migration(args)
+        return
+
     zip_path = Path(args.zipfile).expanduser().resolve()
 
     if not zip_path.is_file():
@@ -313,6 +671,10 @@ def run_import(args) -> None:
         sys.exit(1)
 
     if not zipfile.is_zipfile(zip_path):
+        if tarfile.is_tarfile(zip_path):
+            print("Error: tar archives are supported only for guarded Hermes export migration.")
+            print(f"Run: coorporate import {zip_path} --from-hermes-export")
+            sys.exit(1)
         print(f"Error: Not a valid zip file: {zip_path}")
         sys.exit(1)
 
@@ -341,7 +703,7 @@ def run_import(args) -> None:
 
         if (has_config or has_env) and not args.force:
             print()
-            print("Warning: Target directory already has Hermes configuration.")
+            print("Warning: Target directory already has Coorporate Hermes configuration.")
             print("Importing will overwrite existing files with backup contents.")
             print()
             try:
@@ -446,25 +808,25 @@ def run_import(args) -> None:
                 # hermes_cli.profiles might not be available (fresh install)
                 if any(profiles_dir.iterdir()):
                     print(f"\n  Profiles detected but aliases could not be created.")
-                    print(f"  Run: hermes profile list  (after installing hermes)")
+                    print("  Run: coorporate profile list  (after installing Coorporate Hermes)")
 
         # Guidance
         print()
         if not (hermes_root / "hermes-agent").is_dir():
-            print("Note: The hermes-agent codebase was not included in the backup.")
-            print("  If this is a fresh install, run: hermes update")
+            print("Note: The codebase was not included in the backup.")
+            print("  If this is a fresh install, run: coorporate update")
 
         if restored_profiles:
             gw_profiles = [n for n, _ in restored_profiles]
             print("\nTo re-enable gateway services for profiles:")
             for pname in gw_profiles:
-                print(f"  hermes -p {pname} gateway install")
+                print(f"  coorporate -p {pname} gateway install")
 
-        print("Done. Your Hermes configuration has been restored.")
+        print("Done. Your Coorporate Hermes configuration has been restored.")
 
 
 # ---------------------------------------------------------------------------
-# Quick state snapshots (used by /snapshot slash command and hermes backup --quick)
+# Quick state snapshots (used by /snapshot slash command and coorporate backup --quick)
 # ---------------------------------------------------------------------------
 
 # Critical state files to include in quick snapshots (relative to HERMES_HOME).
@@ -862,7 +1224,7 @@ def create_pre_update_backup(
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration auto-backup (used by `hermes claw migrate`)
+# Pre-migration auto-backup (used by `coorporate claw migrate`)
 # ---------------------------------------------------------------------------
 
 _PRE_MIGRATION_PREFIX = "pre-migration-"
@@ -903,11 +1265,11 @@ def create_pre_migration_backup(
     keep: int = _PRE_MIGRATION_DEFAULT_KEEP,
 ) -> Optional[Path]:
     """Create a full zip backup of HERMES_HOME under ``backups/`` before a
-    ``hermes claw migrate`` apply.
+    ``coorporate claw migrate`` apply.
 
     Shares implementation with :func:`create_pre_update_backup` via
     ``_write_full_zip_backup`` — same exclusions, same SQLite safe-copy,
-    restorable with ``hermes import <archive>``.  Writes to
+    restorable with ``coorporate import <archive>``.  Writes to
     ``<HERMES_HOME>/backups/pre-migration-<timestamp>.zip`` and auto-prunes
     old pre-migration backups.
 
@@ -919,7 +1281,7 @@ def create_pre_migration_backup(
     if not hermes_root.is_dir():
         return None
 
-    # Reuses the shared backups/ directory so `hermes import` and the
+    # Reuses the shared backups/ directory so `coorporate import` and the
     # update-backup listing pick up pre-migration archives too.
     backup_dir = _pre_update_backup_dir(hermes_root)
     try:

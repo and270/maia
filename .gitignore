@@ -18,6 +18,12 @@ __pycache__/web_tools.cpython-310.pyc
 logs/
 data/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.cache/
 tmp/
 temp_vision_images/
 hermes-*/*
@@ -31,6 +37,10 @@ source-data/*
 run_datagen_megascience_glm4-6.sh
 data/*
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 browser-use/
 agent-browser/
 # Private keys
@@ -40,6 +50,8 @@ privvy*
 images/
 __pycache__/
 hermes_agent.egg-info/
+coorporate_hermes.egg-info/
+*.egg-info/
 wandb/
 testlogs
 
@@ -54,6 +66,7 @@ environments/benchmarks/evals/
 
 # Web UI build output
 hermes_cli/web_dist/
+web/dist/
 
 # Web UI assets — synced from @nous-research/ui at build time via
 # `npm run sync-assets` (see web/package.json).
@@ -69,4 +82,6 @@ mini-swe-agent/
 .nix-stamps/
 result
 website/static/api/skills-index.json
+website/build/
+website/.docusaurus/
 models-dev-upstream/

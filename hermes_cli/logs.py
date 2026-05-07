@@ -29,6 +29,7 @@ from hermes_constants import get_hermes_home, display_hermes_home
 # Known log files (name → filename)
 LOG_FILES = {
     "agent": "agent.log",
+    "audit": "audit.jsonl",
     "errors": "errors.log",
     "gateway": "gateway.log",
 }

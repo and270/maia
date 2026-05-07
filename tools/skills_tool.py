@@ -450,12 +450,13 @@ def _get_category_from_path(skill_path: Path) -> Optional[str]:
     For paths like: ~/.hermes/skills/mlops/axolotl/SKILL.md -> "mlops"
     Also works for external skill dirs configured via skills.external_dirs.
     """
-    # Try the module-level SKILLS_DIR first (respects monkeypatching in tests),
-    # then fall back to external dirs from config.
+    # Try every configured skill root, including governed corporate/team roots.
     dirs_to_check = [SKILLS_DIR]
     try:
-        from agent.skill_utils import get_external_skills_dirs
-        dirs_to_check.extend(get_external_skills_dirs())
+        from agent.skill_utils import get_all_skills_dirs
+        for root in get_all_skills_dirs():
+            if root not in dirs_to_check:
+                dirs_to_check.append(root)
     except Exception:
         pass
     for skills_dir in dirs_to_check:
@@ -557,7 +558,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     Returns:
         List of skill metadata dicts (name, description, category).
     """
-    from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
+    from agent.skill_utils import get_all_skills_dirs, iter_skill_index_files
 
     skills = []
     seen_names: set = set()
@@ -565,11 +566,11 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     # Load disabled set once (not per-skill)
     disabled = set() if skip_disabled else _get_disabled_skill_names()
 
-    # Scan local dir first, then external dirs (local takes precedence)
+    # Scan corporate/team roots first, then local/user, then external dirs.
     dirs_to_scan = []
-    if SKILLS_DIR.exists():
-        dirs_to_scan.append(SKILLS_DIR)
-    dirs_to_scan.extend(get_external_skills_dirs())
+    for root in get_all_skills_dirs():
+        if root.exists() and root not in dirs_to_scan:
+            dirs_to_scan.append(root)
 
     for scan_dir in dirs_to_scan:
         for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
@@ -605,10 +606,25 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
                 category = _get_category_from_path(skill_md)
 
                 seen_names.add(name)
+                scope = "user"
+                try:
+                    from agent.enterprise_knowledge import corporate_skills_dir, team_skills_dir, actor_team_names
+
+                    if skill_md.is_relative_to(corporate_skills_dir()):
+                        scope = "corporate"
+                    else:
+                        for team in actor_team_names():
+                            if skill_md.is_relative_to(team_skills_dir(team)):
+                                scope = "team"
+                                break
+                except Exception:
+                    pass
+
                 skills.append({
                     "name": name,
                     "description": description,
                     "category": category,
+                    "scope": scope,
                 })
 
             except (UnicodeDecodeError, PermissionError) as e:
@@ -936,13 +952,10 @@ def skill_view(
             if bare:
                 local_category_name = f"{namespace}/{bare}"
 
-        from agent.skill_utils import get_external_skills_dirs
+        from agent.skill_utils import get_all_skills_dirs
 
         # Build list of all skill directories to search
-        all_dirs = []
-        if SKILLS_DIR.exists():
-            all_dirs.append(SKILLS_DIR)
-        all_dirs.extend(get_external_skills_dirs())
+        all_dirs = [path for path in get_all_skills_dirs() if path.exists()]
 
         if not all_dirs:
             return json.dumps(
@@ -1027,9 +1040,9 @@ def skill_view(
         # Security: warn if skill is loaded from outside trusted directories
         # (local skills dir + configured external_dirs are all trusted)
         _outside_skills_dir = True
-        _trusted_dirs = [SKILLS_DIR.resolve()]
+        _trusted_dirs = []
         try:
-            _trusted_dirs.extend(d.resolve() for d in all_dirs[1:])
+            _trusted_dirs.extend(d.resolve() for d in all_dirs)
         except Exception:
             pass
         for _td in _trusted_dirs:
@@ -1048,7 +1061,7 @@ def skill_view(
         if _outside_skills_dir or _injection_detected:
             _warnings = []
             if _outside_skills_dir:
-                _warnings.append(f"skill file is outside the trusted skills directory (~/.hermes/skills/): {skill_md}")
+                _warnings.append(f"skill file is outside configured skill directories: {skill_md}")
             if _injection_detected:
                 _warnings.append("skill content contains patterns that may indicate prompt injection")
             logging.getLogger(__name__).warning("Skill security warning for '%s': %s", name, "; ".join(_warnings))
@@ -1530,4 +1543,3 @@ registry.register(
     check_fn=check_skills_requirements,
     emoji="📚",
 )
-

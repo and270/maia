@@ -5195,6 +5195,15 @@ class AIAgent:
         if system_message is not None:
             prompt_parts.append(system_message)
 
+        try:
+            from agent.enterprise_knowledge import build_enterprise_knowledge_prompt
+
+            enterprise_knowledge = build_enterprise_knowledge_prompt()
+            if enterprise_knowledge:
+                prompt_parts.append(enterprise_knowledge)
+        except Exception:
+            pass
+
         if self._memory_store:
             if self._memory_enabled:
                 mem_block = self._memory_store.format_for_system_prompt("memory")

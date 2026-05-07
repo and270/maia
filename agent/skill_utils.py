@@ -233,12 +233,21 @@ def get_external_skills_dirs() -> List[Path]:
 
 
 def get_all_skills_dirs() -> List[Path]:
-    """Return all skill directories: local ``~/.hermes/skills/`` first, then external.
+    """Return all skill directories: corporate/team, local, then external.
 
-    The local dir is always first (and always included even if it doesn't exist
-    yet — callers handle that).  External dirs follow in config order.
+    Shared corporate/team skills intentionally take precedence over user-level
+    skills when names collide.  That keeps tenant procedures authoritative.
     """
-    dirs = [get_skills_dir()]
+    dirs: List[Path] = []
+    try:
+        from agent.enterprise_knowledge import enterprise_skill_dirs
+
+        dirs.extend(enterprise_skill_dirs())
+    except Exception:
+        pass
+    local = get_skills_dir()
+    if local not in dirs:
+        dirs.append(local)
     dirs.extend(get_external_skills_dirs())
     return dirs
 

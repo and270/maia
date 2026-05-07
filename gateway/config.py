@@ -693,6 +693,19 @@ def load_gateway_config() -> GatewayConfig:
             if "thread_sessions_per_user" in yaml_cfg:
                 gw_data["thread_sessions_per_user"] = yaml_cfg["thread_sessions_per_user"]
 
+            governance_cfg = yaml_cfg.get("governance")
+            if isinstance(governance_cfg, dict):
+                governance_gateway = governance_cfg.get("gateway")
+                if isinstance(governance_gateway, dict):
+                    if "group_sessions_per_user" in governance_gateway:
+                        gw_data["group_sessions_per_user"] = governance_gateway[
+                            "group_sessions_per_user"
+                        ]
+                    if "thread_sessions_per_user" in governance_gateway:
+                        gw_data["thread_sessions_per_user"] = governance_gateway[
+                            "thread_sessions_per_user"
+                        ]
+
             streaming_cfg = yaml_cfg.get("streaming")
             if isinstance(streaming_cfg, dict):
                 gw_data["streaming"] = streaming_cfg

@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 from agent.file_safety import get_read_block_error
+from agent.governance import file_access_error
 from tools.binary_extensions import has_binary_extension
 from tools.file_operations import (
     ShellFileOperations,
@@ -152,6 +153,10 @@ _SENSITIVE_PATH_PREFIXES = (
     "/etc/", "/boot/", "/usr/lib/systemd/",
     "/private/etc/", "/private/var/",
 )
+_SENSITIVE_PATH_ALLOW_PREFIXES = (
+    "/private/var/folders/",
+    "/var/folders/",
+)
 _SENSITIVE_EXACT_PATHS = {"/var/run/docker.sock", "/run/docker.sock"}
 
 
@@ -166,6 +171,9 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
         f"Refusing to write to sensitive system path: {filepath}\n"
         "Use the terminal tool with sudo if you need to modify system files."
     )
+    for prefix in _SENSITIVE_PATH_ALLOW_PREFIXES:
+        if resolved.startswith(prefix) or normalized.startswith(prefix):
+            return None
     for prefix in _SENSITIVE_PATH_PREFIXES:
         if resolved.startswith(prefix) or normalized.startswith(prefix):
             return _err
@@ -475,7 +483,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
         # ── Hermes internal path guard ────────────────────────────────
         # Prevent prompt injection via catalog or hub metadata files.
-        block_error = get_read_block_error(path)
+        block_error = get_read_block_error(str(_resolved))
         if block_error:
             return json.dumps({"error": block_error})
 
@@ -792,6 +800,14 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
 
 def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
     """Write content to a file."""
+    try:
+        _resolved = str(_resolve_path_for_task(path, task_id))
+    except Exception:
+        _resolved = None
+
+    governance_error = file_access_error(_resolved or path, "write")
+    if governance_error:
+        return tool_error(governance_error)
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
         return tool_error(sensitive_err)
@@ -801,14 +817,6 @@ def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
             "Re-read the file or reconstruct the intended file contents before writing."
         )
     try:
-        # Resolve once for the registry lock + stale check.  Failures here
-        # fall back to the legacy path — write proceeds, per-task staleness
-        # check below still runs.
-        try:
-            _resolved = str(_resolve_path_for_task(path, task_id))
-        except Exception:
-            _resolved = None
-
         if _resolved is None:
             stale_warning = _check_file_staleness(path, task_id)
             file_ops = _get_file_ops(task_id)
@@ -860,6 +868,13 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         for _m in _re.finditer(r'^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$', patch, _re.MULTILINE):
             _paths_to_check.append(_m.group(1).strip())
     for _p in _paths_to_check:
+        try:
+            _governance_path = str(_resolve_path_for_task(_p, task_id))
+        except Exception:
+            _governance_path = _p
+        governance_error = file_access_error(_governance_path, "write")
+        if governance_error:
+            return tool_error(governance_error)
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
@@ -949,6 +964,13 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
                 task_id: str = "default") -> str:
     """Search for content or files."""
     try:
+        try:
+            _resolved_path = str(_resolve_path_for_task(path, task_id))
+        except Exception:
+            _resolved_path = path
+        governance_error = file_access_error(_resolved_path, "read")
+        if governance_error:
+            return tool_error(governance_error)
         offset, limit = normalize_search_pagination(offset, limit)
 
         # Track searches to detect *consecutive* repeated search loops.

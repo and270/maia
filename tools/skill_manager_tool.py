@@ -721,12 +721,57 @@ def skill_manage(
     new_string: str = None,
     replace_all: bool = False,
     absorbed_into: str = None,
+    scope: str = "user",
+    team: str = None,
+    approval_note: str = None,
 ) -> str:
     """
     Manage user-created skills. Dispatches to the appropriate action handler.
 
     Returns JSON string with results.
     """
+    scope = str(scope or "user").strip().lower()
+    if scope not in ("user", "team", "corporate"):
+        return tool_error("Invalid scope. Use 'user', 'team', or 'corporate'.", success=False)
+
+    if scope in ("team", "corporate"):
+        if action not in ("create", "patch", "edit", "delete", "write_file", "remove_file"):
+            return tool_error("Unknown action. Use: create, patch, edit, delete, write_file, remove_file", success=False)
+        if action == "create" and not content:
+            return tool_error("content is required for shared skill create proposals.", success=False)
+        if action == "edit" and not content:
+            return tool_error("content is required for shared skill edit proposals.", success=False)
+        if action == "patch":
+            if not old_string:
+                return tool_error("old_string is required for shared skill patch proposals.", success=False)
+            if new_string is None:
+                return tool_error("new_string is required for shared skill patch proposals.", success=False)
+        if action == "write_file" and (not file_path or file_content is None):
+            return tool_error("file_path and file_content are required for shared skill write_file proposals.", success=False)
+        if action == "remove_file" and not file_path:
+            return tool_error("file_path is required for shared skill remove_file proposals.", success=False)
+        try:
+            from agent.enterprise_knowledge import propose_knowledge_change
+
+            result = propose_knowledge_change(
+                kind="skill",
+                scope=scope,
+                action=action,
+                target="skill",
+                content=new_string if action == "patch" else content,
+                old_text=old_string,
+                team=team,
+                name=name,
+                category=category,
+                file_path=file_path,
+                file_content=file_content,
+                replace_all=replace_all,
+                note=approval_note,
+            )
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as exc:
+            return tool_error(f"Failed to stage shared skill approval: {exc}", success=False)
+
     if action == "create":
         if not content:
             return tool_error("content is required for 'create'. Provide the full SKILL.md text (frontmatter + body).", success=False)
@@ -800,6 +845,10 @@ SKILL_MANAGE_SCHEMA = {
         "Manage skills (create, update, delete). Skills are your procedural "
         "memory — reusable approaches for recurring task types. "
         f"New skills go to {display_hermes_home()}/skills/; existing skills can be modified wherever they live.\n\n"
+        "Scopes: user (default, immediate), team (pending human approval), "
+        "corporate (pending human approval and injected tenant-wide after approval). "
+        "For team scope, provide `team`. For team/corporate changes, include "
+        "`approval_note` so the approver understands the rationale.\n\n"
         "Actions: create (full SKILL.md + optional category), "
         "patch (old_string/new_string — preferred for fixes), "
         "edit (full SKILL.md rewrite — major overhauls only), "
@@ -903,6 +952,19 @@ SKILL_MANAGE_SCHEMA = {
                     "rewriting) will have to guess at intent."
                 )
             },
+            "scope": {
+                "type": "string",
+                "enum": ["user", "team", "corporate"],
+                "description": "Skill layer. User writes immediately; team/corporate creates a pending approval."
+            },
+            "team": {
+                "type": "string",
+                "description": "Team identifier for scope='team' shared skill proposals."
+            },
+            "approval_note": {
+                "type": "string",
+                "description": "Short rationale shown to the human approver for team/corporate proposals."
+            },
         },
         "required": ["action", "name"],
     },
@@ -926,6 +988,9 @@ registry.register(
         old_string=args.get("old_string"),
         new_string=args.get("new_string"),
         replace_all=args.get("replace_all", False),
-        absorbed_into=args.get("absorbed_into")),
+        absorbed_into=args.get("absorbed_into"),
+        scope=args.get("scope", "user"),
+        team=args.get("team"),
+        approval_note=args.get("approval_note")),
     emoji="📝",
 )

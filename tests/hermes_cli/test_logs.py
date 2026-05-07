@@ -251,5 +251,6 @@ class TestReadTail:
 class TestLogFiles:
     def test_known_log_files(self):
         assert "agent" in LOG_FILES
+        assert "audit" in LOG_FILES
         assert "errors" in LOG_FILES
         assert "gateway" in LOG_FILES

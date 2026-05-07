@@ -3,15 +3,15 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Hermes Agent',
-  tagline: 'The self-improving AI agent',
+  title: 'Coorporate Hermes',
+  tagline: 'Private corporate AI assistant governance by AmpliIA',
   favicon: 'img/favicon.ico',
 
-  url: 'https://hermes-agent.nousresearch.com',
+  url: 'https://ampliia.com',
   baseUrl: '/docs/',
 
-  organizationName: 'NousResearch',
-  projectName: 'hermes-agent',
+  organizationName: 'AmpliIA',
+  projectName: 'coorporate-hermes',
 
   onBrokenLinks: 'warn',
 
@@ -73,7 +73,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/NousResearch/hermes-agent/edit/main/website/',
+          editUrl: 'https://github.com/AmpliIA/coorporate-hermes/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -96,9 +96,9 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Hermes Agent',
+      title: 'Coorporate Hermes',
       logo: {
-        alt: 'Hermes Agent',
+        alt: 'Coorporate Hermes',
         src: 'img/logo.png',
       },
       items: [
@@ -118,18 +118,13 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com',
+          href: 'https://ampliia.com/en/',
           label: 'Home',
           position: 'right',
         },
         {
-          href: 'https://github.com/NousResearch/hermes-agent',
+          href: 'https://github.com/AmpliIA/coorporate-hermes',
           label: 'GitHub',
-          position: 'right',
-        },
-        {
-          href: 'https://discord.gg/NousResearch',
-          label: 'Discord',
           position: 'right',
         },
       ],
@@ -147,22 +142,21 @@ const config: Config = {
           ],
         },
         {
-          title: 'Community',
+          title: 'Company',
           items: [
-            { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Discussions', href: 'https://github.com/NousResearch/hermes-agent/discussions' },
+            { label: 'AmpliIA', href: 'https://ampliia.com/en/' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
-            { label: 'Nous Research', href: 'https://nousresearch.com' },
+            { label: 'GitHub', href: 'https://github.com/AmpliIA/coorporate-hermes' },
+            { label: 'Upstream Hermes Agent', href: 'https://github.com/NousResearch/hermes-agent' },
           ],
         },
       ],
-      copyright: `Built by <a href="https://nousresearch.com">Nous Research</a> · MIT License · ${new Date().getFullYear()}`,
+      copyright: `Coorporate Hermes by <a href="https://ampliia.com/en/">AmpliIA</a> · includes upstream Hermes Agent components under MIT · ${new Date().getFullYear()}`,
     },
     prism: {
       theme: prismThemes.github,

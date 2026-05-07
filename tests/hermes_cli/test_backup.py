@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import tarfile
 import zipfile
 from argparse import Namespace
 from pathlib import Path
@@ -470,6 +471,108 @@ class TestImport:
         from hermes_cli.backup import run_import
         with pytest.raises(SystemExit):
             run_import(args)
+
+    def test_migrates_upstream_hermes_tar_without_overwriting_guardrails(self, tmp_path, monkeypatch):
+        """Hermes tar exports are staged and MCP servers are disabled for review."""
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            """
+governance:
+  enabled: true
+  default_file_policy: deny
+mcp_servers: {}
+""",
+            encoding="utf-8",
+        )
+        (hermes_home / ".env").write_text("OPENAI_API_KEY=existing\n", encoding="utf-8")
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        export_root = tmp_path / "export" / ".hermes"
+        (export_root / "memories").mkdir(parents=True)
+        (export_root / "skills" / "review-me").mkdir(parents=True)
+        (export_root / "memories" / "MEMORY.md").write_text("remember this\n", encoding="utf-8")
+        (export_root / "skills" / "review-me" / "SKILL.md").write_text("# Imported\n", encoding="utf-8")
+        (export_root / ".env").write_text("OPENAI_API_KEY=imported\n", encoding="utf-8")
+        (export_root / "config.yaml").write_text(
+            """
+governance:
+  enabled: false
+mcp_servers:
+  finance:
+    command: npx
+    args: ["@acme/mcp"]
+    env:
+      API_TOKEN: secret-token
+""",
+            encoding="utf-8",
+        )
+
+        tar_path = tmp_path / "hermes-export.tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tf:
+            tf.add(export_root.parent, arcname="hermes")
+
+        from hermes_cli.backup import run_import
+
+        run_import(Namespace(zipfile=str(tar_path), force=True, from_hermes_export=True))
+
+        assert "default_file_policy: deny" in (hermes_home / "config.yaml").read_text(encoding="utf-8")
+        assert (hermes_home / ".env").read_text(encoding="utf-8") == "OPENAI_API_KEY=existing\n"
+
+        import yaml
+
+        cfg = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
+        assert cfg["governance"]["enabled"] is True
+        assert cfg["mcp_servers"]["finance"]["enabled"] is False
+        assert cfg["mcp_servers"]["finance"]["env"]["API_TOKEN"] == ""
+        assert cfg["mcp_servers"]["finance"]["migration_review_required"] is True
+
+        migrations = list((hermes_home / "migration").glob("hermes-import-*"))
+        assert len(migrations) == 1
+        migration = migrations[0]
+        assert (migration / "memories" / "MEMORY.md").read_text(encoding="utf-8") == "remember this\n"
+        assert (migration / "skills-review" / "review-me" / "SKILL.md").exists()
+        assert (migration / "review" / ".env").exists()
+        report = json.loads((migration / "report.json").read_text(encoding="utf-8"))
+        assert report["guardrails"]["existing_config_preserved"] is True
+        assert report["mcp_servers"] == ["finance"]
+        audit_events = [
+            json.loads(line)
+            for line in (hermes_home / "logs" / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        migration_events = [
+            event
+            for event in audit_events
+            if event["event_type"] == "migration.hermes_export_staged"
+        ]
+        assert migration_events
+        assert migration_events[0]["metadata"]["mcp_servers"] == 1
+
+    def test_migration_blocks_tar_path_traversal(self, tmp_path, monkeypatch):
+        """Migration mode rejects archive members that try to escape HERMES_HOME."""
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("mcp_servers: {}\n", encoding="utf-8")
+        evil_file = tmp_path / "evil.txt"
+        evil_file.write_text("bad\n", encoding="utf-8")
+        tar_path = tmp_path / "evil-export.tar"
+        with tarfile.open(tar_path, "w") as tf:
+            tf.add(config_file, arcname=".hermes/config.yaml")
+            tf.add(evil_file, arcname=".hermes/../../outside.txt")
+
+        from hermes_cli.backup import run_import
+
+        run_import(Namespace(zipfile=str(tar_path), force=True, from_hermes_export=True))
+
+        assert not (tmp_path / "outside.txt").exists()
+        migrations = list((hermes_home / "migration").glob("hermes-import-*"))
+        report = json.loads((migrations[0] / "report.json").read_text(encoding="utf-8"))
+        assert any(item["reason"] == "path traversal blocked" for item in report["skipped"])
 
     @pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions only")
     def test_restores_secret_files_with_0600_perms(self, tmp_path, monkeypatch):
@@ -1449,7 +1552,7 @@ class TestRunPreUpdateBackup:
         assert "Creating pre-update backup" in out
         assert "Saved:" in out
         assert "Restore:" in out
-        assert "hermes import" in out
+        assert "coorporate import" in out
         assert "Disable:" in out
         # Actual backup was created
         backups = list((hermes_home / "backups").glob("pre-update-*.zip"))
@@ -1582,7 +1685,7 @@ class TestPreMigrationBackup:
 
     def test_restorable_with_hermes_import(self, hermes_home, tmp_path):
         """The zip produced by pre-migration backup must be a valid Hermes
-        backup — `hermes import` should accept it."""
+        backup — `coorporate import` should accept it."""
         from hermes_cli.backup import create_pre_migration_backup, _validate_backup_zip
         out = create_pre_migration_backup(hermes_home=hermes_home)
         assert out is not None

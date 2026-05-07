@@ -314,6 +314,27 @@ def build_session_context_prompt(
             uid = _hash_sender_id(uid)
         lines.append(f"**User ID:** {uid}")
 
+    try:
+        from agent.governance import Actor, actor_roles, is_enabled, load_governance_config
+
+        governance_cfg = load_governance_config()
+        if is_enabled(governance_cfg):
+            roles = actor_roles(
+                Actor(
+                    platform=context.source.platform.value,
+                    user_id=context.source.user_id or "",
+                    user_name=context.source.user_name or "",
+                ),
+                governance_cfg,
+            )
+            if roles:
+                lines.append(f"**Governance roles:** {', '.join(roles)}")
+            tenant = str(governance_cfg.get("tenant_id", "")).strip()
+            if tenant:
+                lines.append(f"**Tenant:** {tenant}")
+    except Exception:
+        pass
+
     # Platform-specific behavioral notes
     if context.source.platform == Platform.SLACK:
         lines.append("")

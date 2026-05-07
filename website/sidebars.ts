@@ -5,6 +5,18 @@ const sidebars: SidebarsConfig = {
     'user-stories',
     {
       type: 'category',
+      label: 'Coorporate Hermes',
+      collapsed: false,
+      items: [
+        'enterprise/admin-onboarding',
+        'enterprise/knowledge-governance',
+        'enterprise/migration-from-hermes',
+        'enterprise/cron-authorization-panel',
+        'enterprise/observability',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Getting Started',
       collapsed: true,
       items: [

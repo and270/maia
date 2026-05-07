@@ -17,7 +17,7 @@ Spotify: play, search, queue, manage playlists and devices.
 | Source | Bundled (installed by default) |
 | Path | `skills/media/spotify` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Coorporate Hermes |
 | License | MIT |
 | Tags | `spotify`, `music`, `playback`, `playlists`, `media` |
 | Related skills | [`gif-search`](/docs/user-guide/skills/bundled/media/media-gif-search) |
@@ -30,7 +30,7 @@ The following is the complete skill definition that Hermes loads when this skill
 
 # Spotify
 
-Control the user's Spotify account via the Hermes Spotify toolset (7 tools). Setup guide: https://hermes-agent.nousresearch.com/docs/user-guide/features/spotify
+Control the user's Spotify account via the Hermes Spotify toolset (7 tools). Setup guide: https://ampliia.com/en/docs/user-guide/features/spotify
 
 ## When to use this skill
 

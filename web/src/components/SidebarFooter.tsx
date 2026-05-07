@@ -23,7 +23,7 @@ export function SidebarFooter() {
       </Typography>
 
       <a
-        href="https://nousresearch.com"
+        href="https://ampliia.com/en/"
         target="_blank"
         rel="noopener noreferrer"
         className={cn(

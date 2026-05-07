@@ -468,12 +468,45 @@ def memory_tool(
     content: str = None,
     old_text: str = None,
     store: Optional[MemoryStore] = None,
+    scope: str = "user",
+    team: str = None,
+    approval_note: str = None,
 ) -> str:
     """
     Single entry point for the memory tool. Dispatches to MemoryStore methods.
 
     Returns JSON string with results.
     """
+    scope = str(scope or "user").strip().lower()
+    if scope not in ("user", "corporate", "team"):
+        return tool_error("Invalid scope. Use 'user', 'team', or 'corporate'.", success=False)
+
+    if scope in ("corporate", "team"):
+        if target != "memory":
+            return tool_error("Corporate and team knowledge only supports target='memory'.", success=False)
+        if action not in ("add", "replace", "remove"):
+            return tool_error(f"Unknown action '{action}'. Use: add, replace, remove", success=False)
+        if action in ("add", "replace") and not content:
+            return tool_error("content is required for shared memory add/replace proposals.", success=False)
+        if action in ("replace", "remove") and not old_text:
+            return tool_error("old_text is required for shared memory replace/remove proposals.", success=False)
+        try:
+            from agent.enterprise_knowledge import propose_knowledge_change
+
+            result = propose_knowledge_change(
+                kind="memory",
+                scope=scope,
+                action=action,
+                target=target,
+                content=content,
+                old_text=old_text,
+                team=team,
+                note=approval_note,
+            )
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as exc:
+            return tool_error(f"Failed to stage shared memory approval: {exc}", success=False)
+
     if store is None:
         return tool_error("Memory is not available. It may be disabled in config or this environment.", success=False)
 
@@ -533,6 +566,11 @@ MEMORY_SCHEMA = {
         "TWO TARGETS:\n"
         "- 'user': who the user is -- name, role, preferences, communication style, pet peeves\n"
         "- 'memory': your notes -- environment facts, project conventions, tool quirks, lessons learned\n\n"
+        "SCOPES:\n"
+        "- 'user' (default): writes to the current user's profile memory immediately.\n"
+        "- 'team': proposes a team memory change for human approval; provide team.\n"
+        "- 'corporate': proposes a tenant-wide memory change for human approval.\n"
+        "Corporate and team memory is injected into future conversations only after approval.\n\n"
         "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
         "remove (delete -- old_text identifies it).\n\n"
         "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
@@ -558,6 +596,19 @@ MEMORY_SCHEMA = {
                 "type": "string",
                 "description": "Short unique substring identifying the entry to replace or remove."
             },
+            "scope": {
+                "type": "string",
+                "enum": ["user", "team", "corporate"],
+                "description": "Memory layer. User writes immediately; team/corporate creates a pending approval."
+            },
+            "team": {
+                "type": "string",
+                "description": "Team identifier for scope='team' shared memory proposals."
+            },
+            "approval_note": {
+                "type": "string",
+                "description": "Short rationale shown to the human approver for team/corporate proposals."
+            },
         },
         "required": ["action", "target"],
     },
@@ -576,11 +627,13 @@ registry.register(
         target=args.get("target", "memory"),
         content=args.get("content"),
         old_text=args.get("old_text"),
+        scope=args.get("scope", "user"),
+        team=args.get("team"),
+        approval_note=args.get("approval_note"),
         store=kw.get("store")),
     check_fn=check_memory_requirements,
     emoji="🧠",
 )
-
 
 
 

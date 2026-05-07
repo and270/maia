@@ -62,6 +62,8 @@ import SessionsPage from "@/pages/SessionsPage";
 import LogsPage from "@/pages/LogsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import ModelsPage from "@/pages/ModelsPage";
+import OnboardingPage from "@/pages/OnboardingPage";
+import KnowledgePage from "@/pages/KnowledgePage";
 import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
@@ -107,6 +109,8 @@ const CHAT_NAV_ITEM: NavItem = {
 const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
   "/sessions": SessionsPage,
+  "/onboarding": OnboardingPage,
+  "/knowledge": KnowledgePage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -133,6 +137,18 @@ const BUILTIN_NAV_REST: NavItem[] = [
     labelKey: "sessions",
     label: "Sessions",
     icon: MessageSquare,
+  },
+  {
+    path: "/onboarding",
+    labelKey: "onboarding",
+    label: "Onboarding",
+    icon: Shield,
+  },
+  {
+    path: "/knowledge",
+    labelKey: "knowledge",
+    label: "Knowledge",
+    icon: Database,
   },
   {
     path: "/analytics",
@@ -484,9 +500,9 @@ export default function App() {
                   className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground"
                   style={{ mixBlendMode: "plus-lighter" }}
                 >
-                  Hermes
+                  Coorporate
                   <br />
-                  Agent
+                  Hermes
                 </Typography>
               </div>
 

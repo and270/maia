@@ -1,7 +1,7 @@
 ---
 sidebar_position: 3
 title: "Updating & Uninstalling"
-description: "How to update Hermes Agent to the latest version or uninstall it"
+description: "How to update Coorporate Hermes to the latest version or uninstall it"
 ---
 
 # Updating & Uninstalling
@@ -56,7 +56,7 @@ Expected output looks like:
 
 ```
 $ hermes update
-Updating Hermes Agent...
+Updating Coorporate Hermes...
 📥 Pulling latest code...
 Already up to date.  (or: Updating abc1234..def5678)
 📦 Updating dependencies...
@@ -65,7 +65,7 @@ Already up to date.  (or: Updating abc1234..def5678)
 ✅ Config is up to date  (or: Found 2 new options — running migration...)
 🔄 Restarting gateways...
 ✅ Gateway restarted
-✅ Hermes Agent updated successfully!
+✅ Coorporate Hermes updated successfully!
 ```
 
 ### Recommended Post-Update Validation
@@ -103,7 +103,7 @@ You no longer need to wrap `hermes update` in `screen` or `tmux` to survive a te
 hermes version
 ```
 
-Compare against the latest release at the [GitHub releases page](https://github.com/NousResearch/hermes-agent/releases).
+Compare against the latest release at the [GitHub releases page](https://github.com/AmpliIA/coorporate-hermes/releases).
 
 ### Updating from Messaging Platforms
 

@@ -17,7 +17,7 @@ Delegate coding to OpenAI Codex CLI (features, PRs).
 | Source | Bundled (installed by default) |
 | Path | `skills/autonomous-ai-agents/codex` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Coorporate Hermes |
 | License | MIT |
 | Tags | `Coding-Agent`, `Codex`, `OpenAI`, `Code-Review`, `Refactoring` |
 | Related skills | [`claude-code`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code), [`hermes-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent) |

@@ -591,6 +591,54 @@ class TestNewEndpoints:
         resp = self.client.get("/api/cron/jobs/nonexistent-id")
         assert resp.status_code == 404
 
+    def test_cron_authorization_endpoint_uses_governance_roles(self, monkeypatch):
+        from hermes_constants import get_hermes_home
+        import cron.jobs as jobs_mod
+
+        hermes_home = get_hermes_home()
+        (hermes_home / "config.yaml").write_text(
+            """
+governance:
+  enabled: true
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "local:admin-user":
+      roles: [admin]
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("COORPORATE_USER_ID", "admin-user")
+
+        cron_dir = hermes_home / "cron"
+        monkeypatch.setattr(jobs_mod, "CRON_DIR", cron_dir)
+        monkeypatch.setattr(jobs_mod, "OUTPUT_DIR", cron_dir / "output")
+        monkeypatch.setattr(jobs_mod, "JOBS_FILE", cron_dir / "jobs.json")
+
+        created = self.client.post(
+            "/api/cron/jobs",
+            json={
+                "prompt": "Prepare the weekly finance summary",
+                "schedule": "30m",
+                "name": "Finance summary",
+                "authorization": {"required": True, "roles": ["manager"]},
+            },
+        )
+        assert created.status_code == 200
+        job = created.json()
+
+        from cron.jobs import request_job_authorization
+
+        request_job_authorization(job["id"])
+
+        approved = self.client.post(
+            f"/api/cron/jobs/{job['id']}/authorize",
+            json={"approve": True, "note": "Reviewed"},
+        )
+        assert approved.status_code == 200
+        data = approved.json()
+        assert data["authorization"]["status"] == "approved"
+        assert data["authorization"]["approved_by"] == "local:admin-user"
+
     # --- Profiles ---
 
     def test_profiles_list_includes_default(self):

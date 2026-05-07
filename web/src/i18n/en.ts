@@ -50,12 +50,12 @@ export const en: Translations = {
   },
 
   app: {
-    brand: "Hermes Agent",
-    brandShort: "HA",
+    brand: "Coorporate Hermes",
+    brandShort: "CH",
     closeNavigation: "Close navigation",
     closeModelTools: "Close model and tools",
     footer: {
-      org: "Nous Research",
+      org: "AmpliIA",
     },
     activeSessionsLabel: "Active Sessions:",
     gatewayStatusLabel: "Gateway Status:",
@@ -73,8 +73,10 @@ export const en: Translations = {
       cron: "Cron",
       documentation: "Documentation",
       keys: "Keys",
+      knowledge: "Knowledge",
       logs: "Logs",
       models: "Models",
+      onboarding: "Onboarding",
       profiles: "profiles : multi agents",
       plugins: "Plugins",
       sessions: "Sessions",

@@ -87,11 +87,29 @@ def is_write_denied(path: str) -> bool:
     if safe_root and not (resolved == safe_root or resolved.startswith(safe_root + os.sep)):
         return True
 
+    try:
+        from agent.governance import check_file_access
+
+        allowed, _ = check_file_access(resolved, "write")
+        if not allowed:
+            return True
+    except Exception:
+        pass
+
     return False
 
 
 def get_read_block_error(path: str) -> Optional[str]:
     """Return an error message when a read targets internal Hermes cache files."""
+    try:
+        from agent.governance import file_access_error
+
+        governance_error = file_access_error(path, "read")
+        if governance_error:
+            return governance_error
+    except Exception:
+        pass
+
     resolved = Path(path).expanduser().resolve()
     hermes_home = _hermes_home_path().resolve()
     blocked_dirs = [

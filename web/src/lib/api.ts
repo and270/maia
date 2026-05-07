@@ -139,7 +139,13 @@ export const api = {
 
   // Cron jobs
   getCronJobs: () => fetchJSON<CronJob[]>("/api/cron/jobs"),
-  createCronJob: (job: { prompt: string; schedule: string; name?: string; deliver?: string }) =>
+  createCronJob: (job: {
+    prompt: string;
+    schedule: string;
+    name?: string;
+    deliver?: string;
+    authorization?: { required: boolean; roles?: string[]; users?: string[] };
+  }) =>
     fetchJSON<CronJob>("/api/cron/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -151,8 +157,28 @@ export const api = {
     fetchJSON<{ ok: boolean }>(`/api/cron/jobs/${id}/resume`, { method: "POST" }),
   triggerCronJob: (id: string) =>
     fetchJSON<{ ok: boolean }>(`/api/cron/jobs/${id}/trigger`, { method: "POST" }),
+  authorizeCronJob: (id: string, body: { approve: boolean; note?: string }) =>
+    fetchJSON<CronJob>(`/api/cron/jobs/${id}/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   deleteCronJob: (id: string) =>
     fetchJSON<{ ok: boolean }>(`/api/cron/jobs/${id}`, { method: "DELETE" }),
+
+  // Governed knowledge
+  getKnowledgeLayers: () => fetchJSON<KnowledgeLayersResponse>("/api/knowledge/layers"),
+  getKnowledgeApprovals: (status = "pending") =>
+    fetchJSON<KnowledgeApprovalsResponse>(`/api/knowledge/approvals?status=${status}`),
+  decideKnowledgeApproval: (id: string, body: { approve: boolean; note?: string }) =>
+    fetchJSON<KnowledgeApprovalDecisionResponse>(
+      `/api/knowledge/approvals/${encodeURIComponent(id)}/decide`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -560,9 +586,78 @@ export interface CronJob {
   enabled: boolean;
   state: string;
   deliver?: string;
+  paused_reason?: string | null;
+  authorization?: {
+    required?: boolean;
+    roles?: string[];
+    users?: string[];
+    status?: string;
+    requested_at?: string | null;
+    approved_at?: string | null;
+    approved_by?: string | null;
+    denied_at?: string | null;
+    denied_by?: string | null;
+    note?: string | null;
+  } | null;
   last_run_at?: string | null;
   next_run_at?: string | null;
   last_error?: string | null;
+}
+
+export interface KnowledgeCorporateLayer {
+  memory_path: string;
+  skills_dir: string;
+  memory_exists: boolean;
+  skill_count: number;
+}
+
+export interface KnowledgeTeamLayer extends KnowledgeCorporateLayer {
+  name: string;
+}
+
+export interface KnowledgeLayersResponse {
+  enabled: boolean;
+  corporate: KnowledgeCorporateLayer;
+  teams: KnowledgeTeamLayer[];
+  user: {
+    memory_dir: string;
+    skills_dir: string;
+  };
+  pending_approvals: number;
+}
+
+export interface KnowledgeApproval {
+  id: string;
+  status: "pending" | "approved" | "denied";
+  created_at: string;
+  requested_by?: {
+    id?: string;
+    platform?: string | null;
+    user_id?: string | null;
+    user_name?: string | null;
+  };
+  scope: "corporate" | "team";
+  team?: string | null;
+  kind: "memory" | "skill";
+  action: string;
+  target?: string;
+  name?: string | null;
+  category?: string | null;
+  file_path?: string | null;
+  note?: string | null;
+  content?: string | null;
+  old_text?: string | null;
+  decided_at?: string | null;
+  decision_note?: string | null;
+}
+
+export interface KnowledgeApprovalsResponse {
+  approvals: KnowledgeApproval[];
+}
+
+export interface KnowledgeApprovalDecisionResponse {
+  success: boolean;
+  approval: KnowledgeApproval;
 }
 
 export interface SkillInfo {
@@ -570,6 +665,7 @@ export interface SkillInfo {
   description: string;
   category: string;
   enabled: boolean;
+  scope?: "corporate" | "team" | "user";
 }
 
 export interface ToolsetInfo {

@@ -1,14 +1,14 @@
 ---
-title: "Hermes Agent — Configure, extend, or contribute to Hermes Agent"
-sidebar_label: "Hermes Agent"
-description: "Configure, extend, or contribute to Hermes Agent"
+title: "Coorporate Hermes — Configure, extend, or contribute to Coorporate Hermes"
+sidebar_label: "Coorporate Hermes"
+description: "Configure, extend, or contribute to Coorporate Hermes"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Hermes Agent
+# Coorporate Hermes
 
-Configure, extend, or contribute to Hermes Agent.
+Configure, extend, or contribute to Coorporate Hermes.
 
 ## Skill metadata
 
@@ -17,7 +17,7 @@ Configure, extend, or contribute to Hermes Agent.
 | Source | Bundled (installed by default) |
 | Path | `skills/autonomous-ai-agents/hermes-agent` |
 | Version | `2.0.0` |
-| Author | Hermes Agent + Teknium |
+| Author | Coorporate Hermes + Teknium |
 | License | MIT |
 | Tags | `hermes`, `setup`, `configuration`, `multi-agent`, `spawning`, `cli`, `gateway`, `development` |
 | Related skills | [`claude-code`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code), [`codex`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex), [`opencode`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) |
@@ -28,9 +28,9 @@ Configure, extend, or contribute to Hermes Agent.
 The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
-# Hermes Agent
+# Coorporate Hermes
 
-Hermes Agent is an open-source AI agent framework by Nous Research that runs in your terminal, messaging platforms, and IDEs. It belongs to the same category as Claude Code (Anthropic), Codex (OpenAI), and OpenClaw — autonomous coding and task-execution agents that use tool calling to interact with your system. Hermes works with any LLM provider (OpenRouter, Anthropic, OpenAI, DeepSeek, local models, and 15+ others) and runs on Linux, macOS, and WSL.
+Coorporate Hermes is an AmpliIA AI agent framework for private company deployments that runs in your terminal, messaging platforms, and IDEs. It is derived from upstream Hermes Agent under the MIT License. Hermes works with any LLM provider (OpenRouter, Anthropic, OpenAI, DeepSeek, local models, and 15+ others) and runs on Linux, macOS, and WSL.
 
 What makes Hermes different:
 
@@ -43,15 +43,17 @@ What makes Hermes different:
 
 People use Hermes for software development, research, system administration, data analysis, content creation, home automation, and anything else that benefits from an AI agent with persistent context and full system access.
 
-**This skill helps you work with Hermes Agent effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
+**This skill helps you work with Coorporate Hermes effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
 
-**Docs:** https://hermes-agent.nousresearch.com/docs/
+**Docs:** https://ampliia.com/en/docs/
 
 ## Quick Start
 
 ```bash
 # Install
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 
 # Interactive chat (default)
 hermes
@@ -167,7 +169,7 @@ hermes gateway setup        Configure platforms
 
 Supported platforms: Telegram, Discord, Slack, WhatsApp, Signal, Email, SMS, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeCom, BlueBubbles (iMessage), Weixin (WeChat), Microsoft Teams, API Server, Webhooks. Open WebUI connects via the API Server adapter.
 
-Platform docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
+Platform docs: https://ampliia.com/en/docs/user-guide/messaging/
 
 ### Sessions
 
@@ -355,7 +357,7 @@ Edit with `hermes config edit` or `hermes config set section.key value`.
 | `delegation` | `model`, `provider`, `base_url`, `api_key`, `max_iterations` (50), `reasoning_effort` |
 | `checkpoints` | `enabled`, `max_snapshots` (50) |
 
-Full config reference: https://hermes-agent.nousresearch.com/docs/user-guide/configuration
+Full config reference: https://ampliia.com/en/docs/user-guide/configuration
 
 ### Providers
 
@@ -386,7 +388,7 @@ Full config reference: https://hermes-agent.nousresearch.com/docs/user-guide/con
 | Custom endpoint | Config | `model.base_url` + `model.api_key` in config.yaml |
 | GitHub Copilot ACP | External | `COPILOT_CLI_PATH` or Copilot CLI |
 
-Full provider docs: https://hermes-agent.nousresearch.com/docs/integrations/providers
+Full provider docs: https://ampliia.com/en/docs/integrations/providers
 
 ### Toolsets
 
@@ -650,18 +652,18 @@ hermes config set auxiliary.vision.model <model_name>
 
 | Looking for... | Location |
 |----------------|----------|
-| Config options | `hermes config edit` or [Configuration docs](https://hermes-agent.nousresearch.com/docs/user-guide/configuration) |
-| Available tools | `hermes tools list` or [Tools reference](https://hermes-agent.nousresearch.com/docs/reference/tools-reference) |
-| Slash commands | `/help` in session or [Slash commands reference](https://hermes-agent.nousresearch.com/docs/reference/slash-commands) |
-| Skills catalog | `hermes skills browse` or [Skills catalog](https://hermes-agent.nousresearch.com/docs/reference/skills-catalog) |
-| Provider setup | `hermes model` or [Providers guide](https://hermes-agent.nousresearch.com/docs/integrations/providers) |
-| Platform setup | `hermes gateway setup` or [Messaging docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/) |
-| MCP servers | `hermes mcp list` or [MCP guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) |
-| Profiles | `hermes profile list` or [Profiles docs](https://hermes-agent.nousresearch.com/docs/user-guide/profiles) |
-| Cron jobs | `hermes cron list` or [Cron docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron) |
-| Memory | `hermes memory status` or [Memory docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) |
-| Env variables | `hermes config env-path` or [Env vars reference](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) |
-| CLI commands | `hermes --help` or [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) |
+| Config options | `hermes config edit` or [Configuration docs](https://ampliia.com/en/docs/user-guide/configuration) |
+| Available tools | `hermes tools list` or [Tools reference](https://ampliia.com/en/docs/reference/tools-reference) |
+| Slash commands | `/help` in session or [Slash commands reference](https://ampliia.com/en/docs/reference/slash-commands) |
+| Skills catalog | `hermes skills browse` or [Skills catalog](https://ampliia.com/en/docs/reference/skills-catalog) |
+| Provider setup | `hermes model` or [Providers guide](https://ampliia.com/en/docs/integrations/providers) |
+| Platform setup | `hermes gateway setup` or [Messaging docs](https://ampliia.com/en/docs/user-guide/messaging/) |
+| MCP servers | `hermes mcp list` or [MCP guide](https://ampliia.com/en/docs/user-guide/features/mcp) |
+| Profiles | `hermes profile list` or [Profiles docs](https://ampliia.com/en/docs/user-guide/profiles) |
+| Cron jobs | `hermes cron list` or [Cron docs](https://ampliia.com/en/docs/user-guide/features/cron) |
+| Memory | `hermes memory status` or [Memory docs](https://ampliia.com/en/docs/user-guide/features/memory) |
+| Env variables | `hermes config env-path` or [Env vars reference](https://ampliia.com/en/docs/reference/environment-variables) |
+| CLI commands | `hermes --help` or [CLI reference](https://ampliia.com/en/docs/reference/cli-commands) |
 | Gateway logs | `~/.hermes/logs/gateway.log` |
 | Session files | `~/.hermes/sessions/` or `hermes sessions browse` |
 | Source code | `~/.hermes/hermes-agent/` |
@@ -670,7 +672,7 @@ hermes config set auxiliary.vision.model <model_name>
 
 ## Contributor Quick Reference
 
-For occasional contributors and PR authors. Full developer docs: https://hermes-agent.nousresearch.com/docs/developer-guide/
+For occasional contributors and PR authors. Full developer docs: https://ampliia.com/en/docs/developer-guide/
 
 ### Project Layout
 

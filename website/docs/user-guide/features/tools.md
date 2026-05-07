@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: "Tools & Toolsets"
-description: "Overview of Hermes Agent's tools — what's available, how toolsets work, and terminal backends"
+description: "Overview of Coorporate Hermes' tools — what's available, how toolsets work, and terminal backends"
 ---
 
 # Tools & Toolsets
@@ -125,7 +125,7 @@ hermes config set terminal.backend modal
 ### Vercel Sandbox
 
 ```bash
-pip install 'hermes-agent[vercel]'
+pip install 'coorporate-hermes[vercel]'
 hermes config set terminal.backend vercel_sandbox
 hermes config set terminal.vercel_runtime node24
 ```

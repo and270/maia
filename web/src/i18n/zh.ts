@@ -49,12 +49,12 @@ export const zh: Translations = {
   },
 
   app: {
-    brand: "Hermes Agent",
-    brandShort: "HA",
+    brand: "Coorporate Hermes",
+    brandShort: "CH",
     closeNavigation: "关闭导航",
     closeModelTools: "关闭模型与工具",
     footer: {
-      org: "Nous Research",
+      org: "AmpliIA",
     },
     activeSessionsLabel: "活跃会话：",
     gatewayStatusLabel: "网关状态：",
@@ -72,8 +72,10 @@ export const zh: Translations = {
       cron: "定时任务",
       documentation: "文档",
       keys: "密钥",
+      knowledge: "知识治理",
       logs: "日志",
       models: "模型",
+      onboarding: "入门",
       profiles: "多Agent配置",
       plugins: "插件管理",
       sessions: "会话",

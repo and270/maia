@@ -419,6 +419,188 @@ def _normalize_workdir(workdir: Optional[str]) -> Optional[str]:
     return str(resolved)
 
 
+def _normalize_authorization(authorization: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """Normalize a cron human-authorization node definition.
+
+    Supported shapes:
+      - None / false: no authorization gate
+      - true: require approval by the default authorizer role
+      - {"required": true, "roles": ["manager"], "users": ["slack:U123"]}
+    """
+    if authorization in (None, False, "", []):
+        return None
+    if authorization is True:
+        data: Dict[str, Any] = {"required": True}
+    elif isinstance(authorization, dict):
+        data = dict(authorization)
+    else:
+        raise ValueError("authorization must be a boolean or object")
+
+    required = bool(data.get("required", True))
+    if not required:
+        return None
+
+    def _as_list(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [p.strip() for p in value.split(",") if p.strip()]
+        if isinstance(value, list):
+            return [str(p).strip() for p in value if str(p).strip()]
+        return [str(value).strip()] if str(value).strip() else []
+
+    status = str(data.get("status") or "pending").strip().lower()
+    if status not in {"pending", "approved", "denied"}:
+        status = "pending"
+
+    normalized = {
+        "required": True,
+        "roles": _as_list(data.get("roles") or data.get("role")),
+        "users": _as_list(data.get("users") or data.get("user")),
+        "status": status,
+        "requested_at": data.get("requested_at"),
+        "approved_at": data.get("approved_at"),
+        "approved_by": data.get("approved_by"),
+        "denied_at": data.get("denied_at"),
+        "denied_by": data.get("denied_by"),
+        "note": data.get("note"),
+    }
+    return normalized
+
+
+def job_requires_authorization(job: Dict[str, Any]) -> bool:
+    """Return True when a due job must pause for human authorization."""
+    authorization = _normalize_authorization(job.get("authorization"))
+    return bool(authorization and authorization.get("status") != "approved")
+
+
+def _audit_cron_authorization(
+    event_type: str,
+    job: Dict[str, Any],
+    *,
+    actor: Optional[str] = None,
+    note: Optional[str] = None,
+) -> None:
+    try:
+        from agent.audit_log import record_audit_event
+
+        auth = _normalize_authorization(job.get("authorization")) or {}
+        record_audit_event(
+            f"cron.authorization_{event_type}",
+            actor=actor,
+            action=f"cron.authorization.{event_type}",
+            resource=f"cron:{job.get('id')}",
+            outcome=event_type,
+            reason=note,
+            metadata={
+                "job_id": job.get("id"),
+                "job_name": job.get("name"),
+                "roles": auth.get("roles") or [],
+                "users": auth.get("users") or [],
+                "status": auth.get("status"),
+            },
+        )
+    except Exception:
+        pass
+
+
+def request_job_authorization(job_id: str) -> Optional[Dict[str, Any]]:
+    """Pause a due job at its authorization node."""
+    with _jobs_file_lock:
+        jobs = load_jobs()
+        for i, job in enumerate(jobs):
+            if job["id"] != job_id:
+                continue
+            authorization = _normalize_authorization(job.get("authorization")) or {
+                "required": True,
+                "roles": [],
+                "users": [],
+                "status": "pending",
+            }
+            authorization["status"] = "pending"
+            authorization["requested_at"] = _hermes_now().isoformat()
+            authorization["approved_at"] = None
+            authorization["approved_by"] = None
+            authorization["denied_at"] = None
+            authorization["denied_by"] = None
+            job["authorization"] = authorization
+            job["enabled"] = False
+            job["state"] = "awaiting_authorization"
+            job["paused_at"] = authorization["requested_at"]
+            job["paused_reason"] = "awaiting human authorization"
+            job["next_run_at"] = None
+            jobs[i] = job
+            save_jobs(jobs)
+            _audit_cron_authorization("requested", job)
+            return _apply_skill_fields(job)
+    return None
+
+
+def authorize_job(
+    job_id: str,
+    approve: bool,
+    *,
+    actor: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Approve or deny a paused cron authorization node."""
+    with _jobs_file_lock:
+        jobs = load_jobs()
+        for i, job in enumerate(jobs):
+            if job["id"] != job_id:
+                continue
+            authorization = _normalize_authorization(job.get("authorization"))
+            if not authorization:
+                raise ValueError(f"Job '{job_id}' does not require authorization")
+            now = _hermes_now().isoformat()
+            authorization["note"] = note
+            if approve:
+                authorization["status"] = "approved"
+                authorization["approved_at"] = now
+                authorization["approved_by"] = actor
+                authorization["denied_at"] = None
+                authorization["denied_by"] = None
+                job["enabled"] = True
+                job["state"] = "scheduled"
+                job["paused_at"] = None
+                job["paused_reason"] = None
+                job["next_run_at"] = now
+            else:
+                authorization["status"] = "denied"
+                authorization["denied_at"] = now
+                authorization["denied_by"] = actor
+                job["enabled"] = False
+                job["state"] = "authorization_denied"
+                job["paused_at"] = now
+                job["paused_reason"] = note or "authorization denied"
+                job["next_run_at"] = None
+            job["authorization"] = authorization
+            jobs[i] = job
+            save_jobs(jobs)
+            _audit_cron_authorization(
+                "approved" if approve else "denied",
+                job,
+                actor=actor,
+                note=note,
+            )
+            return _apply_skill_fields(job)
+    return None
+
+
+def _reset_authorization_for_next_run(job: Dict[str, Any]) -> None:
+    authorization = _normalize_authorization(job.get("authorization"))
+    if not authorization:
+        return
+    authorization["status"] = "pending"
+    authorization["requested_at"] = None
+    authorization["approved_at"] = None
+    authorization["approved_by"] = None
+    authorization["denied_at"] = None
+    authorization["denied_by"] = None
+    authorization["note"] = None
+    job["authorization"] = authorization
+
+
 def create_job(
     prompt: Optional[str],
     schedule: str,
@@ -436,6 +618,7 @@ def create_job(
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
     no_agent: bool = False,
+    authorization: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -480,6 +663,8 @@ def create_job(
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
                 watchdogs and periodic alerts that don't need LLM reasoning.
+        authorization: Optional human-in-the-loop gate. When required, a due
+                run pauses until an allowed role/user approves it.
 
     Returns:
         The created job dict
@@ -514,6 +699,7 @@ def create_job(
     normalized_toolsets = normalized_toolsets or None
     normalized_workdir = _normalize_workdir(workdir)
     normalized_no_agent = bool(no_agent)
+    normalized_authorization = _normalize_authorization(authorization)
 
     # no_agent jobs are meaningless without a script — the script IS the job.
     # Surface this as a clear ValueError at create time so bad configs never
@@ -566,6 +752,7 @@ def create_job(
         "origin": origin,  # Tracks where job was created for "origin" delivery
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
+        "authorization": normalized_authorization,
     }
 
     jobs = load_jobs()
@@ -607,6 +794,9 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 updates["workdir"] = None
             else:
                 updates["workdir"] = _normalize_workdir(_wd)
+
+        if "authorization" in updates:
+            updates["authorization"] = _normalize_authorization(updates["authorization"])
 
         updated = _apply_skill_fields({**job, **updates})
         schedule_changed = "schedule" in updates
@@ -766,6 +956,8 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                         job["state"] = "completed"
                 elif job.get("state") != "paused":
                     job["state"] = "scheduled"
+
+                _reset_authorization_for_next_run(job)
 
                 save_jobs(jobs)
                 return

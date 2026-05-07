@@ -73,8 +73,10 @@ export interface Translations {
       cron: string;
       documentation: string;
       keys: string;
+      knowledge: string;
       logs: string;
       models: string;
+      onboarding: string;
       profiles: string;
       plugins: string;
       sessions: string;

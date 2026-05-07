@@ -201,7 +201,7 @@ Returns a machine-readable description of the API server's stable surface for ex
 ```json
 {
   "object": "hermes.api_server.capabilities",
-  "platform": "hermes-agent",
+  "platform": "coorporate-hermes",
   "model": "hermes-agent",
   "auth": {"type": "bearer", "required": true},
   "features": {

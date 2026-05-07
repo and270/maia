@@ -2,7 +2,7 @@
 sidebar_position: 8
 sidebar_label: "SMS (Twilio)"
 title: "SMS (Twilio)"
-description: "Set up Hermes Agent as an SMS chatbot via Twilio"
+description: "Set up Coorporate Hermes as an SMS chatbot via Twilio"
 ---
 
 # SMS Setup (Twilio)
@@ -20,7 +20,7 @@ The SMS gateway shares credentials with the optional [telephony skill](/docs/ref
 - **Twilio account** — [Sign up at twilio.com](https://www.twilio.com/try-twilio) (free trial available)
 - **A Twilio phone number** with SMS capability
 - **A publicly accessible server** — Twilio sends webhooks to your server when SMS arrives
-- **aiohttp** — `pip install 'hermes-agent[sms]'`
+- **aiohttp** — `pip install 'coorporate-hermes[sms]'`
 
 ---
 

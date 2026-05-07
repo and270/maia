@@ -1,20 +1,20 @@
 {
-  "name": "hermes-agent",
+  "name": "coorporate-hermes",
   "version": "1.0.0",
-  "description": "An AI agent with advanced tool-calling capabilities, featuring a flexible toolsets system for organizing and managing tools.",
+  "description": "Private one-tenant corporate AI assistant with governed gateways, RBAC folder access, and human-in-the-loop scheduled workflows.",
   "private": true,
   "scripts": {
-    "postinstall": "echo '✅ Browser tools ready. Run: python run_agent.py --help'"
+    "postinstall": "echo 'Browser tools ready. Run: python run_agent.py --help'"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NousResearch/Hermes-Agent.git"
+    "url": "git+https://github.com/andreloureiro/coorporate-hermes.git"
   },
-  "license": "MIT",
+  "license": "UNLICENSED",
   "bugs": {
-    "url": "https://github.com/NousResearch/Hermes-Agent/issues"
+    "url": "https://github.com/andreloureiro/coorporate-hermes/issues"
   },
-  "homepage": "https://github.com/NousResearch/Hermes-Agent#readme",
+  "homepage": "https://github.com/andreloureiro/coorporate-hermes#readme",
   "dependencies": {
     "@askjo/camofox-browser": "^1.5.2",
     "agent-browser": "^0.26.0"

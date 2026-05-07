@@ -1,12 +1,12 @@
 ---
-title: "Hermes Agent Skill Authoring — Author in-repo SKILL"
-sidebar_label: "Hermes Agent Skill Authoring"
+title: "Coorporate Hermes Skill Authoring — Author in-repo SKILL"
+sidebar_label: "Coorporate Hermes Skill Authoring"
 description: "Author in-repo SKILL"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Hermes Agent Skill Authoring
+# Coorporate Hermes Skill Authoring
 
 Author in-repo SKILL.md: frontmatter, validator, structure.
 
@@ -17,7 +17,7 @@ Author in-repo SKILL.md: frontmatter, validator, structure.
 | Source | Bundled (installed by default) |
 | Path | `skills/software-development/hermes-agent-skill-authoring` |
 | Version | `1.0.0` |
-| Author | Hermes Agent |
+| Author | Coorporate Hermes |
 | License | MIT |
 | Tags | `skills`, `authoring`, `hermes-agent`, `conventions`, `skill-md` |
 | Related skills | [`writing-plans`](/docs/user-guide/skills/bundled/software-development/software-development-writing-plans), [`requesting-code-review`](/docs/user-guide/skills/bundled/software-development/software-development-requesting-code-review) |
@@ -61,7 +61,7 @@ Peer-matched shape used by every skill under `skills/software-development/`:
 name: my-skill-name               # lowercase, hyphens, ≤64 chars (MAX_NAME_LENGTH)
 description: Use when <trigger>. <one-line behavior>.
 version: 1.0.0
-author: Hermes Agent
+author: Coorporate Hermes
 license: MIT
 metadata:
   hermes:

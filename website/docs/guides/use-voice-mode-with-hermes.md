@@ -57,19 +57,19 @@ If that is not solid yet, fix text mode first.
 ### CLI microphone + playback
 
 ```bash
-pip install "hermes-agent[voice]"
+pip install "coorporate-hermes[voice]"
 ```
 
 ### Messaging platforms
 
 ```bash
-pip install "hermes-agent[messaging]"
+pip install "coorporate-hermes[messaging]"
 ```
 
 ### Premium ElevenLabs TTS
 
 ```bash
-pip install "hermes-agent[tts-premium]"
+pip install "coorporate-hermes[tts-premium]"
 ```
 
 ### Local NeuTTS (optional)
@@ -81,7 +81,7 @@ python -m pip install -U neutts[all]
 ### Everything
 
 ```bash
-pip install "hermes-agent[all]"
+pip install "coorporate-hermes[all]"
 ```
 
 ## Step 3: install system dependencies
@@ -440,7 +440,7 @@ By default, the bot needs an `@mention` in Discord server text channels unless c
 If you want the shortest path to success:
 
 1. get text Hermes working
-2. install `hermes-agent[voice]`
+2. install `coorporate-hermes[voice]`
 3. use CLI voice mode with local STT + Edge TTS
 4. then enable `/voice on` in Telegram or Discord
 5. only after that, try Discord VC mode

@@ -142,7 +142,7 @@ def get_managed_update_command() -> Optional[str]:
     """Return the preferred upgrade command for a managed install."""
     managed_system = get_managed_system()
     if managed_system == "Homebrew":
-        return "brew upgrade hermes-agent"
+        return "brew upgrade coorporate-hermes"
     if managed_system == "NixOS":
         return "sudo nixos-rebuild switch"
     return None
@@ -150,7 +150,7 @@ def get_managed_update_command() -> Optional[str]:
 
 def recommended_update_command() -> str:
     """Return the best update command for the current installation."""
-    return get_managed_update_command() or "hermes update"
+    return get_managed_update_command() or "coorporate update"
 
 
 def format_managed_message(action: str = "modify this Hermes installation") -> str:
@@ -163,7 +163,7 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
         return (
             f"Cannot {action}: this Hermes installation is managed by NixOS "
             f"(HERMES_MANAGED={env_hint}).\n"
-            "Edit services.hermes-agent.settings in your configuration.nix and run:\n"
+            "Edit services.coorporate-hermes.settings in your configuration.nix and run:\n"
             "  sudo nixos-rebuild switch"
         )
 
@@ -173,7 +173,7 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
             f"Cannot {action}: this Hermes installation is managed by Homebrew "
             f"(HERMES_MANAGED={env_hint}).\n"
             "Use:\n"
-            "  brew upgrade hermes-agent"
+            "  brew upgrade coorporate-hermes"
         )
 
     return (
@@ -862,6 +862,72 @@ DEFAULT_CONFIG = {
     "privacy": {
         "redact_pii": False,  # When True, hash user IDs and strip phone numbers from LLM context
     },
+
+    # Enterprise governance for private one-tenant deployments.
+    #
+    # When enabled, gateway identities can be mapped to roles, folder policies
+    # can gate read/write tools, and cron jobs can pause on human
+    # authorization nodes before executing.
+    "governance": {
+        "enabled": False,
+        "tenant_id": "default",
+        "default_role": "viewer",
+        # Later roles inherit earlier roles.
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        # Users are keyed by "platform:user_id" (preferred) or plain user_id.
+        # Example:
+        # users:
+        #   "slack:U123":
+        #     name: "Ava Finance"
+        #     roles: ["manager"]
+        #     teams: ["finance"]
+        "users": {},
+        # default_file_policy: allow keeps existing installs compatible.
+        # Set to "deny" in production and explicitly allow folders below.
+        "default_file_policy": "allow",
+        # Example:
+        # folder_policies:
+        #   - path: "/srv/company/finance"
+        #     read_roles: ["viewer"]
+        #     write_roles: ["manager"]
+        #   - path: "/srv/company/hr"
+        #     read_roles: ["admin"]
+        #     write_roles: ["admin"]
+        "folder_policies": [],
+        "gateway": {
+            # Defaults preserve the existing multi-user gateway behavior:
+            # shared regular groups are isolated per user, while explicit
+            # threads/topics are shared by all participants.
+            "group_sessions_per_user": True,
+            "thread_sessions_per_user": False,
+        },
+        "cron": {
+            # If a cron authorization node omits roles, these roles may
+            # approve/deny the node.  Role hierarchy is honored.
+            "default_authorizer_roles": ["admin"],
+        },
+    },
+
+    # Approved corporate/team memory and skill layers.
+    #
+    # User memory and user skills keep the upstream behavior under
+    # <HERMES_HOME>/memories and <HERMES_HOME>/skills.  Corporate knowledge
+    # lives under <HERMES_HOME>/corporate/ and is injected into every
+    # conversation.  Team knowledge lives under <HERMES_HOME>/teams/<team>/ and
+    # is injected for actors assigned to that team in governance.users.
+    # Corporate/team edits are proposal-first and require a human approval in
+    # the Knowledge panel/API before the files are changed.
+    "knowledge": {
+        "enabled": True,
+        "max_memory_chars": 12000,
+        "max_skill_chars": 24000,
+        "corporate": {
+            "approver_roles": ["admin"],
+        },
+        "team": {
+            "approver_roles": ["manager", "admin"],
+        },
+    },
     
     # Text-to-speech configuration
     # Each provider supports an optional `max_text_length:` override for the
@@ -1278,6 +1344,22 @@ DEFAULT_CONFIG = {
         "backup_count": 3,     # Number of rotated backup files to keep
     },
 
+    # Corporate observability — append-only JSONL audit trail plus optional
+    # webhook export for SIEM collectors.  The audit log focuses on governance
+    # decisions, cron authorization checkpoints, and other enterprise controls;
+    # general runtime diagnostics remain in logging.agent/errors/gateway.
+    "observability": {
+        "enabled": True,
+        "audit_log_enabled": True,
+        # Empty uses <HERMES_HOME>/logs/audit.jsonl. Relative paths resolve
+        # under HERMES_HOME; absolute paths are honored for mounted log volumes.
+        "audit_log_path": "",
+        "redact_sensitive_values": True,
+        "siem_webhook_url": "",
+        "siem_timeout_seconds": 2,
+        "retention_days": 180,
+    },
+
     # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
     # curated model lists for OpenRouter and Nous Portal from this URL,
     # falling back to the in-repo snapshot on network failure.  Lets us
@@ -1285,7 +1367,7 @@ DEFAULT_CONFIG = {
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
         "enabled": True,
-        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+        "url": "https://raw.githubusercontent.com/AmpliIA/coorporate-hermes/main/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.
@@ -1360,7 +1442,7 @@ DEFAULT_CONFIG = {
     },
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 23,
+    "_config_version": 26,
 }
 
 # =============================================================================

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cron.jobs import (
+    authorize_job,
     create_job,
     get_job,
     list_jobs,
@@ -251,6 +252,17 @@ def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
         result["enabled_toolsets"] = job["enabled_toolsets"]
     if job.get("workdir"):
         result["workdir"] = job["workdir"]
+    if job.get("authorization"):
+        auth = dict(job["authorization"])
+        result["authorization"] = {
+            "required": bool(auth.get("required")),
+            "roles": auth.get("roles") or [],
+            "users": auth.get("users") or [],
+            "status": auth.get("status", "pending"),
+            "requested_at": auth.get("requested_at"),
+            "approved_by": auth.get("approved_by"),
+            "denied_by": auth.get("denied_by"),
+        }
     return result
 
 
@@ -274,6 +286,8 @@ def cronjob(
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
     no_agent: Optional[bool] = None,
+    authorization: Optional[Dict[str, Any]] = None,
+    approve: Optional[bool] = None,
     task_id: str = None,
 ) -> str:
     """Unified cron job management tool."""
@@ -341,6 +355,7 @@ def cronjob(
                 enabled_toolsets=enabled_toolsets or None,
                 workdir=_normalize_optional_job_value(workdir),
                 no_agent=_no_agent,
+                authorization=authorization,
             )
             return json.dumps(
                 {
@@ -397,6 +412,37 @@ def cronjob(
         if normalized == "resume":
             updated = resume_job(job_id)
             return json.dumps({"success": True, "job": _format_job(updated)}, indent=2)
+
+        if normalized in {"authorize", "approve", "deny"}:
+            should_approve = normalized != "deny" if approve is None else bool(approve)
+            from agent.governance import actor_display, can_authorize, current_actor
+
+            auth = job.get("authorization")
+            if not auth:
+                return tool_error(f"Job '{job_id}' does not require authorization.", success=False)
+            allowed, reason_text = can_authorize(auth)
+            if not allowed:
+                return tool_error(reason_text, success=False)
+            actor = actor_display(current_actor())
+            updated = authorize_job(
+                job_id,
+                should_approve,
+                actor=actor,
+                note=reason,
+            )
+            return json.dumps(
+                {
+                    "success": True,
+                    "approved": should_approve,
+                    "job": _format_job(updated),
+                    "message": (
+                        f"Cron job '{job['name']}' authorized and queued."
+                        if should_approve
+                        else f"Cron job '{job['name']}' denied."
+                    ),
+                },
+                indent=2,
+            )
 
         if normalized in {"run", "run_now", "trigger"}:
             updated = trigger_job(job_id)
@@ -468,6 +514,8 @@ def cronjob(
                             success=False,
                         )
                 updates["no_agent"] = target_no_agent
+            if authorization is not None:
+                updates["authorization"] = authorization
             if repeat is not None:
                 # Normalize: treat 0 or negative as None (infinite)
                 normalized_repeat = None if repeat <= 0 else repeat
@@ -500,6 +548,7 @@ CRONJOB_SCHEMA = {
 Use action='create' to schedule a new job from a prompt or one or more skills.
 Use action='list' to inspect jobs.
 Use action='update', 'pause', 'resume', 'remove', or 'run' to manage an existing job.
+Use action='authorize' or action='deny' to continue or reject a job paused at a human authorization node.
 
 To stop a job the user no longer wants: first action='list' to find the job_id, then action='remove' with that job_id. Never guess job IDs — always list first.
 
@@ -517,7 +566,7 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
         "properties": {
             "action": {
                 "type": "string",
-                "description": "One of: create, list, update, pause, resume, remove, run"
+                "description": "One of: create, list, update, pause, resume, remove, run, authorize, deny"
             },
             "job_id": {
                 "type": "string",
@@ -607,6 +656,19 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                 "type": "string",
                 "description": "Optional absolute path to run the job from. When set, AGENTS.md / CLAUDE.md / .cursorrules from that directory are injected into the system prompt, and the terminal/file/code_exec tools use it as their working directory — useful for running a job inside a specific project repo. Must be an absolute path that exists. When unset (default), preserves the original behaviour: no project context files, tools use the scheduler's cwd. On update, pass an empty string to clear. Jobs with workdir run sequentially (not parallel) to keep per-job directories isolated."
             },
+            "authorization": {
+                "type": "object",
+                "description": "Optional human-in-the-loop gate for create/update. When required, the scheduler pauses the job before execution and waits for action='authorize'. Shape: {\"required\": true, \"roles\": [\"manager\"], \"users\": [\"slack:U123\"]}. If roles/users are omitted, governance.cron.default_authorizer_roles applies.",
+                "properties": {
+                    "required": {"type": "boolean", "default": True},
+                    "roles": {"type": "array", "items": {"type": "string"}},
+                    "users": {"type": "array", "items": {"type": "string"}}
+                }
+            },
+            "approve": {
+                "type": "boolean",
+                "description": "For action='authorize' only. Defaults to true. Set false to deny."
+            },
         },
         "required": ["action"]
     }
@@ -655,6 +717,8 @@ registry.register(
         enabled_toolsets=args.get("enabled_toolsets"),
         workdir=args.get("workdir"),
         no_agent=args.get("no_agent"),
+        authorization=args.get("authorization"),
+        approve=args.get("approve"),
         task_id=kw.get("task_id"),
     ))(),
     check_fn=check_cronjob_requirements,

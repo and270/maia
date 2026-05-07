@@ -1,27 +1,31 @@
 ---
 sidebar_position: 2
 title: "Installation"
-description: "Install Hermes Agent on Linux, macOS, WSL2, or Android via Termux"
+description: "Install Coorporate Hermes on Linux, macOS, WSL2, or Android via Termux"
 ---
 
 # Installation
 
-Get Hermes Agent up and running in under two minutes with the one-line installer.
+Get Coorporate Hermes up and running in under two minutes with the one-line installer.
 
 ## Quick Install
 
 ### Linux / macOS / WSL2
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 ### Android / Termux
 
-Hermes now ships a Termux-aware installer path too:
+Coorporate Hermes ships a Termux-aware installer path too:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 The installer detects Termux automatically and switches to a tested Android flow:
@@ -34,7 +38,7 @@ The installer detects Termux automatically and switches to a tested Android flow
 If you want the fully explicit path, follow the dedicated [Termux guide](./termux.md).
 
 :::warning Windows
-Native Windows is **not supported**. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Hermes Agent from there. The install command above works inside WSL2.
+Native Windows is **not supported**. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Coorporate Hermes from there. The install command above works inside WSL2.
 :::
 
 ### What the Installer Does

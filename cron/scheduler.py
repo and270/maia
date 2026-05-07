@@ -120,7 +120,14 @@ _LEGACY_HOME_TARGET_ENV_VARS = {
     "QQBOT_HOME_CHANNEL": "QQ_HOME_CHANNEL",
 }
 
-from cron.jobs import get_due_jobs, mark_job_run, save_job_output, advance_next_run
+from cron.jobs import (
+    get_due_jobs,
+    job_requires_authorization,
+    mark_job_run,
+    request_job_authorization,
+    save_job_output,
+    advance_next_run,
+)
 
 # Sentinel: when a cron agent has nothing new to report, it can start its
 # response with this marker to suppress delivery.  Output is still saved
@@ -1612,6 +1619,43 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
 
         if verbose and not due_jobs:
             logger.info("%s - No jobs due", _hermes_now().strftime('%H:%M:%S'))
+            return 0
+
+        authorization_jobs = [j for j in due_jobs if job_requires_authorization(j)]
+        runnable_jobs = [j for j in due_jobs if not job_requires_authorization(j)]
+        for job in authorization_jobs:
+            updated = request_job_authorization(job["id"]) or job
+            auth = updated.get("authorization") or {}
+            roles = auth.get("roles") or []
+            users = auth.get("users") or []
+            auth_message = (
+                f"Authorization required for cron job '{updated.get('name', updated['id'])}'.\n\n"
+                f"Job ID: {updated['id']}\n"
+                f"Required roles: {', '.join(roles) if roles else 'default authorizer roles'}\n"
+                f"Allowed users: {', '.join(users) if users else 'none'}\n\n"
+                "Approve from an authorized gateway or CLI session with: "
+                f"cronjob(action='authorize', job_id='{updated['id']}')\n"
+                "Deny with: "
+                f"cronjob(action='deny', job_id='{updated['id']}')"
+            )
+            try:
+                _deliver_result(updated, auth_message, adapters=adapters, loop=loop)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to deliver authorization request for cron job %s: %s",
+                    updated["id"],
+                    exc,
+                )
+
+        due_jobs = runnable_jobs
+
+        if not due_jobs:
+            if verbose and authorization_jobs:
+                logger.info(
+                    "%s - %d job(s) awaiting authorization",
+                    _hermes_now().strftime('%H:%M:%S'),
+                    len(authorization_jobs),
+                )
             return 0
 
         if verbose:

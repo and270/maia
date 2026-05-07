@@ -1,7 +1,7 @@
 ---
 sidebar_position: 3
 title: "FAQ & Troubleshooting"
-description: "Frequently asked questions and solutions to common issues with Hermes Agent"
+description: "Frequently asked questions and solutions to common issues with Coorporate Hermes"
 ---
 
 # FAQ & Troubleshooting
@@ -14,10 +14,10 @@ Quick answers and fixes for the most common questions and issues.
 
 ### What LLM providers work with Hermes?
 
-Hermes Agent works with any OpenAI-compatible API. Supported providers include:
+Coorporate Hermes works with any OpenAI-compatible API. Supported providers include:
 
 - **[OpenRouter](https://openrouter.ai/)** — access hundreds of models through one API key (recommended for flexibility)
-- **Nous Portal** — Nous Research's own inference endpoint
+- **Nous Portal** — optional inference endpoint supported by the upstream provider stack
 - **OpenAI** — GPT-4o, o1, o3, etc.
 - **Anthropic** — Claude models (via OpenRouter or compatible proxy)
 - **Google** — Gemini models (via OpenRouter or compatible proxy)
@@ -30,10 +30,12 @@ Set your provider with `hermes model` or by editing `~/.hermes/.env`. See the [E
 
 ### Does it work on Windows?
 
-**Not natively.** Hermes Agent requires a Unix-like environment. On Windows, install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Hermes from inside it. The standard install command works perfectly in WSL2:
+**Not natively.** Coorporate Hermes requires a Unix-like environment. On Windows, install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Hermes from inside it. The standard install command works perfectly in WSL2:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 ### I run Hermes in WSL2. What's the best way to control my normal Windows Chrome?
@@ -61,7 +63,9 @@ Yes — Hermes now has a tested Termux install path for Android phones.
 Quick install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 For the fully explicit manual steps, supported extras, and current limitations, see the [Termux guide](../getting-started/termux.md).
@@ -70,7 +74,7 @@ Important caveat: the full `.[all]` extra is not currently available on Android 
 
 ### Is my data sent anywhere?
 
-API calls go **only to the LLM provider you configure** (e.g., OpenRouter, your local Ollama instance). Hermes Agent does not collect telemetry, usage data, or analytics. Your conversations, memory, and skills are stored locally in `~/.hermes/`.
+API calls go **only to the LLM provider you configure** (e.g., OpenRouter, your local Ollama instance). Coorporate Hermes does not collect telemetry, usage data, or analytics. Your conversations, memory, and skills are stored locally in `~/.hermes/`.
 
 ### Can I use it offline / with local models?
 
@@ -108,11 +112,11 @@ Hermes auto-detects local endpoints and relaxes streaming timeouts (read timeout
 
 ### How much does it cost?
 
-Hermes Agent itself is **free and open-source** (MIT license). You pay only for the LLM API usage from your chosen provider. Local models are completely free to run.
+Coorporate Hermes itself is **free and open-source** (MIT license). You pay only for the LLM API usage from your chosen provider. Local models are completely free to run.
 
 ### Can multiple people use one instance?
 
-Yes. The [messaging gateway](../user-guide/messaging/index.md) lets multiple users interact with the same Hermes Agent instance via Telegram, Discord, Slack, WhatsApp, or Home Assistant. Access is controlled through allowlists (specific user IDs) and DM pairing (first user to message claims access).
+Yes. The [messaging gateway](../user-guide/messaging/index.md) lets multiple users interact with the same Coorporate Hermes instance via Telegram, Discord, Slack, WhatsApp, or Home Assistant. Access is controlled through allowlists (specific user IDs) and DM pairing (first user to message claims access).
 
 ### What's the difference between memory and skills?
 
@@ -225,7 +229,9 @@ source ~/.bashrc
 # If you previously installed with sudo, clean up:
 sudo rm /usr/local/bin/hermes
 # Then re-run the standard installer
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 ---
@@ -437,7 +443,7 @@ Configure in `~/.hermes/config.yaml` under your gateway's settings. See the [Mes
 **Solution:**
 ```bash
 # Install core messaging gateway dependencies
-pip install "hermes-agent[messaging]"  # Telegram, Discord, Slack, and shared gateway deps
+pip install "coorporate-hermes[messaging]"  # Telegram, Discord, Slack, and shared gateway deps
 
 # Check for port conflicts
 lsof -i :8080
@@ -749,9 +755,11 @@ Skills with very long descriptions are truncated to 40 characters in the Telegra
 
 **Solution:**
 
-1. Install Hermes Agent on the new machine:
+1. Install Coorporate Hermes on the new machine:
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+   git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
    ```
 
 2. On the **source machine**, create a full backup:
@@ -855,6 +863,6 @@ If using OpenRouter, make sure your API key has credits. A 400 from OpenRouter o
 
 If your issue isn't covered here:
 
-1. **Search existing issues:** [GitHub Issues](https://github.com/NousResearch/hermes-agent/issues)
-2. **Ask the community:** [Nous Research Discord](https://discord.gg/nousresearch)
+1. **Search existing issues:** [GitHub Issues](https://github.com/AmpliIA/coorporate-hermes/issues)
+2. **Enterprise support:** contact [AmpliIA](https://ampliia.com/en/) for onboarding, support, or deployment review.
 3. **File a bug report:** Include your OS, Python version (`python3 --version`), Hermes version (`hermes --version`), and the full error message

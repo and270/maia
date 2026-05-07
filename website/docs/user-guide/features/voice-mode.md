@@ -1,12 +1,12 @@
 ---
 sidebar_position: 10
 title: "Voice Mode"
-description: "Real-time voice conversations with Hermes Agent — CLI, Telegram, Discord (DMs, text channels, and voice channels)"
+description: "Real-time voice conversations with Coorporate Hermes — CLI, Telegram, Discord (DMs, text channels, and voice channels)"
 ---
 
 # Voice Mode
 
-Hermes Agent supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.
+Coorporate Hermes supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.
 
 If you want a practical setup walkthrough with recommended configurations and real usage patterns, see [Use Voice Mode with Hermes](/docs/guides/use-voice-mode-with-hermes).
 
@@ -14,7 +14,7 @@ If you want a practical setup walkthrough with recommended configurations and re
 
 Before using voice features, make sure you have:
 
-1. **Hermes Agent installed** — `pip install hermes-agent` (see [Installation](/docs/getting-started/installation))
+1. **Coorporate Hermes installed** — `pip install coorporate-hermes` (see [Installation](/docs/getting-started/installation))
 2. **An LLM provider configured** — run `hermes model` or set your preferred provider credentials in `~/.hermes/.env`
 3. **A working base setup** — run `hermes` to verify the agent responds to text before enabling voice
 
@@ -36,19 +36,19 @@ The `~/.hermes/` directory and default `config.yaml` are created automatically t
 
 ```bash
 # CLI voice mode (microphone + audio playback)
-pip install "hermes-agent[voice]"
+pip install "coorporate-hermes[voice]"
 
 # Discord + Telegram messaging (includes discord.py[voice] for VC support)
-pip install "hermes-agent[messaging]"
+pip install "coorporate-hermes[messaging]"
 
 # Premium TTS (ElevenLabs)
-pip install "hermes-agent[tts-premium]"
+pip install "coorporate-hermes[tts-premium]"
 
 # Local TTS (NeuTTS, optional)
 python -m pip install -U neutts[all]
 
 # Everything at once
-pip install "hermes-agent[all]"
+pip install "coorporate-hermes[all]"
 ```
 
 | Extra | Packages | Required For |

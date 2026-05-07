@@ -290,6 +290,25 @@ class TestLoadGatewayConfig:
 
         assert config.thread_sessions_per_user is True
 
+    def test_bridges_gateway_session_policy_from_governance_config(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        config_path = hermes_home / "config.yaml"
+        config_path.write_text(
+            "governance:\n"
+            "  gateway:\n"
+            "    group_sessions_per_user: false\n"
+            "    thread_sessions_per_user: true\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+
+        assert config.group_sessions_per_user is False
+        assert config.thread_sessions_per_user is True
+
     def test_thread_sessions_per_user_defaults_to_false(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()

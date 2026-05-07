@@ -6,7 +6,7 @@ description: "Browser-based dashboard for managing configuration, API keys, sess
 
 # Web Dashboard
 
-The web dashboard is a browser-based UI for managing your Hermes Agent installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
+The web dashboard is a browser-based UI for managing your Coorporate Hermes installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
 
 ## Quick Start
 
@@ -42,10 +42,10 @@ hermes dashboard --no-open
 The default `hermes-agent` install does not ship the HTTP stack or PTY helper — those are optional extras. The **web dashboard** needs FastAPI and Uvicorn (`web` extra). The **Chat** tab also needs `ptyprocess` to spawn the embedded TUI behind a pseudo-terminal (`pty` extra on POSIX). Install both with:
 
 ```bash
-pip install 'hermes-agent[web,pty]'
+pip install 'coorporate-hermes[web,pty]'
 ```
 
-The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install hermes-agent[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
+The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install coorporate-hermes[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
 
 When you run `hermes dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
 
@@ -79,7 +79,7 @@ The **Chat** tab embeds the full Hermes TUI (the same interface you get from `he
 **Prerequisites:**
 
 - Node.js (same requirement as `hermes --tui`; the TUI bundle is built on first launch)
-- `ptyprocess` — installed by the `pty` extra (`pip install 'hermes-agent[web,pty]'`, or `[all]` covers both)
+- `ptyprocess` — installed by the `pty` extra (`pip install 'coorporate-hermes[web,pty]'`, or `[all]` covers both)
 - POSIX kernel (Linux, macOS, or WSL). Native Windows Python is not supported — use WSL.
 
 Close the browser tab and the PTY is reaped cleanly on the server. Re-opening spawns a fresh session.

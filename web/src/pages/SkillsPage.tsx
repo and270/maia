@@ -521,6 +521,11 @@ function SkillRow({
           >
             {skill.name}
           </span>
+          {skill.scope && skill.scope !== "user" && (
+            <Badge tone={skill.scope === "corporate" ? "warning" : "secondary"} className="text-[10px]">
+              {skill.scope}
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
           {skill.description || noDescriptionLabel}

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 3
 title: "Nix & NixOS Setup"
-description: "Install and deploy Hermes Agent with Nix — from quick `nix run` to fully declarative NixOS module with container mode"
+description: "Install and deploy Coorporate Hermes with Nix — from quick `nix run` to fully declarative NixOS module with container mode"
 ---
 
 # Nix & NixOS Setup
 
-Hermes Agent ships a Nix flake with three levels of integration:
+Coorporate Hermes ships a Nix flake with three levels of integration:
 
 | Level | Who it's for | What you get |
 |-------|-------------|--------------|
@@ -35,11 +35,11 @@ No clone needed. Nix fetches, builds, and runs everything:
 
 ```bash
 # Run directly (builds on first use, cached after)
-nix run github:NousResearch/hermes-agent -- setup
-nix run github:NousResearch/hermes-agent -- chat
+nix run github:AmpliIA/coorporate-hermes -- setup
+nix run github:AmpliIA/coorporate-hermes -- chat
 
 # Or install persistently
-nix profile install github:NousResearch/hermes-agent
+nix profile install github:AmpliIA/coorporate-hermes
 hermes setup
 hermes chat
 ```
@@ -50,7 +50,7 @@ After `nix profile install`, `hermes`, `hermes-agent`, and `hermes-acp` are on y
 <summary><strong>Building from a local clone</strong></summary>
 
 ```bash
-git clone https://github.com/NousResearch/hermes-agent.git
+git clone https://github.com/AmpliIA/coorporate-hermes.git
 cd hermes-agent
 nix build
 ./result/bin/hermes setup
@@ -75,7 +75,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    hermes-agent.url = "github:NousResearch/hermes-agent";
+    hermes-agent.url = "github:AmpliIA/coorporate-hermes";
   };
 
   outputs = { nixpkgs, hermes-agent, ... }: {
@@ -95,7 +95,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 ```nix
 # configuration.nix
 { config, ... }: {
-  services.hermes-agent = {
+  services.coorporate-hermes = {
     enable = true;
     settings.model.default = "anthropic/claude-sonnet-4";
     environmentFiles = [ config.sops.secrets."hermes-env".path ];
@@ -114,7 +114,7 @@ echo "OPENROUTER_API_KEY=sk-or-your-key" | sudo install -m 0600 -o hermes /dev/s
 ```
 
 ```nix
-services.hermes-agent.environmentFiles = [ "/var/lib/hermes/env" ];
+services.coorporate-hermes.environmentFiles = [ "/var/lib/hermes/env" ];
 ```
 :::
 
@@ -135,7 +135,7 @@ When `container.enable = true` and `addToSystemPackages = true`, **every** `herm
 Set `container.hostUsers` to create a `~/.hermes` symlink to the service state directory, so the host CLI and the container share sessions, config, and memories:
 
 ```nix
-services.hermes-agent = {
+services.coorporate-hermes = {
   container.enable = true;
   container.hostUsers = [ "your-username" ];
   addToSystemPackages = true;
@@ -191,7 +191,7 @@ To enable container mode, add one line:
 
 ```nix
 {
-  services.hermes-agent = {
+  services.coorporate-hermes = {
     enable = true;
     container.enable = true;
     # ... rest of config is identical
@@ -213,14 +213,14 @@ The `settings` option accepts an arbitrary attrset that is rendered as `config.y
 
 ```nix
 # base.nix
-services.hermes-agent.settings = {
+services.coorporate-hermes.settings = {
   model.default = "anthropic/claude-sonnet-4";
   toolsets = [ "all" ];
   terminal = { backend = "local"; timeout = 180; };
 };
 
 # personality.nix
-services.hermes-agent.settings = {
+services.coorporate-hermes.settings = {
   display = { compact = false; personality = "kawaii"; };
   memory = { memory_enabled = true; user_profile_enabled = true; };
 };
@@ -241,7 +241,7 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
 
 ```nix
 { config, ... }: {
-  services.hermes-agent = {
+  services.coorporate-hermes = {
     enable = true;
     container.enable = true;
 
@@ -303,7 +303,7 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
 If you'd rather manage `config.yaml` entirely outside Nix, use `configFile`:
 
 ```nix
-services.hermes-agent.configFile = /etc/hermes/config.yaml;
+services.coorporate-hermes.configFile = /etc/hermes/config.yaml;
 ```
 
 This bypasses `settings` entirely — no merge, no generation. The file is copied as-is to `$HERMES_HOME/config.yaml` on each activation.
@@ -317,7 +317,7 @@ Quick reference for the most common things Nix users want to customize:
 | Change the LLM model | `settings.model.default` | `"anthropic/claude-sonnet-4"` |
 | Use a different provider endpoint | `settings.model.base_url` | `"https://openrouter.ai/api/v1"` |
 | Add API keys | `environmentFiles` | `[ config.sops.secrets."hermes-env".path ]` |
-| Give the agent a personality | `${services.hermes-agent.stateDir}/.hermes/SOUL.md` | manage the file directly |
+| Give the agent a personality | `${services.coorporate-hermes.stateDir}/.hermes/SOUL.md` | manage the file directly |
 | Add MCP tool servers | `mcpServers.<name>` | See [MCP Servers](#mcp-servers) |
 | Mount host directories into container | `container.extraVolumes` | `[ "/data:/data:rw" ]` |
 | Pass GPU access to container | `container.extraOptions` | `[ "--gpus" "all" ]` |
@@ -349,7 +349,7 @@ Both `environment` (non-secret vars) and `environmentFiles` (secret files) are m
     secrets."hermes-env" = { format = "yaml"; };
   };
 
-  services.hermes-agent.environmentFiles = [
+  services.coorporate-hermes.environmentFiles = [
     config.sops.secrets."hermes-env".path
   ];
 }
@@ -371,7 +371,7 @@ hermes-env: |
 {
   age.secrets.hermes-env.file = ./secrets/hermes-env.age;
 
-  services.hermes-agent.environmentFiles = [
+  services.coorporate-hermes.environmentFiles = [
     config.age.secrets.hermes-env.path
   ];
 }
@@ -383,7 +383,7 @@ For platforms requiring OAuth (e.g., Discord), use `authFile` to seed credential
 
 ```nix
 {
-  services.hermes-agent = {
+  services.coorporate-hermes = {
     authFile = config.sops.secrets."hermes/auth.json".path;
     # authFileForceOverwrite = true;  # overwrite on every activation
   };
@@ -401,11 +401,11 @@ The `documents` option installs files into the agent's working directory (the `w
 - **`USER.md`** — context about the user the agent is interacting with.
 - Any other files you place here are visible to the agent as workspace files.
 
-The agent identity file is separate: Hermes loads its primary `SOUL.md` from `$HERMES_HOME/SOUL.md`, which in the NixOS module is `${services.hermes-agent.stateDir}/.hermes/SOUL.md`. Putting `SOUL.md` in `documents` only creates a workspace file and will not replace the main persona file.
+The agent identity file is separate: Hermes loads its primary `SOUL.md` from `$HERMES_HOME/SOUL.md`, which in the NixOS module is `${services.coorporate-hermes.stateDir}/.hermes/SOUL.md`. Putting `SOUL.md` in `documents` only creates a workspace file and will not replace the main persona file.
 
 ```nix
 {
-  services.hermes-agent.documents = {
+  services.coorporate-hermes.documents = {
     "USER.md" = ./documents/USER.md;  # path reference, copied from Nix store
   };
 }
@@ -423,7 +423,7 @@ The `mcpServers` option declaratively configures [MCP (Model Context Protocol)](
 
 ```nix
 {
-  services.hermes-agent.mcpServers = {
+  services.coorporate-hermes.mcpServers = {
     filesystem = {
       command = "npx";
       args = [ "-y" "@modelcontextprotocol/server-filesystem" "/data/workspace" ];
@@ -445,7 +445,7 @@ Environment variables in `env` values are resolved from `$HERMES_HOME/.env` at r
 
 ```nix
 {
-  services.hermes-agent.mcpServers.remote-api = {
+  services.coorporate-hermes.mcpServers.remote-api = {
     url = "https://mcp.example.com/v1/mcp";
     headers.Authorization = "Bearer \${MCP_REMOTE_API_KEY}";
     timeout = 180;
@@ -459,7 +459,7 @@ Set `auth = "oauth"` for servers using OAuth 2.1. Hermes implements the full PKC
 
 ```nix
 {
-  services.hermes-agent.mcpServers.my-oauth-server = {
+  services.coorporate-hermes.mcpServers.my-oauth-server = {
     url = "https://mcp.example.com/mcp";
     auth = "oauth";
   };
@@ -504,7 +504,7 @@ Some MCP servers can request LLM completions from the agent:
 
 ```nix
 {
-  services.hermes-agent.mcpServers.analysis = {
+  services.coorporate-hermes.mcpServers.analysis = {
     command = "npx";
     args = [ "-y" "analysis-server" ];
     sampling = {
@@ -610,7 +610,7 @@ The NixOS module supports declarative plugin installation — no imperative `her
 For plugins that are just a source tree with `plugin.yaml` + `__init__.py` (e.g., [hermes-lcm](https://github.com/stephenschoettler/hermes-lcm)):
 
 ```nix
-services.hermes-agent.extraPlugins = [
+services.coorporate-hermes.extraPlugins = [
   (pkgs.fetchFromGitHub {
     owner = "stephenschoettler";
     repo = "hermes-lcm";
@@ -627,7 +627,7 @@ Plugins are symlinked into `$HERMES_HOME/plugins/` at activation time. Hermes di
 For pip-packaged plugins that register via `[project.entry-points."hermes_agent.plugins"]` (e.g., [rtk-hermes](https://github.com/ogallotti/rtk-hermes)):
 
 ```nix
-services.hermes-agent.extraPythonPackages = [
+services.coorporate-hermes.extraPythonPackages = [
   (pkgs.python312Packages.buildPythonPackage {
     pname = "rtk-hermes";
     version = "1.0.0";
@@ -650,7 +650,7 @@ The package's `site-packages` is added to PYTHONPATH in the hermes wrapper. `imp
 A directory plugin with third-party Python dependencies needs both options:
 
 ```nix
-services.hermes-agent = {
+services.coorporate-hermes = {
   extraPlugins = [ my-plugin-src ];          # plugin source
   extraPythonPackages = [ pkgs.python312Packages.redis ];  # its Python dep
   extraPackages = [ pkgs.redis ];            # system binary it needs
@@ -663,7 +663,7 @@ External flakes can override the package directly:
 
 ```nix
 {
-  inputs.hermes-agent.url = "github:NousResearch/hermes-agent";
+  inputs.hermes-agent.url = "github:AmpliIA/coorporate-hermes";
   outputs = { hermes-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ hermes-agent.overlays.default ];
     # Then: pkgs.hermes-agent.override { extraPythonPackages = [...]; }
@@ -676,7 +676,7 @@ External flakes can override the package directly:
 Plugins still need to be enabled in `config.yaml`. Add them via the declarative settings:
 
 ```nix
-services.hermes-agent.settings.plugins.enabled = [
+services.coorporate-hermes.settings.plugins.enabled = [
   "hermes-lcm"
   "rtk-rewrite"
 ];

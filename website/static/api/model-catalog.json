@@ -3,7 +3,7 @@
   "updated_at": "2026-05-06T02:14:51Z",
   "metadata": {
     "source": "hermes-agent repo",
-    "docs": "https://hermes-agent.nousresearch.com/docs/reference/model-catalog"
+    "docs": "https://github.com/AmpliIA/coorporate-hermes/tree/main/website/docs/reference/model-catalog"
   },
   "providers": {
     "openrouter": {

@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Clock, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Pause,
+  Play,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  XCircle,
+  Zap,
+} from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
@@ -27,9 +37,18 @@ const STATUS_TONE: Record<string, "success" | "warning" | "destructive"> = {
   enabled: "success",
   scheduled: "success",
   paused: "warning",
+  awaiting_authorization: "warning",
+  authorization_denied: "destructive",
   error: "destructive",
   completed: "destructive",
 };
+
+function splitList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -42,6 +61,9 @@ export default function CronPage() {
   const [schedule, setSchedule] = useState("");
   const [name, setName] = useState("");
   const [deliver, setDeliver] = useState("local");
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  const [approvalRoles, setApprovalRoles] = useState("admin");
+  const [approvalUsers, setApprovalUsers] = useState("");
   const [creating, setCreating] = useState(false);
 
   const loadJobs = useCallback(() => {
@@ -68,12 +90,22 @@ export default function CronPage() {
         schedule: schedule.trim(),
         name: name.trim() || undefined,
         deliver,
+        authorization: requiresApproval
+          ? {
+              required: true,
+              roles: splitList(approvalRoles),
+              users: splitList(approvalUsers),
+            }
+          : undefined,
       });
       showToast(t.common.create + " ✓", "success");
       setPrompt("");
       setSchedule("");
       setName("");
       setDeliver("local");
+      setRequiresApproval(false);
+      setApprovalRoles("admin");
+      setApprovalUsers("");
       loadJobs();
     } catch (e) {
       showToast(`${t.config.failedToSave}: ${e}`, "error");
@@ -109,6 +141,20 @@ export default function CronPage() {
       await api.triggerCronJob(job.id);
       showToast(
         `${t.cron.triggerNow}: "${job.name || job.prompt.slice(0, 30)}"`,
+        "success",
+      );
+      loadJobs();
+    } catch (e) {
+      showToast(`${t.status.error}: ${e}`, "error");
+    }
+  };
+
+  const handleAuthorization = async (job: CronJob, approve: boolean) => {
+    const note = approve ? "" : window.prompt("Reason for denial") || "";
+    try {
+      await api.authorizeCronJob(job.id, { approve, note });
+      showToast(
+        `${approve ? "Approved" : "Denied"}: "${job.name || job.prompt.slice(0, 30)}"`,
         "success",
       );
       loadJobs();
@@ -244,6 +290,48 @@ export default function CronPage() {
                 </Button>
               </div>
             </div>
+
+            <div className="grid gap-3 border-t border-border pt-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={requiresApproval}
+                  onChange={(e) => setRequiresApproval(e.target.checked)}
+                  className="size-4 accent-current"
+                />
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4" />
+                  Require authorization checkpoint
+                </span>
+              </label>
+
+              {requiresApproval && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="cron-approval-roles">
+                      Approver roles
+                    </Label>
+                    <Input
+                      id="cron-approval-roles"
+                      placeholder="manager, admin"
+                      value={approvalRoles}
+                      onChange={(e) => setApprovalRoles(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="cron-approval-users">
+                      Approver users
+                    </Label>
+                    <Input
+                      id="cron-approval-users"
+                      placeholder="slack:U123, telegram:987654"
+                      value={approvalUsers}
+                      onChange={(e) => setApprovalUsers(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -281,6 +369,11 @@ export default function CronPage() {
                   {job.deliver && job.deliver !== "local" && (
                     <Badge tone="outline">{job.deliver}</Badge>
                   )}
+                  {job.authorization?.required && (
+                    <Badge tone="warning">
+                      auth: {job.authorization.status || "pending"}
+                    </Badge>
+                  )}
                 </div>
                 {job.name && (
                   <p className="text-xs text-muted-foreground truncate mb-1">
@@ -302,23 +395,75 @@ export default function CronPage() {
                     {job.last_error}
                   </p>
                 )}
+                {job.paused_reason && (
+                  <p className="text-xs text-warning mt-1">
+                    {job.paused_reason}
+                  </p>
+                )}
+                {job.authorization?.required && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {(job.authorization.roles ?? []).length > 0 && (
+                      <span>
+                        Roles: {(job.authorization.roles ?? []).join(", ")}
+                      </span>
+                    )}
+                    {(job.authorization.users ?? []).length > 0 && (
+                      <span>
+                        Users: {(job.authorization.users ?? []).join(", ")}
+                      </span>
+                    )}
+                    {job.authorization.approved_by && (
+                      <span>Approved by: {job.authorization.approved_by}</span>
+                    )}
+                    {job.authorization.denied_by && (
+                      <span>Denied by: {job.authorization.denied_by}</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  ghost
-                  size="icon"
-                  title={job.state === "paused" ? t.cron.resume : t.cron.pause}
-                  aria-label={
-                    job.state === "paused" ? t.cron.resume : t.cron.pause
-                  }
-                  onClick={() => handlePauseResume(job)}
-                  className={
-                    job.state === "paused" ? "text-success" : "text-warning"
-                  }
-                >
-                  {job.state === "paused" ? <Play /> : <Pause />}
-                </Button>
+                {job.state === "awaiting_authorization" ? (
+                  <>
+                    <Button
+                      ghost
+                      size="icon"
+                      title="Approve"
+                      aria-label="Approve"
+                      onClick={() => handleAuthorization(job, true)}
+                      className="text-success"
+                    >
+                      <CheckCircle2 />
+                    </Button>
+                    <Button
+                      ghost
+                      destructive
+                      size="icon"
+                      title="Deny"
+                      aria-label="Deny"
+                      onClick={() => handleAuthorization(job, false)}
+                    >
+                      <XCircle />
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    ghost
+                    size="icon"
+                    title={
+                      job.state === "paused" ? t.cron.resume : t.cron.pause
+                    }
+                    aria-label={
+                      job.state === "paused" ? t.cron.resume : t.cron.pause
+                    }
+                    onClick={() => handlePauseResume(job)}
+                    className={
+                      job.state === "paused" ? "text-success" : "text-warning"
+                    }
+                  >
+                    {job.state === "paused" ? <Play /> : <Pause />}
+                  </Button>
+                )}
 
                 <Button
                   ghost
@@ -326,6 +471,7 @@ export default function CronPage() {
                   title={t.cron.triggerNow}
                   aria-label={t.cron.triggerNow}
                   onClick={() => handleTrigger(job)}
+                  disabled={job.state === "awaiting_authorization"}
                 >
                   <Zap />
                 </Button>

@@ -37,6 +37,7 @@ from tools.binary_extensions import BINARY_EXTENSIONS
 from agent.file_safety import (
     build_write_denied_paths,
     build_write_denied_prefixes,
+    get_read_block_error,
     get_safe_write_root as _shared_get_safe_write_root,
     is_write_denied as _shared_is_write_denied,
 )
@@ -629,6 +630,10 @@ class ShellFileOperations(FileOperations):
         """
         # Expand ~ and other shell paths
         path = self._expand_path(path)
+
+        read_block_error = get_read_block_error(path)
+        if read_block_error:
+            return ReadResult(error=read_block_error)
         
         offset, limit = normalize_read_pagination(offset, limit)
         
@@ -766,6 +771,9 @@ class ShellFileOperations(FileOperations):
         Uses cat so the full file is returned regardless of size.
         """
         path = self._expand_path(path)
+        read_block_error = get_read_block_error(path)
+        if read_block_error:
+            return ReadResult(error=read_block_error)
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
         stat_result = self._exec(stat_cmd)
         if stat_result.exit_code != 0:
@@ -1184,6 +1192,10 @@ class ShellFileOperations(FileOperations):
 
         # Expand ~ and other shell paths
         path = self._expand_path(path)
+
+        read_block_error = get_read_block_error(path)
+        if read_block_error:
+            return SearchResult(error=read_block_error, total_count=0)
         
         # Validate that the path exists before searching
         check = self._exec(f"test -e {self._escape_shell_arg(path)} && echo exists || echo not_found")

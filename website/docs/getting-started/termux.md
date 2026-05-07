@@ -1,12 +1,12 @@
 ---
 sidebar_position: 3
 title: "Android / Termux"
-description: "Run Hermes Agent directly on an Android phone with Termux"
+description: "Run Coorporate Hermes directly on an Android phone with Termux"
 ---
 
 # Hermes on Android with Termux
 
-This is the tested path for running Hermes Agent directly on an Android phone through [Termux](https://termux.dev/).
+This is the tested path for running Coorporate Hermes directly on an Android phone through [Termux](https://termux.dev/).
 
 It gives you a working local CLI on the phone, plus the core extras that are currently known to install cleanly on Android.
 
@@ -46,7 +46,9 @@ That does not stop Hermes from working well as a phone-native CLI agent — it j
 Hermes now ships a Termux-aware installer path:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+git clone https://github.com/AmpliIA/coorporate-hermes.git
+cd coorporate-hermes
+./setup-coorporate.sh
 ```
 
 On Termux, the installer automatically:
@@ -80,7 +82,7 @@ Why these packages?
 ### 2. Clone Hermes
 
 ```bash
-git clone --recurse-submodules https://github.com/NousResearch/hermes-agent.git
+git clone --recurse-submodules https://github.com/AmpliIA/coorporate-hermes.git
 cd hermes-agent
 ```
 
