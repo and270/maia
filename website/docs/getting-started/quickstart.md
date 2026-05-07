@@ -52,7 +52,7 @@ Run the one-line installer:
 
 ```bash
 # Linux / macOS / WSL2 / Android (Termux)
-git clone https://github.com/AmpliIA/coorporate-hermes.git
+git clone https://github.com/andreloureiro/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```

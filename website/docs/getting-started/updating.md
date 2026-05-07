@@ -103,7 +103,7 @@ You no longer need to wrap `hermes update` in `screen` or `tmux` to survive a te
 hermes version
 ```
 
-Compare against the latest release at the [GitHub releases page](https://github.com/AmpliIA/coorporate-hermes/releases).
+Compare against the latest release at the [GitHub releases page](https://github.com/andreloureiro/coorporate-hermes/releases).
 
 ### Updating from Messaging Platforms
 

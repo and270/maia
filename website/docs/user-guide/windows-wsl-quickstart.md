@@ -87,7 +87,7 @@ The `metadata` mount option above is important — without it, files on `/mnt/c/
 Once you have a WSL2 shell open:
 
 ```bash
-git clone https://github.com/AmpliIA/coorporate-hermes.git
+git clone https://github.com/andreloureiro/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 source ~/.bashrc

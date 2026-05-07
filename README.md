@@ -17,7 +17,7 @@ coorporate-agent        # direct agent runner
 ## Install
 
 ```bash
-git clone https://github.com/AmpliIA/coorporate-hermes.git
+git clone https://github.com/andreloureiro/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 coorporate setup

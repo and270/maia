@@ -35,11 +35,11 @@ No clone needed. Nix fetches, builds, and runs everything:
 
 ```bash
 # Run directly (builds on first use, cached after)
-nix run github:AmpliIA/coorporate-hermes -- setup
-nix run github:AmpliIA/coorporate-hermes -- chat
+nix run github:andreloureiro/coorporate-hermes -- setup
+nix run github:andreloureiro/coorporate-hermes -- chat
 
 # Or install persistently
-nix profile install github:AmpliIA/coorporate-hermes
+nix profile install github:andreloureiro/coorporate-hermes
 hermes setup
 hermes chat
 ```
@@ -50,7 +50,7 @@ After `nix profile install`, `hermes`, `hermes-agent`, and `hermes-acp` are on y
 <summary><strong>Building from a local clone</strong></summary>
 
 ```bash
-git clone https://github.com/AmpliIA/coorporate-hermes.git
+git clone https://github.com/andreloureiro/coorporate-hermes.git
 cd hermes-agent
 nix build
 ./result/bin/hermes setup
@@ -75,7 +75,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    hermes-agent.url = "github:AmpliIA/coorporate-hermes";
+    hermes-agent.url = "github:andreloureiro/coorporate-hermes";
   };
 
   outputs = { nixpkgs, hermes-agent, ... }: {
@@ -663,7 +663,7 @@ External flakes can override the package directly:
 
 ```nix
 {
-  inputs.hermes-agent.url = "github:AmpliIA/coorporate-hermes";
+  inputs.hermes-agent.url = "github:andreloureiro/coorporate-hermes";
   outputs = { hermes-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ hermes-agent.overlays.default ];
     # Then: pkgs.hermes-agent.override { extraPythonPackages = [...]; }

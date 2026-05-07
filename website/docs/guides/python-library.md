@@ -15,19 +15,19 @@ Coorporate Hermes isn't just a CLI tool. You can import `AIAgent` directly and u
 Install Coorporate Hermes directly from the repository:
 
 ```bash
-pip install git+https://github.com/AmpliIA/coorporate-hermes.git
+pip install git+https://github.com/andreloureiro/coorporate-hermes.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install git+https://github.com/AmpliIA/coorporate-hermes.git
+uv pip install git+https://github.com/andreloureiro/coorporate-hermes.git
 ```
 
 You can also pin it in your `requirements.txt`:
 
 ```text
-coorporate-hermes @ git+https://github.com/AmpliIA/coorporate-hermes.git
+coorporate-hermes @ git+https://github.com/andreloureiro/coorporate-hermes.git
 ```
 
 :::tip

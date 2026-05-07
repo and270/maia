@@ -5692,7 +5692,7 @@ def _print_curator_first_run_notice() -> None:
     print("  Preview now:  coorporate curator run --dry-run")
     print("  Pause it:     coorporate curator pause")
     print(
-        "  Docs:         https://github.com/AmpliIA/coorporate-hermes/tree/main/website/docs/user-guide/features/curator"
+        "  Docs:         https://github.com/andreloureiro/coorporate-hermes/tree/main/website/docs/user-guide/features/curator"
     )
 
 
@@ -8564,7 +8564,7 @@ def main():
             "Manage the fallback provider chain.  Fallback providers are tried "
             "in order when the primary model fails with rate-limit, overload, or "
             "connection errors.  See: "
-            "https://github.com/AmpliIA/coorporate-hermes/tree/main/website/docs/user-guide/features/fallback-providers"
+            "https://github.com/andreloureiro/coorporate-hermes/tree/main/website/docs/user-guide/features/fallback-providers"
         ),
     )
     fallback_subparsers = fallback_parser.add_subparsers(dest="fallback_command")

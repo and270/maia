@@ -21,7 +21,7 @@ If this is your first time running Coorporate Hermes, create a data directory on
 mkdir -p ~/.hermes
 docker run -it --rm \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes setup
+  andreloureiro/coorporate-hermes setup
 ```
 
 This drops you into the setup wizard, which will prompt you for your API keys and write them to `~/.hermes/.env`. You only need to do this once. It is highly recommended to set up a chat system for the gateway to work with at this point.
@@ -36,7 +36,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes:/opt/data \
   -p 8642:8642 \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 Port 8642 exposes the gateway's [OpenAI-compatible API server](./features/api-server.md) and health endpoint. It's optional if you only use chat platforms (Telegram, Discord, etc.), but required if you want the dashboard or external tools to reach the gateway.
@@ -53,7 +53,7 @@ docker run -d \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY=your_api_key_here \
   -e API_SERVER_CORS_ORIGINS='*' \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 Opening any port on an internet facing machine is a security risk. You should not do it unless you understand the risks.
@@ -70,7 +70,7 @@ docker run -d \
   -p 8642:8642 \
   -p 9119:9119 \
   -e HERMES_DASHBOARD=1 \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 The entrypoint starts `hermes dashboard` in the background (running as the non-root `hermes` user) before `exec`-ing the main command. Dashboard output is prefixed with `[dashboard]` in `docker logs` so it's easy to separate from gateway logs.
@@ -95,7 +95,7 @@ To open an interactive chat session against a running data directory:
 ```sh
 docker run -it --rm \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes
+  andreloureiro/coorporate-hermes
 ```
 
 Or if you have already opened a terminal in your running container (via Docker Desktop for instance), just run:
@@ -138,7 +138,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes-work:/opt/data \
   -p 8642:8642 \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 
 # Personal profile
 docker run -d \
@@ -146,7 +146,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes-personal:/opt/data \
   -p 8643:8642 \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 Why separate containers over profiles in Docker:
@@ -162,7 +162,7 @@ In Docker Compose, this just means declaring one service per profile with distin
 ```yaml
 services:
   hermes-work:
-    image: ampliia/coorporate-hermes:latest
+    image: andreloureiro/coorporate-hermes:latest
     container_name: hermes-work
     restart: unless-stopped
     command: gateway run
@@ -172,7 +172,7 @@ services:
       - ~/.hermes-work:/opt/data
 
   hermes-personal:
-    image: ampliia/coorporate-hermes:latest
+    image: andreloureiro/coorporate-hermes:latest
     container_name: hermes-personal
     restart: unless-stopped
     command: gateway run
@@ -191,7 +191,7 @@ docker run -it --rm \
   -v ~/.hermes:/opt/data \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -e OPENAI_API_KEY="sk-..." \
-  ampliia/coorporate-hermes
+  andreloureiro/coorporate-hermes
 ```
 
 Direct `-e` flags override values from `.env`. This is useful for CI/CD or secrets-manager integrations where you don't want keys on disk.
@@ -203,7 +203,7 @@ For persistent deployment with both the gateway and dashboard, a `docker-compose
 ```yaml
 services:
   hermes:
-    image: ampliia/coorporate-hermes:latest
+    image: andreloureiro/coorporate-hermes:latest
     container_name: hermes
     restart: unless-stopped
     command: gateway run
@@ -247,7 +247,7 @@ docker run -d \
   --restart unless-stopped \
   --memory=4g --cpus=2 \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 ## What the Dockerfile does
@@ -280,13 +280,13 @@ Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypo
 Pull the latest image and recreate the container. Your data directory is untouched.
 
 ```sh
-docker pull ampliia/coorporate-hermes:latest
+docker pull andreloureiro/coorporate-hermes:latest
 docker rm -f hermes
 docker run -d \
   --name hermes \
   --restart unless-stopped \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 Or with Docker Compose:
@@ -331,7 +331,7 @@ services:
             - capabilities: [gpu]
 
   hermes:
-    image: ampliia/coorporate-hermes:latest
+    image: andreloureiro/coorporate-hermes:latest
     container_name: hermes
     restart: unless-stopped
     command: gateway run
@@ -375,7 +375,7 @@ docker run -d \
   --name hermes \
   -v ~/.hermes:/opt/data \
   -p 8642:8642 \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 ```yaml
@@ -394,7 +394,7 @@ docker run -d \
   --name hermes \
   --network host \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 ```yaml
@@ -460,7 +460,7 @@ docker run -d \
   --name hermes \
   --shm-size=1g \
   -v ~/.hermes:/opt/data \
-  ampliia/coorporate-hermes gateway run
+  andreloureiro/coorporate-hermes gateway run
 ```
 
 ### Gateway not reconnecting after network issues
@@ -475,6 +475,6 @@ docker restart hermes
 
 ```sh
 docker logs --tail 50 hermes          # Recent logs
-docker run -it --rm ampliia/coorporate-hermes:latest version     # Verify version
+docker run -it --rm andreloureiro/coorporate-hermes:latest version     # Verify version
 docker stats hermes                    # Resource usage
 ```

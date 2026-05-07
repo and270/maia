@@ -439,8 +439,8 @@ TrainingArguments(learning_rate=1e-4)
 
 ## References
 
-- **[Advanced Usage](https://github.com/AmpliIA/coorporate-hermes/blob/main/optional-skills/mlops/peft/references/advanced-usage.md)** - DoRA, LoftQ, rank stabilization, custom modules
-- **[Troubleshooting](https://github.com/AmpliIA/coorporate-hermes/blob/main/optional-skills/mlops/peft/references/troubleshooting.md)** - Common errors, debugging, optimization
+- **[Advanced Usage](https://github.com/andreloureiro/coorporate-hermes/blob/main/optional-skills/mlops/peft/references/advanced-usage.md)** - DoRA, LoftQ, rank stabilization, custom modules
+- **[Troubleshooting](https://github.com/andreloureiro/coorporate-hermes/blob/main/optional-skills/mlops/peft/references/troubleshooting.md)** - Common errors, debugging, optimization
 
 ## Resources
 

@@ -102,4 +102,4 @@ Each result has multiple formats under `.media_formats`:
 
 - URL-encode the query: spaces as `+`, special chars as `%XX`
 - For sending in chat, `tinygif` URLs are lighter weight
-- GIF URLs can be used directly in markdown: `![alt](https://github.com/AmpliIA/coorporate-hermes/blob/main/skills/media/gif-search/url)`
+- GIF URLs can be used directly in markdown: `![alt](https://github.com/andreloureiro/coorporate-hermes/blob/main/skills/media/gif-search/url)`
