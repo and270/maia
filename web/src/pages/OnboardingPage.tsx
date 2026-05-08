@@ -41,7 +41,7 @@ const STEPS = [
   {
     icon: FolderLock,
     title: "Folder access",
-    text: "Set default deny, add company roots, and delegate bounded team folders for manager-controlled read/write policies.",
+    text: "Set default deny, add company roots, then grant read/write access by role, team, or exact user under delegated folders.",
     to: "/file-access",
     action: "Open File Access",
   },

@@ -184,6 +184,15 @@ governance:
 
     allowed, reason = check_file_access(
         target,
+        "write",
+        actor=Actor(platform="slack", user_id="U_ANALYST"),
+    )
+    assert allowed is False
+    assert "lacks write access" in reason
+    assert "allowed users: ['slack:U_LEAD']" in reason
+
+    allowed, reason = check_file_access(
+        target,
         "read",
         actor=Actor(platform="slack", user_id="U_FINANCE"),
     )

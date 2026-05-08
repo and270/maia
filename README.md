@@ -80,7 +80,7 @@ Users run `/whoami` to show their exact `platform:user_id`, then an admin maps t
 
 ## Corporate Governance
 
-Coorporate Hermes keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `config.yaml`.
+Coorporate Hermes keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `<HERMES_HOME>/config.yaml`. Users can run `/whoami` in Slack, Discord, Telegram, WhatsApp, or another gateway to reveal the exact `platform:user_id` key an admin should map.
 
 ```yaml
 governance:
@@ -89,10 +89,14 @@ governance:
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
   users:
-    "slack:U123":
+    "slack:U_FINANCE":
       name: Finance Manager
       roles: [manager]
       teams: [finance]
+    "slack:U_MARKETING":
+      name: Marketing Lead
+      roles: [manager]
+      teams: [marketing]
     "telegram:987654":
       name: Platform Admin
       roles: [admin]
@@ -101,7 +105,7 @@ governance:
     marketing:
       path: "/srv/company/marketing"
       manager_roles: [manager]
-      managers: ["slack:U123"]
+      managers: ["slack:U_MARKETING"]
   folder_policies:
     - path: "/srv/company/shared"
       read_roles: [viewer]
@@ -111,7 +115,7 @@ governance:
       write_roles: [manager]
     - path: "/srv/company/marketing"
       read_teams: [marketing]
-      write_users: ["slack:U123"]
+      write_users: ["slack:U_MARKETING"]
     - path: "/srv/company/security"
       read_roles: [admin]
       write_roles: [admin]
@@ -127,7 +131,7 @@ What this enforces today:
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
 - `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Coorporate Hermes may access for any channel, cron job, or dashboard-triggered action.
-- Admins can manage global file access from dashboard **File Access** or YAML. Team leaders can manage only delegated roots, such as the marketing folder, after dashboard login, and only for users or teams assigned to that managed team.
+- Admins manage global file access from dashboard **File Access** or server-side YAML. Team leaders use the same page after dashboard login, but only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.
 - Cron jobs can pause at an authorization node until an allowed user or role approves them.

@@ -313,11 +313,31 @@ def check_file_access(
     if required_roles and actor_has_any_role(required_roles, actor=who, config=cfg):
         return True, ""
 
-    if user_keys or required_roles:
+    if user_keys or team_keys or required_roles:
         return _deny(
             "Access denied by governance: "
             f"{actor_display(who)} lacks {op} access to {path!r}. "
-            f"Required roles: {required_roles or 'none'}; allowed users: {user_keys or 'none'}.",
+            f"Required roles: {required_roles or 'none'}; "
+            f"allowed teams: {team_keys or 'none'}; "
+            f"allowed users: {user_keys or 'none'}.",
+        )
+
+    grant_fields = (
+        "roles",
+        "read_roles",
+        "write_roles",
+        "teams",
+        "read_teams",
+        "write_teams",
+        "users",
+        "read_users",
+        "write_users",
+    )
+    if any(_coerce_list(policy.get(field)) for field in grant_fields):
+        return _deny(
+            "Access denied by governance: "
+            f"the matching folder policy for {path!r} does not configure {op} access "
+            f"for {actor_display(who)}.",
         )
 
     return True, ""

@@ -9,7 +9,7 @@ Coorporate Hermes is an AmpliIA distribution intended for a private, one-tenant 
 - **Role hierarchy:** Later roles inherit earlier roles in `governance.role_hierarchy`; the default hierarchy is `viewer < operator < manager < admin`.
 - **Knowledge hierarchy:** Corporate memory/skills apply to every conversation, team memory/skills apply by `governance.users.*.teams`, and user memory/skills remain profile-level.
 - **Gateway sessions:** Regular group/channel conversations are isolated per user by default. Explicit threads/topics are shared by default for multi-user operational workflows.
-- **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders.
+- **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders. Reads/searches require read grants; writes/patches/deletes require write grants.
 - **Team file delegation:** `governance.team_file_roots` lets a team leader manage policies only under their team's configured root from the dashboard.
 - **Dashboard access:** The dashboard is localhost-only by default. Intranet or public serving requires `dashboard.auth` unless an operator explicitly uses `--insecure` for temporary trusted-network testing.
 - **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team-leader dashboard access should use SSO or trusted reverse-proxy headers mapped through `governance.users`, so edits are tied to a specific human actor.
@@ -72,7 +72,7 @@ governance:
   folder_policies:
     - path: "/srv/company/shared"
       read_roles: [viewer]
-      write_roles: [operator]
+      write_roles: [admin]
     - path: "/srv/company/finance"
       read_teams: [finance]
       write_roles: [manager]

@@ -1023,9 +1023,11 @@ display:
 # =============================================================================
 # Enterprise Governance
 # =============================================================================
-# Enables role-aware gateway users, folder access policies, and human-in-the-loop
-# cron authorization nodes. Production deployments should set
+# Enables role-aware gateway users, team/user folder access policies, and
+# human-in-the-loop cron authorization nodes. Production deployments should set
 # default_file_policy: deny and explicitly list allowed company folders.
+# Normal file access administration is done from Dashboard -> File Access; this
+# YAML is the backing shape saved in <HERMES_HOME>/config.yaml.
 #
 # governance:
 #   enabled: true
@@ -1037,17 +1039,29 @@ display:
 #       name: Finance Manager
 #       roles: [manager]
 #       teams: [finance]
+#     "slack:U456":
+#       name: Marketing Lead
+#       roles: [manager]
+#       teams: [marketing]
 #     "telegram:987654":
 #       name: Platform Admin
 #       roles: [admin]
 #   default_file_policy: deny
+#   team_file_roots:
+#     marketing:
+#       path: "/srv/company/marketing"
+#       manager_roles: [manager]
+#       managers: ["slack:U456"]
 #   folder_policies:
 #     - path: "/srv/company/shared"
 #       read_roles: [viewer]
-#       write_roles: [operator]
+#       write_roles: [admin]
 #     - path: "/srv/company/finance"
-#       read_roles: [manager]
+#       read_teams: [finance]
 #       write_roles: [manager]
+#     - path: "/srv/company/marketing"
+#       read_teams: [marketing]
+#       write_users: ["slack:U456"]
 #   gateway:
 #     group_sessions_per_user: true
 #     thread_sessions_per_user: false

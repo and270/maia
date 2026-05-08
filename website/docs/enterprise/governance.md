@@ -96,49 +96,40 @@ dashboard:
 
 The user runs `/dashboard` in a private/direct chat. Coorporate Hermes checks their `platform:user_id` against `governance.users`, requires a role allowed by `dashboard.auth.read_roles`, and sends a one-time token for the dashboard login form. The token is short-lived, consumed on first use, stored hashed on disk, and audited when audit logging is enabled.
 
-## Folder Policies
+## File Authorization By Team And User
 
-Folder policies are the maximum server filesystem access any channel user, cron job, or dashboard-triggered action can receive.
+Use **Dashboard -> File Access** for normal file authorization. The dashboard writes the same values to `<HERMES_HOME>/config.yaml` on the server under `governance`; this YAML is not a separate repo file. Direct YAML edits are for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
 
-Use dashboard **File Access** for normal setup:
+Before creating policies:
 
-1. A system admin logs in with a role allowed by `dashboard.auth.admin_roles`.
-2. The admin sets `governance.default_file_policy: deny`.
-3. The admin adds shared company roots and sensitive department roots.
-4. The admin defines `team_file_roots` for team leaders who should manage their own area.
-5. Team leaders log into the same dashboard through SSO/trusted headers and can edit only policies under their delegated roots.
+1. Ask users to run `/whoami` in their channel so you have exact actor keys like `discord:99887766`, `slack:U123456`, or `whatsapp:+15551234567`.
+2. Map those keys in **Dashboard -> Config** under `governance.users` with roles and teams.
+3. Keep `governance.default_file_policy: deny` in production.
+4. Open **File Access** and save policies from the dashboard.
 
-```yaml
-governance:
-  enabled: true
-  default_file_policy: deny
-  team_file_roots:
-    marketing:
-      path: "/srv/company/marketing"
-      manager_roles: [manager]
-      managers: ["slack:U123456"]
-  folder_policies:
-    - path: "/srv/company"
-      read_roles: [viewer]
-      write_roles: [operator]
-    - path: "/srv/company/finance"
-      read_teams: [finance]
-      write_roles: [manager]
-    - path: "/srv/company/security"
-      read_users: ["slack:U999"]
-      write_roles: [admin]
-      deny_users: ["discord:111222333"]
-    - path: "/srv/company/marketing/brand-guidelines.pdf"
-      recursive: false
-      read_teams: [marketing]
-      write_users: ["slack:U123456"]
-```
+System admins can change the global default, shared folders, sensitive folders, role-wide grants, and delegated team roots. Team leaders use the same page after SSO/trusted-header login or a private `/dashboard` token, but they see only the team roots delegated to them.
 
-Most-specific path wins. Policies are recursive by default; set `recursive: false` for exact-path policies. `deny_users` and `deny_teams` override broader grants. OS filesystem permissions still apply and should limit the Coorporate Hermes service account.
+System admin workflow:
 
-System admins use dashboard **File Access** or direct YAML to set the global baseline and team roots. Team leaders use the same dashboard page after login, but can edit only policies under their delegated team root. A marketing lead can grant read-only or write access for marketing team members under `/srv/company/marketing`; they cannot edit finance folders, change the global default, grant role-wide access, or reference users outside the managed team unless they also have system-admin dashboard access.
+1. Open **File Access** as a role allowed by `dashboard.auth.admin_roles`.
+2. Set **Default file policy** to `deny`.
+3. Add shared folders only when the whole tenant should access them.
+4. Add department folders using **Read teams** / **Write teams** or named **Read users** / **Write users**.
+5. Add a **Delegated team root** when a team leader should manage one bounded folder.
+6. Save and review `governance.file_access` audit events for denied attempts.
 
-Practical marketing example:
+Team leader workflow:
+
+1. Open the same dashboard URL.
+2. Confirm **File Access** shows the expected managed team badge and root.
+3. Click **Add policy** and set a **Server path** under the delegated root.
+4. Use **Read teams** / **Write teams** for the managed team or **Read users** / **Write users** for named users assigned to that team.
+5. Leave **Recursive directory policy** on for folders; turn it off for one exact file.
+6. Save and ask the affected user to retry.
+
+Team leaders cannot change the global default, edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
+
+Practical marketing example, as saved in `<HERMES_HOME>/config.yaml`:
 
 ```yaml
 governance:
@@ -153,12 +144,19 @@ governance:
       name: Bruno Marketing Analyst
       roles: [operator]
       teams: [marketing]
+    "sso:carla@company.com":
+      name: Carla Marketing Viewer
+      roles: [viewer]
+      teams: [marketing]
   team_file_roots:
     marketing:
       path: "/srv/company/marketing"
       manager_roles: [manager]
       managers: ["sso:ana@company.com"]
   folder_policies:
+    - path: "/srv/company/shared"
+      read_roles: [viewer]
+      write_roles: [admin]
     - path: "/srv/company/marketing"
       read_teams: [marketing]
       write_users: ["sso:ana@company.com"]
@@ -175,15 +173,25 @@ governance:
       write_users: ["sso:ana@company.com"]
 ```
 
-| Field | Meaning | Who can normally set it |
+Decision rules:
+
+1. Most-specific path wins.
+2. Policies are recursive unless `recursive: false`.
+3. `deny_users` and `deny_teams` override grants.
+4. Reads/searches require `read_users`, `read_teams`, or `read_roles`.
+5. Writes/patches/deletes require `write_users`, `write_teams`, or `write_roles`.
+6. If no policy matches and `default_file_policy` is `deny`, access is denied and audited.
+
+| Dashboard field | YAML field | Who can normally set it |
 |---|---|---|
-| `path` | Absolute server folder or file path. | Admin; team leader below delegated root. |
-| `recursive` | `true` for folders, `false` for one exact file. | Admin or delegated team leader. |
-| `read_teams`, `write_teams` | Grants to users assigned to a team. | Admin; team leader for managed team only. |
-| `read_users`, `write_users` | Grants to named actor keys such as `sso:ana@company.com` or `slack:U123`. | Admin; team leader for users assigned to managed team only. |
-| `deny_users`, `deny_teams` | Explicit block that overrides broader grants. | Admin or delegated team leader. |
-| `read_roles`, `write_roles` | Broad tenant-wide grants by role. | System admin only. |
-| `team_file_roots` | Delegated roots that decide what a team leader can manage. | System admin only. |
+| Default file policy | `default_file_policy` | System admin only. |
+| Delegated team roots | `team_file_roots` | System admin only. |
+| Server path | `folder_policies[].path` | Admin; team leader below delegated root. |
+| Recursive directory policy | `recursive` | Admin or delegated team leader. |
+| Read teams / Write teams | `read_teams`, `write_teams` | Admin; team leader for managed team only. |
+| Read users / Write users | `read_users`, `write_users` | Admin; team leader for users assigned to managed team only. |
+| Deny users / Deny teams | `deny_users`, `deny_teams` | Admin; team leader inside managed team. |
+| Read roles / Write roles | `read_roles`, `write_roles` | System admin only. |
 
 ## Knowledge Authority
 

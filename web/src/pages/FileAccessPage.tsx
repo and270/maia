@@ -232,6 +232,26 @@ export default function FileAccessPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-sm">Authorization setup order</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 normal-case text-sm leading-6 text-muted-foreground md:grid-cols-3">
+          <div>
+            <span className="font-medium text-foreground">1. Map identities</span>
+            <p>Users run /whoami in their channel. Admins map those keys in Config under governance.users.</p>
+          </div>
+          <div>
+            <span className="font-medium text-foreground">2. Delegate roots</span>
+            <p>Admins add team roots here when team managers should control a bounded server folder.</p>
+          </div>
+          <div>
+            <span className="font-medium text-foreground">3. Grant access</span>
+            <p>Use read/write teams for groups and read/write users for exact actor keys.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-sm">Scope</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 normal-case md:grid-cols-2">
