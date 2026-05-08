@@ -270,6 +270,7 @@ def _consume_channel_dashboard_login(raw_token: str, auth_config: Dict[str, Any]
         from hermes_cli.dashboard_tokens import (
             actor_from_payload,
             consume_channel_dashboard_token,
+            is_dashboard_actor_revoked,
         )
     except Exception:
         return None
@@ -281,6 +282,8 @@ def _consume_channel_dashboard_login(raw_token: str, auth_config: Dict[str, Any]
     if not isinstance(actor_payload, dict):
         return None
     actor = actor_from_payload(actor_payload)
+    if is_dashboard_actor_revoked(actor):
+        return None
     roles = _dashboard_roles_for_actor(
         actor,
         fallback_roles=_coerce_role_list(record.get("roles")),
@@ -386,6 +389,42 @@ def _prune_dashboard_sessions(now: Optional[float] = None) -> None:
         _DASHBOARD_AUTH_SESSIONS.pop(token, None)
 
 
+def _dashboard_actor_key(actor: Any) -> str:
+    try:
+        from hermes_cli.dashboard_tokens import actor_key
+
+        return actor_key(actor)
+    except Exception:
+        pass
+    keys = list(getattr(actor, "keys", ()) or [])
+    if keys:
+        return str(keys[0])
+    return str(actor)
+
+
+def _dashboard_actor_is_revoked(actor: Any) -> bool:
+    try:
+        from hermes_cli.dashboard_tokens import is_dashboard_actor_revoked
+
+        return is_dashboard_actor_revoked(actor)
+    except Exception:
+        return False
+
+
+def _drop_dashboard_sessions_for_actor_key(actor_key: str) -> int:
+    key = str(actor_key or "").strip()
+    if not key:
+        return 0
+    dropped = 0
+    for token, session in list(_DASHBOARD_AUTH_SESSIONS.items()):
+        keys = set(getattr(session.actor, "keys", ()) or [])
+        keys.add(_dashboard_actor_key(session.actor))
+        if key in keys:
+            _DASHBOARD_AUTH_SESSIONS.pop(token, None)
+            dropped += 1
+    return dropped
+
+
 def _issue_dashboard_session(actor: Any, roles: List[str], source: str) -> DashboardSession:
     auth_config = _dashboard_auth_config()
     token = secrets.token_urlsafe(32)
@@ -419,6 +458,9 @@ def _session_from_dashboard_token(token: str) -> Optional[DashboardSession]:
     _prune_dashboard_sessions()
     session = _DASHBOARD_AUTH_SESSIONS.get(token)
     if session:
+        if _dashboard_actor_is_revoked(session.actor):
+            _DASHBOARD_AUTH_SESSIONS.pop(token, None)
+            return None
         return session
     if not _dashboard_auth_enabled() and hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
         try:
@@ -735,6 +777,8 @@ def _trusted_dashboard_session_from_request(request: Request) -> Optional[Dashbo
         )
     except Exception:
         actor = user_id
+    if _dashboard_actor_is_revoked(actor):
+        return None
     roles = _dashboard_roles_for_actor(actor, explicit_roles=explicit_roles)
     if not _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("read_roles"))):
         return None
@@ -750,6 +794,8 @@ def _dashboard_required_roles(path: str, method: str) -> List[str]:
 
     if path == "/api/dashboard/auth/logout":
         return []
+    if path.startswith("/api/dashboard/access"):
+        return admin_roles
     if path.startswith("/api/governance/folder-policies"):
         return manage_roles
     if path.startswith("/api/knowledge/approvals/") and path.endswith("/decide"):
@@ -1068,6 +1114,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Require channel-issued dashboard tokens to be requested from private/direct chats",
         "category": "security",
     },
+    "dashboard.auth.channel_tokens.approval_required": {
+        "type": "boolean",
+        "description": "Require an admin-approved Dashboard Access request before /dashboard issues a login token",
+        "category": "security",
+    },
     "dashboard.auth.read_roles": {
         "type": "list",
         "description": "Roles allowed to read dashboard data",
@@ -1263,10 +1314,65 @@ class DashboardLoginBody(BaseModel):
     token: str = ""
 
 
+class DashboardAccessApproveBody(BaseModel):
+    roles: Optional[List[str]] = None
+    teams: Optional[List[str]] = None
+    name: str = ""
+    note: str = ""
+
+
+class DashboardAccessDenyBody(BaseModel):
+    reason: str = ""
+
+
+class DashboardAccessRevokeBody(BaseModel):
+    actor_key: str
+    reason: str = ""
+
+
 class FolderPoliciesUpdate(BaseModel):
     default_file_policy: Optional[str] = None
     folder_policies: List[dict] = []
     team_file_roots: Optional[dict] = None
+
+
+def _save_governance_user_from_dashboard_access(
+    *,
+    actor_key: str,
+    name: str,
+    roles: List[str],
+    teams: List[str],
+) -> Dict[str, Any]:
+    key = str(actor_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="actor_key is required")
+    if not roles:
+        raise HTTPException(status_code=400, detail="At least one role is required")
+
+    cfg = load_config()
+    if not isinstance(cfg, dict):
+        cfg = {}
+    governance = cfg.get("governance", {})
+    if not isinstance(governance, dict):
+        governance = {}
+    users = governance.get("users", {})
+    if not isinstance(users, dict):
+        users = {}
+
+    existing = users.get(key)
+    record = dict(existing) if isinstance(existing, dict) else {}
+    record["name"] = str(name or record.get("name") or key).strip()
+    record["roles"] = roles
+    if teams:
+        record["teams"] = teams
+    else:
+        record.pop("teams", None)
+        record.pop("team", None)
+    users[key] = record
+    governance["users"] = users
+    cfg["governance"] = governance
+    save_config(cfg)
+    return record
 
 
 @app.get("/api/dashboard/auth/status")
@@ -1417,6 +1523,156 @@ async def dashboard_auth_logout(request: Request):
             metadata={"source": session.source},
         )
     return {"ok": True}
+
+
+@app.get("/api/dashboard/access/requests")
+async def dashboard_access_requests(request: Request):
+    try:
+        from hermes_cli.dashboard_tokens import (
+            list_dashboard_access_requests,
+            list_dashboard_access_revocations,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Dashboard access store unavailable: {exc}") from exc
+    return {
+        "requests": list_dashboard_access_requests(),
+        "revoked_users": list_dashboard_access_revocations(),
+    }
+
+
+@app.post("/api/dashboard/access/requests/{request_id}/approve")
+async def dashboard_access_request_approve(
+    request: Request,
+    request_id: str,
+    body: DashboardAccessApproveBody,
+):
+    try:
+        from hermes_cli.dashboard_tokens import (
+            decide_dashboard_access_request,
+            get_dashboard_access_request,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Dashboard access store unavailable: {exc}") from exc
+
+    pending = get_dashboard_access_request(request_id)
+    if not pending:
+        raise HTTPException(status_code=404, detail="Dashboard access request not found")
+    actor_key_value = str(pending.get("actor_key") or "").strip()
+    actor_payload = pending.get("actor", {}) if isinstance(pending.get("actor"), dict) else {}
+    roles = _coerce_role_list(body.roles)
+    teams = _coerce_role_list(body.teams)
+    display_name = (
+        str(body.name or "").strip()
+        or str(actor_payload.get("user_name") or "").strip()
+        or actor_key_value
+    )
+    user_record = _save_governance_user_from_dashboard_access(
+        actor_key=actor_key_value,
+        name=display_name,
+        roles=roles,
+        teams=teams,
+    )
+    decision = decide_dashboard_access_request(
+        request_id=request_id,
+        approve=True,
+        reviewer=_request_dashboard_actor(request),
+        roles=roles,
+        teams=teams,
+        note=body.note,
+    )
+    _audit_dashboard_event(
+        "dashboard.access_request",
+        request=request,
+        actor=_request_dashboard_actor(request),
+        action="approve",
+        resource=actor_key_value,
+        outcome="success",
+        metadata={"roles": roles, "teams": teams},
+    )
+    return {"ok": True, "request": decision, "user": user_record}
+
+
+@app.post("/api/dashboard/access/requests/{request_id}/deny")
+async def dashboard_access_request_deny(
+    request: Request,
+    request_id: str,
+    body: DashboardAccessDenyBody,
+):
+    try:
+        from hermes_cli.dashboard_tokens import decide_dashboard_access_request
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Dashboard access store unavailable: {exc}") from exc
+    try:
+        decision = decide_dashboard_access_request(
+            request_id=request_id,
+            approve=False,
+            reviewer=_request_dashboard_actor(request),
+            note=body.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Dashboard access request not found") from exc
+    _audit_dashboard_event(
+        "dashboard.access_request",
+        request=request,
+        actor=_request_dashboard_actor(request),
+        action="deny",
+        resource=str(decision.get("actor_key") or request_id),
+        outcome="success",
+        reason=body.reason,
+    )
+    return {"ok": True, "request": decision}
+
+
+@app.post("/api/dashboard/access/revoke")
+async def dashboard_access_revoke(request: Request, body: DashboardAccessRevokeBody):
+    try:
+        from hermes_cli.dashboard_tokens import revoke_dashboard_access
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Dashboard access store unavailable: {exc}") from exc
+    try:
+        record = revoke_dashboard_access(
+            actor_key_value=body.actor_key,
+            reviewer=_request_dashboard_actor(request),
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    dropped_sessions = _drop_dashboard_sessions_for_actor_key(body.actor_key)
+    _audit_dashboard_event(
+        "dashboard.access_revocation",
+        request=request,
+        actor=_request_dashboard_actor(request),
+        action="revoke",
+        resource=body.actor_key,
+        outcome="success",
+        reason=body.reason,
+        metadata={"dropped_sessions": dropped_sessions},
+    )
+    return {"ok": True, "revocation": record, "dropped_sessions": dropped_sessions}
+
+
+@app.post("/api/dashboard/access/restore")
+async def dashboard_access_restore(request: Request, body: DashboardAccessRevokeBody):
+    try:
+        from hermes_cli.dashboard_tokens import restore_dashboard_access
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Dashboard access store unavailable: {exc}") from exc
+    try:
+        record = restore_dashboard_access(
+            actor_key_value=body.actor_key,
+            reviewer=_request_dashboard_actor(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit_dashboard_event(
+        "dashboard.access_revocation",
+        request=request,
+        actor=_request_dashboard_actor(request),
+        action="restore",
+        resource=body.actor_key,
+        outcome="success",
+    )
+    return {"ok": True, "restore": record}
 
 
 _GATEWAY_HEALTH_URL = os.getenv("GATEWAY_HEALTH_URL")

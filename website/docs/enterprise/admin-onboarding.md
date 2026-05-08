@@ -33,15 +33,14 @@ governance:
 
 Practical flow:
 
-1. Ask the user to DM the bot and run `/whoami`.
-2. Copy the returned `platform:user_id` key.
-3. Add that key under `governance.users` from the dashboard Config page or reviewed YAML.
-4. Assign roles and teams.
-5. Keep channel-level bot allowlists enabled where the platform supports them.
-6. Ask the user to run `/whoami` again to verify the mapping.
-7. If dashboard access is needed, ask them to run `/dashboard` in a private/direct chat.
+1. Ask the user to DM the bot and run `/dashboard` if they need dashboard access.
+2. Open **Dashboard Access** and review the pending request.
+3. Assign roles and teams on that request, then approve or deny it.
+4. Keep channel-level bot allowlists enabled where the platform supports them.
+5. Ask the user to run `/whoami` only when you need to troubleshoot or verify roles and teams.
+6. Ask the user to run `/dashboard` again to receive the one-time dashboard login token.
 
-The channel provider authenticates who sent the message. Coorporate Hermes authorizes that identity through `governance.users`.
+The channel provider authenticates who sent the message. Coorporate Hermes authorizes that identity through the approved Dashboard Access request and `governance.users`.
 
 ## Dashboard Access
 
@@ -69,7 +68,50 @@ export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
 coorporate dashboard --host 0.0.0.0 --no-open
 ```
 
-For SSO, put Coorporate Hermes behind a TLS reverse proxy that strips spoofed headers, set trusted identity headers, and keep the dashboard bound to `127.0.0.1` behind that proxy:
+Default built-in flow for team leaders:
+
+1. Enable `dashboard.auth.channel_tokens`.
+2. Set `dashboard.auth.channel_tokens.dashboard_url` to the URL the user will open.
+3. Keep `dashboard.auth.channel_tokens.approval_required: true`.
+4. Ask the team leader to send `/dashboard` in a private/direct chat.
+5. Coorporate Hermes creates a pending request in **Dashboard Access**.
+6. Open **Dashboard Access**, review the actor key, assign roles and teams, then approve or deny the request.
+7. If the team leader should manage files, add a delegated root in **File Access**.
+8. Ask the team leader to send `/dashboard` again.
+9. They paste the one-time token into the dashboard login form.
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+    channel_tokens:
+      enabled: true
+      ttl_minutes: 10
+      dashboard_url: "https://hermes.company.example"
+      require_dm: true
+      approval_required: true
+
+governance:
+  users:
+    "discord:99887766":
+      name: Ana Marketing Lead
+      roles: [manager]
+      teams: [marketing]
+  team_file_roots:
+    marketing:
+      path: "/srv/company/marketing"
+      manager_roles: [manager]
+      managers: ["discord:99887766"]
+```
+
+The first `/dashboard` message is an access request, not a token issuance. Approval in **Dashboard Access** writes the actor into `governance.users`. The second `/dashboard` message issues a short-lived one-time token only if the request is approved, the actor is not revoked, and current roles satisfy `dashboard.auth.read_roles`.
+
+Revocation is also in **Dashboard Access**. Click **Revoke** beside an approved actor or enter an actor key manually. Revocation blocks future token issuance, removes unused channel tokens, and drops active dashboard sessions for that actor. Click **Restore** if access should be allowed again.
+
+Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If the company already has that layer and chooses this optional integration, Coorporate Hermes can consume trusted identity headers from it. The external TLS reverse proxy must strip spoofed headers, set trusted identity headers, and be the only network path to the dashboard:
 
 ```yaml
 dashboard:
@@ -78,34 +120,9 @@ dashboard:
     trusted_user_header: X-Auth-Request-User
     trusted_name_header: X-Auth-Request-Name
     trusted_platform: sso
-    read_roles: [auditor, manager, admin]
-    manage_roles: [manager, admin]
-    admin_roles: [admin]
-
-governance:
-  users:
-    "sso:ana@company.com":
-      name: Ana Marketing Lead
-      roles: [manager]
-      teams: [marketing]
 ```
 
-System admins see global configuration, secrets, plugin settings, delegated roots, and all file policies. Team leaders usually log in through SSO/trusted headers; they see approval queues allowed by role and can save File Access policies only under delegated team roots. Operators normally use CLI or gateway channels and stay inside the configured policy.
-
-When SSO is not available, authenticated channel users can request one-time dashboard tokens:
-
-```yaml
-dashboard:
-  auth:
-    enabled: true
-    channel_tokens:
-      enabled: true
-      ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
-      require_dm: true
-```
-
-The user sends `/dashboard` in a private/direct chat with the bot. Coorporate Hermes checks their channel identity, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+15551234567`, against `governance.users`. If their roles satisfy `dashboard.auth.read_roles`, the bot returns a short-lived one-time token for the normal dashboard login form.
+System admins see global configuration, secrets, plugin settings, delegated roots, and all file policies. Team leaders see approval queues allowed by role and can save File Access policies only under delegated team roots. Operators normally use CLI or gateway channels and stay inside the configured policy.
 
 ## Knowledge Layers
 
@@ -126,18 +143,18 @@ Use **Dashboard -> File Access** for normal file authorization. The dashboard sa
 
 System admin workflow:
 
-1. Ask users to run `/whoami` in their channel and copy the exact actor keys.
-2. Open **Dashboard -> Config** and map those keys under `governance.users` with roles and teams.
+1. Ask users who need dashboard or delegated file administration to run `/dashboard` in a private channel.
+2. Open **Dashboard Access** and approve each request with the right roles and teams.
 3. Open **File Access**.
 4. Set **Default file policy** to `deny`.
 5. Add shared folders with **Read roles** / **Write roles** only when the whole tenant should have access.
 6. Add department folders with **Read teams** / **Write teams** or named **Read users** / **Write users**.
 7. Add **Delegated team roots** when a team leader should manage one bounded folder.
-8. Save, test as real mapped users, and review `governance.file_access` audit events.
+8. Save, test as real approved users, and review `governance.file_access` audit events.
 
 Team leader workflow:
 
-1. The team leader opens the same dashboard URL and logs in through SSO/trusted headers or a private `/dashboard` channel token.
+1. The team leader sends `/dashboard` in a private channel. If already approved, the bot returns a one-time token for the dashboard login form.
 2. **File Access** shows only delegated roots for teams they manage.
 3. They click **Add policy** and set a **Server path** below the delegated root.
 4. They use **Read teams** / **Write teams** for the managed team or **Read users** / **Write users** for named users assigned to that team.

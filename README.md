@@ -61,9 +61,15 @@ coorporate dashboard --host 0.0.0.0 --no-open
 
 Use a TLS reverse proxy or private network boundary for public access. Coorporate Hermes refuses non-loopback dashboard binding unless `dashboard.auth` is configured, unless `--insecure` is explicitly used for temporary trusted-network testing.
 
-Use the local token for bootstrap and system-admin access. For team leaders, put the dashboard behind SSO or a trusted reverse proxy and map identities such as `sso:ana@company.com` in `governance.users`; the same dashboard then shows only the pages and File Access roots allowed by that user's roles and teams.
+Use the local token for bootstrap and system-admin access. Default built-in flow for team leaders is dashboard-first:
 
-If SSO is not available, mapped gateway users can request a short-lived dashboard token from the same channel identity:
+1. A user sends `/dashboard` in a private/direct chat with the bot.
+2. Coorporate Hermes creates a pending request in **Dashboard Access** instead of asking anyone to edit YAML.
+3. A system admin opens **Dashboard Access**, reviews the `platform:user_id`, assigns roles and teams, and approves or denies the request.
+4. After approval, the user sends `/dashboard` again and receives a short-lived one-time token for the dashboard login form.
+5. The admin can revoke or restore that dashboard access from the same page.
+
+Channel-token config:
 
 ```yaml
 dashboard:
@@ -74,13 +80,14 @@ dashboard:
       ttl_minutes: 10
       dashboard_url: "https://hermes.company.example"
       require_dm: true
+      approval_required: true
 ```
 
-Users run `/whoami` to show their exact `platform:user_id`, then an admin maps that key under `governance.users`. Users with roles allowed by `dashboard.auth.read_roles` can run `/dashboard` in a private/direct chat and paste the one-time token into the dashboard login form.
+Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If your company already has that access layer, Coorporate Hermes can sit behind it and consume trusted identity headers such as `X-Auth-Request-User`.
 
 ## Corporate Governance
 
-Coorporate Hermes keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `<HERMES_HOME>/config.yaml`. Users can run `/whoami` in Slack, Discord, Telegram, WhatsApp, or another gateway to reveal the exact `platform:user_id` key an admin should map.
+Coorporate Hermes keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `<HERMES_HOME>/config.yaml`. The dashboard writes role and team assignments into that section when an admin approves a dashboard access request. Server operators can still edit the YAML directly for infrastructure-as-code, backup restore, or break-glass recovery.
 
 ```yaml
 governance:
@@ -196,7 +203,7 @@ This stages memories and skills for review, imports MCP servers disabled by defa
 
 ## Observability
 
-Operational logs are available through `coorporate logs` and the dashboard Logs page. Corporate audit events are written to `<HERMES_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, cron authorization requests/decisions, dashboard login/logout, dashboard role denials, and mutating dashboard API calls.
+Operational logs are available through `coorporate logs` and the dashboard Logs page. Corporate audit events are written to `<HERMES_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, cron authorization requests/decisions, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls.
 
 ```bash
 coorporate logs audit

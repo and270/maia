@@ -236,8 +236,8 @@ export default function FileAccessPage() {
         </CardHeader>
         <CardContent className="grid gap-3 normal-case text-sm leading-6 text-muted-foreground md:grid-cols-3">
           <div>
-            <span className="font-medium text-foreground">1. Map identities</span>
-            <p>Users run /whoami in their channel. Admins map those keys in Config under governance.users.</p>
+            <span className="font-medium text-foreground">1. Approve identities</span>
+            <p>Users request /dashboard in a private channel. Admins approve them in Dashboard Access with roles and teams.</p>
           </div>
           <div>
             <span className="font-medium text-foreground">2. Delegate roots</span>

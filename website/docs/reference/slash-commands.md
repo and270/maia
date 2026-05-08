@@ -201,8 +201,8 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/reload-mcp` (alias: `/reload_mcp`) | Reload MCP servers from config. |
 | `/yolo` | Toggle YOLO mode — skip all dangerous command approval prompts. |
 | `/commands [page]` | Browse all commands and skills (paginated). |
-| `/whoami` | Show your authenticated channel identity, governance roles, and teams. Use this when an admin needs the exact `platform:user_id` key to add you. |
-| `/dashboard` | Request a short-lived one-time dashboard login token. Requires `dashboard.auth.channel_tokens.enabled`, a private/direct chat by default, and a role allowed by `dashboard.auth.read_roles`. |
+| `/whoami` | Show your authenticated channel identity, governance roles, and teams. Useful for troubleshooting role/team mapping. |
+| `/dashboard` | Request dashboard access or, after approval, a short-lived one-time dashboard login token. Requires `dashboard.auth.channel_tokens.enabled`; private/direct chat is required by default. |
 | `/approve [session\|always]` | Approve and execute a pending dangerous command. `session` approves for this session only; `always` adds to permanent allowlist. |
 | `/deny` | Reject a pending dangerous command. |
 | `/update` | Update Coorporate Hermes to the latest version. |

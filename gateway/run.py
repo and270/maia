@@ -7453,7 +7453,7 @@ class GatewayRunner:
             lines.append("- Governance: `unavailable`")
 
         lines.append("")
-        lines.append("An admin can copy the user key into `governance.users` to assign roles and teams.")
+        lines.append("This key is used for dashboard access requests, role assignment, team membership, and file policies.")
         return "\n".join(lines)
 
 
@@ -7466,7 +7466,12 @@ class GatewayRunner:
         try:
             from agent.governance import Actor, actor_has_any_role, actor_roles
             from hermes_cli.config import load_config
-            from hermes_cli.dashboard_tokens import issue_channel_dashboard_token
+            from hermes_cli.dashboard_tokens import (
+                approved_dashboard_access_for_actor,
+                is_dashboard_actor_revoked,
+                issue_channel_dashboard_token,
+                request_dashboard_access,
+            )
         except Exception as exc:
             logger.warning("Dashboard token dependencies unavailable: %s", exc)
             return "Dashboard token request failed: dashboard token support is unavailable."
@@ -7505,13 +7510,8 @@ class GatewayRunner:
             user_id=user_id,
             user_name=str(source.user_name or ""),
         )
-        governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
-        roles = actor_roles(actor, governance)
-        read_roles = _coerce_csv_list(auth.get("read_roles")) or ["auditor", "manager", "admin"]
-        if not actor_has_any_role(read_roles, actor=actor, config=governance):
-            identity = f"{platform}:{user_id}"
-            role_text = ", ".join(roles) if roles else "none"
-            required = ", ".join(read_roles)
+        identity = f"{platform}:{user_id}"
+        if is_dashboard_actor_revoked(actor):
             try:
                 from agent.audit_log import record_audit_event
 
@@ -7521,17 +7521,91 @@ class GatewayRunner:
                     action="issue",
                     resource="dashboard",
                     outcome="denied",
-                    reason="role_denied",
-                    metadata={"roles": roles, "required_roles": read_roles},
+                    reason="revoked",
                 )
             except Exception:
                 pass
             return (
-                "Dashboard token request denied.\n"
+                "Dashboard access is revoked for this user.\n"
+                f"- User key: `{identity}`\n\n"
+                "A dashboard admin can restore access from **Dashboard Access**."
+            )
+
+        governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+        roles = actor_roles(actor, governance)
+        read_roles = _coerce_csv_list(auth.get("read_roles")) or ["auditor", "manager", "admin"]
+        approval_required = is_truthy_value(channel_cfg.get("approval_required", True))
+        approved_request = approved_dashboard_access_for_actor(actor) if approval_required else None
+
+        if approval_required and not approved_request:
+            access_request, created = request_dashboard_access(actor=actor)
+            try:
+                from agent.audit_log import record_audit_event
+
+                record_audit_event(
+                    "dashboard.access_request",
+                    actor=actor,
+                    action="request",
+                    resource="dashboard",
+                    outcome="created" if created else "pending",
+                    metadata={"request_id": access_request.get("id")},
+                )
+            except Exception:
+                pass
+            status_text = "submitted" if created else "already pending"
+            return EphemeralReply(
+                "Dashboard access request "
+                f"{status_text}.\n"
+                f"- User key: `{identity}`\n"
+                f"- Request ID: `{access_request.get('id')}`\n\n"
+                "A dashboard admin approves it in **Dashboard Access**, assigns roles and teams there, "
+                "and can revoke it later from the same page. After approval, send `/dashboard` again "
+                "to receive a one-time sign-in token.",
+                ttl_seconds=120,
+            )
+
+        if not actor_has_any_role(read_roles, actor=actor, config=governance):
+            role_text = ", ".join(roles) if roles else "none"
+            required = ", ".join(read_roles)
+            access_request, created = request_dashboard_access(actor=actor)
+            try:
+                from agent.audit_log import record_audit_event
+
+                record_audit_event(
+                    "dashboard.access_request",
+                    actor=actor,
+                    action="request",
+                    resource="dashboard",
+                    outcome="created" if created else "pending",
+                    reason="role_denied",
+                    metadata={
+                        "request_id": access_request.get("id"),
+                        "roles": roles,
+                        "required_roles": read_roles,
+                    },
+                )
+            except Exception:
+                pass
+            if str(access_request.get("status") or "").lower() == "approved":
+                return (
+                    "Dashboard access is approved, but the current role mapping no longer satisfies "
+                    "`dashboard.auth.read_roles`.\n"
+                    f"- Your user key: `{identity}`\n"
+                    f"- Your roles: `{role_text}`\n"
+                    f"- Required dashboard read roles: `{required}`\n\n"
+                    "A dashboard admin should update this user in **Dashboard Access** or Config."
+                )
+            status_text = "submitted" if created else "already pending"
+            return EphemeralReply(
+                "Dashboard access request "
+                f"{status_text}.\n"
                 f"- Your user key: `{identity}`\n"
                 f"- Your roles: `{role_text}`\n"
                 f"- Required dashboard read roles: `{required}`\n\n"
-                "Ask a system admin to add or update this user under `governance.users`."
+                "A dashboard admin approves it in **Dashboard Access**, assigns roles and teams there, "
+                "and can revoke it later from the same page. After approval, send `/dashboard` again "
+                "to receive a one-time sign-in token.",
+                ttl_seconds=120,
             )
 
         ttl_minutes = _positive_int(channel_cfg.get("ttl_minutes"), default=10)
@@ -7559,7 +7633,6 @@ class GatewayRunner:
             or os.getenv("COORPORATE_DASHBOARD_URL", "").strip()
             or "http://127.0.0.1:9119"
         )
-        identity = f"{platform}:{user_id}"
         message = (
             "Dashboard sign-in token issued.\n"
             f"- User key: `{identity}`\n"

@@ -53,6 +53,39 @@ export type DashboardAuthStatus = {
   };
 };
 
+export type DashboardAccessRequest = {
+  id: string;
+  actor_key: string;
+  actor?: {
+    platform?: string;
+    user_id?: string;
+    user_name?: string;
+  };
+  status: "pending" | "approved" | "denied" | "revoked" | string;
+  reason?: string;
+  requested_at?: number;
+  updated_at?: number;
+  reviewed_at?: number;
+  reviewed_by_key?: string;
+  approved_roles?: string[];
+  approved_teams?: string[];
+  decision_note?: string;
+  revocation_reason?: string;
+};
+
+export type DashboardAccessRevocation = {
+  actor_key: string;
+  revoked_at?: number;
+  revoked_by_key?: string;
+  reason?: string;
+  removed_tokens?: number;
+};
+
+export type DashboardAccessResponse = {
+  requests: DashboardAccessRequest[];
+  revoked_users: DashboardAccessRevocation[];
+};
+
 export type FolderPolicy = {
   path: string;
   recursive?: boolean;
@@ -162,6 +195,44 @@ export const api = {
     }),
   logoutDashboard: () =>
     fetchJSON<{ ok: boolean }>("/api/dashboard/auth/logout", { method: "POST" }),
+  getDashboardAccessRequests: () =>
+    fetchJSON<DashboardAccessResponse>("/api/dashboard/access/requests"),
+  approveDashboardAccessRequest: (
+    requestId: string,
+    body: { roles: string[]; teams: string[]; name?: string; note?: string },
+  ) =>
+    fetchJSON<{ ok: boolean; request: DashboardAccessRequest }>(
+      `/api/dashboard/access/requests/${encodeURIComponent(requestId)}/approve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  denyDashboardAccessRequest: (requestId: string, reason = "") =>
+    fetchJSON<{ ok: boolean; request: DashboardAccessRequest }>(
+      `/api/dashboard/access/requests/${encodeURIComponent(requestId)}/deny`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      },
+    ),
+  revokeDashboardAccess: (actor_key: string, reason = "") =>
+    fetchJSON<{ ok: boolean; revocation: DashboardAccessRevocation; dropped_sessions: number }>(
+      "/api/dashboard/access/revoke",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor_key, reason }),
+      },
+    ),
+  restoreDashboardAccess: (actor_key: string) =>
+    fetchJSON<{ ok: boolean }>("/api/dashboard/access/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor_key }),
+    }),
   getFolderPolicies: () =>
     fetchJSON<FolderPoliciesResponse>("/api/governance/folder-policies"),
   saveFolderPolicies: (body: {

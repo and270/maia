@@ -12,8 +12,8 @@ Coorporate Hermes is an AmpliIA distribution intended for a private, one-tenant 
 - **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders. Reads/searches require read grants; writes/patches/deletes require write grants.
 - **Team file delegation:** `governance.team_file_roots` lets a team leader manage policies only under their team's configured root from the dashboard.
 - **Dashboard access:** The dashboard is localhost-only by default. Intranet or public serving requires `dashboard.auth` unless an operator explicitly uses `--insecure` for temporary trusted-network testing.
-- **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team-leader dashboard access should use SSO or trusted reverse-proxy headers mapped through `governance.users`, so edits are tied to a specific human actor.
-- **Channel dashboard tokens:** Authenticated gateway users can request one-time dashboard tokens with `/dashboard` only when enabled and role-allowed. Tokens are short-lived, one-use, hashed on disk, and should be requested from private/direct chats.
+- **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team leaders request dashboard access through `/dashboard`; admins approve, deny, revoke, or restore that access in **Dashboard Access**. If the company already has SSO or an identity-aware proxy, Coorporate Hermes can also consume trusted headers mapped through `governance.users`.
+- **Channel dashboard tokens:** Authenticated gateway users can request dashboard access with `/dashboard`. By default the first request creates a pending approval; after approval, `/dashboard` issues a short-lived one-use token. Tokens are hashed on disk and should be requested from private/direct chats.
 - **Shared knowledge approval:** Corporate and team memory/skill edits are proposal-first and require an authorized human approval before files under `<HERMES_HOME>/corporate/` or `<HERMES_HOME>/teams/` are changed.
 - **Cron authorization:** Scheduled workflows can require role or user approval before execution. Approval and denial metadata is persisted in the cron job record.
 - **Audit trail:** Governance denials, knowledge approvals, and cron authorization decisions are written to `<HERMES_HOME>/logs/audit.jsonl` when observability is enabled.
@@ -33,7 +33,7 @@ dashboard:
     admin_roles: [admin]
 ```
 
-Set `COORPORATE_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. For SSO, configure `trusted_user_header` only behind a reverse proxy that strips spoofed client headers, and prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
+Set `COORPORATE_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or a reverse proxy. If the company already has that layer, configure `trusted_user_header` only behind a proxy that strips spoofed client headers, and prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
 
 System admins can edit global folder policy, role-wide grants, and `team_file_roots`. Team leaders can save policies only under delegated roots, cannot change `default_file_policy`, cannot grant role-wide access, and cannot reference users outside the managed team.
 
@@ -48,9 +48,18 @@ dashboard:
       ttl_minutes: 10
       dashboard_url: "https://hermes.company.example"
       require_dm: true
+      approval_required: true
 ```
 
-Use `/whoami` to identify the exact `platform:user_id` to place under `governance.users`. `/dashboard` issues a login token only after role checks pass. Do not set `require_dm: false` unless the platform reply is guaranteed private.
+Default channel access flow:
+
+1. The user sends `/dashboard` in a private/direct chat.
+2. Coorporate Hermes creates a pending **Dashboard Access** request with the gateway actor key.
+3. A system admin approves the request in the dashboard and assigns roles and teams.
+4. The user sends `/dashboard` again to receive a one-time login token.
+5. Admins can revoke access from **Dashboard Access**. Revocation blocks future token issuance and invalidates active dashboard sessions for that actor.
+
+Do not set `require_dm: false` unless the platform reply is guaranteed private.
 
 Example production baseline:
 
@@ -131,7 +140,7 @@ observability:
   retention_days: 180
 ```
 
-Use `coorporate logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, cron authorization, dashboard login/logout, dashboard role denials, and mutating dashboard API calls; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
+Use `coorporate logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, cron authorization, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
 
 ## Guarded Migration
 

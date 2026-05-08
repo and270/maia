@@ -874,10 +874,10 @@ DEFAULT_CONFIG = {
             # Roles granted to a successful local-token login when governance
             # does not define an explicit dashboard user mapping.
             "local_token_roles": ["admin"],
-            # Channel-issued one-time dashboard tokens. A user requests one
-            # from an authenticated gateway channel with /dashboard; the token
-            # is accepted by the normal dashboard login form only when the
-            # mapped actor satisfies read_roles.
+            # Channel-issued one-time dashboard tokens. A user requests access
+            # from an authenticated gateway channel with /dashboard. By default
+            # this creates a Dashboard Access request that an admin approves in
+            # the dashboard before /dashboard issues a one-time login token.
             "channel_tokens": {
                 "enabled": True,
                 "ttl_minutes": 10,
@@ -886,6 +886,7 @@ DEFAULT_CONFIG = {
                 "dashboard_url": "",
                 # Keep true so tokens are not posted into shared channels.
                 "require_dm": True,
+                "approval_required": True,
             },
             # Dashboard-level gates. Governance role_hierarchy is still honored
             # when it can compare granted and required roles.

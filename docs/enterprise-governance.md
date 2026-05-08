@@ -11,7 +11,15 @@ Gateway users are identified by `platform:user_id`, for example:
 - `telegram:987654321`
 - `whatsapp:+15551234567`
 
-Add users to `config.yaml`:
+The normal way to add a dashboard user is **Dashboard -> Dashboard Access**:
+
+1. The user sends `/dashboard` in a private/direct chat with the bot.
+2. Coorporate Hermes records a pending request with the exact `platform:user_id`.
+3. A system admin opens **Dashboard Access**, reviews the request, assigns roles and teams, and approves or denies it.
+4. On approval, Coorporate Hermes writes the user record under `governance.users`.
+5. The user sends `/dashboard` again to receive a short-lived one-time login token.
+
+The YAML below is the backing data saved in `<HERMES_HOME>/config.yaml`; direct editing is for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
 
 ```yaml
 governance:
@@ -27,13 +35,13 @@ governance:
 
 `roles` drive authorization. `teams` drive shared knowledge injection for team memory and skills.
 
-The easiest way to discover a user's exact key is to ask them to message the bot and run:
+The `/whoami` command is still useful for troubleshooting because it shows the exact channel identity and current mapping:
 
 ```text
 /whoami
 ```
 
-The command returns the channel identity, current governance roles, and current teams. A system admin copies that `platform:user_id` key into `governance.users`. Channel identity and Coorporate Hermes authorization are separate: Discord, Telegram, Slack, WhatsApp, or another provider authenticates the sender account; Coorporate Hermes maps that sender to company roles and teams.
+Channel identity and Coorporate Hermes authorization are separate: Discord, Telegram, Slack, WhatsApp, or another provider authenticates the sender account; Coorporate Hermes maps that sender to company roles and teams.
 
 ## Dashboard Access
 
@@ -63,12 +71,68 @@ export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
 coorporate dashboard --host 0.0.0.0 --no-open
 ```
 
-Dashboard login uses one of two patterns:
+Dashboard login uses three supported patterns:
 
 - `local_token`: the server operator sets `COORPORATE_DASHBOARD_TOKEN` or `dashboard.auth.token_hash`; a successful login receives `dashboard.auth.local_token_roles`.
-- `trusted_header`: a reverse proxy or SSO layer authenticates the user and passes a configured identity header such as `X-Auth-Request-User`. Use this only behind a proxy that strips spoofed client headers. Prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
+- `channel_token`: a gateway user requests dashboard access with `/dashboard` in a private/direct channel. By default, the first request appears in **Dashboard Access** for admin approval. After approval, `/dashboard` issues a short-lived one-time token when the user satisfies `dashboard.auth.read_roles`. This is the default built-in path for team leaders.
+- `trusted_header`: Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. It can sit behind a company-operated reverse proxy or SSO layer that authenticates the user and passes a configured identity header such as `X-Auth-Request-User`.
 
-Token mode is mainly for bootstrap and platform-admin access. It does not identify individual team leaders unless a deployment creates separate protected entrypoints. For normal team-leader access, use trusted-header/SSO mode and map identities under `governance.users`:
+### Default Built-In Team-Leader Login
+
+Use this path when team leaders already talk to Coorporate Hermes through Slack, Discord, Telegram, WhatsApp, or another gateway.
+
+1. Enable protected dashboard auth and channel tokens.
+2. Set `dashboard.auth.channel_tokens.dashboard_url` to the URL team leaders will open.
+3. Keep `dashboard.auth.channel_tokens.approval_required: true`.
+4. A team leader sends `/dashboard` in a private/direct chat with the bot.
+5. Coorporate Hermes creates a pending request in **Dashboard Access** with the actor key, display name, platform, and request time.
+6. A system admin logs in with the local admin token and opens **Dashboard Access**.
+7. The admin fills **Name**, **Roles**, and **Teams**, then clicks **Approve**. This writes `governance.users.<actor_key>` in `<HERMES_HOME>/config.yaml`.
+8. If the team leader should manage files, the admin also defines a `team_file_roots` entry in **File Access**.
+9. The team leader sends `/dashboard` again. Coorporate Hermes verifies the approved request and current roles, then sends a one-time token.
+10. The dashboard session is limited by `read_roles`, `manage_roles`, `admin_roles`, and delegated File Access roots.
+11. The admin can later click **Revoke** in **Dashboard Access**. Revocation blocks future channel-token logins, removes unused tokens, and drops active dashboard sessions for that actor.
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+    channel_tokens:
+      enabled: true
+      ttl_minutes: 10
+      dashboard_url: "https://hermes.company.example"
+      require_dm: true
+      approval_required: true
+
+governance:
+  users:
+    "discord:99887766":
+      name: Ana Marketing Lead
+      roles: [manager]
+      teams: [marketing]
+  team_file_roots:
+    marketing:
+      path: "/srv/company/marketing"
+      manager_roles: [manager]
+      managers: ["discord:99887766"]
+```
+
+Dashboard fields and what they save:
+
+| Dashboard field | Saved under `governance.users.<actor_key>` | Example |
+| --- | --- | --- |
+| Name | `name` | `Ana Marketing Lead` |
+| Roles | `roles` | `[manager]` |
+| Teams | `teams` | `[marketing]` |
+
+The actor key itself comes from the authenticated channel event, not from a free-form browser field. Admins can revoke dashboard login access from **Dashboard Access** without deleting the user from `governance.users`, which lets a person keep normal channel permissions while losing dashboard access.
+
+### Optional company SSO/proxy integration
+
+Use this only if the company already operates SSO, VPN, zero-trust access, or an identity-aware reverse proxy. Coorporate Hermes only consumes the trusted identity header; it does not provide that external access layer.
 
 ```yaml
 dashboard:
@@ -89,14 +153,16 @@ governance:
       teams: [marketing]
 ```
 
+The external proxy must authenticate the human, strip any client-supplied identity headers, and inject only its own authenticated identity header. Prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
+
 There is one dashboard application. The logged-in actor determines the available controls:
 
 | Actor | How they normally log in | What they can do |
 |---|---|---|
-| System admin | Local admin token or SSO identity with `admin` role. | Global config, secrets, plugins, model settings, all folder policies, delegated roots, approvals, and audit review. |
-| Team leader | SSO/trusted-header identity mapped to `manager` and a team. | Approval queues allowed by role, and File Access only under delegated team roots. |
+| System admin | Local admin token, channel-issued `/dashboard` token with `admin`, or trusted header from existing company SSO/proxy. | Global config, secrets, plugins, model settings, all folder policies, delegated roots, approvals, and audit review. |
+| Team leader | Channel-issued `/dashboard` token, or trusted header from existing company SSO/proxy. | Approval queues allowed by role, and File Access only under delegated team roots. |
 | Operator | Usually CLI or gateway channel identity, not dashboard. | Agent work within configured tool, folder, memory, and cron policy. |
-| Auditor | SSO/trusted-header identity mapped to `auditor`. | Read operational evidence without changing execution policy. |
+| Auditor | Channel-issued `/dashboard` token, or trusted header from existing company SSO/proxy. | Read operational evidence without changing execution policy. |
 
 Dashboard role gates are intentionally coarse:
 
@@ -110,7 +176,7 @@ All mutating dashboard API calls are written to the audit trail as `dashboard.ap
 
 ### Channel-issued dashboard tokens
 
-If the company does not have SSO in front of the dashboard, Coorporate Hermes can let authenticated channel users request a one-time dashboard token:
+If the company does not have SSO in front of the dashboard, Coorporate Hermes can let authenticated channel users request dashboard access and, after approval, one-time dashboard tokens:
 
 ```yaml
 dashboard:
@@ -121,17 +187,31 @@ dashboard:
       ttl_minutes: 10
       dashboard_url: "https://hermes.company.example"
       require_dm: true
+      approval_required: true
 ```
 
-The user runs `/dashboard` in a private/direct chat with the bot. The gateway already knows the sender as `discord:99887766`, `telegram:987654321`, `whatsapp:+15551234567`, and so on. Coorporate Hermes checks that actor against `governance.users` and only issues a token when the actor satisfies `dashboard.auth.read_roles`. The dashboard login form accepts the token, creates a normal dashboard session for that actor, and then applies the same read/manage/admin gates.
+The user runs `/dashboard` in a private/direct chat with the bot. The gateway already knows the sender as `discord:99887766`, `telegram:987654321`, `whatsapp:+15551234567`, and so on.
+
+First request:
+
+1. If the actor has not been approved, Coorporate Hermes creates a pending **Dashboard Access** request.
+2. The bot tells the user the request is pending and to retry `/dashboard` after approval.
+3. A system admin reviews the request in the dashboard, assigns roles and teams, and approves or denies it.
+
+Approved request:
+
+1. The user sends `/dashboard` again.
+2. Coorporate Hermes checks that dashboard access is approved, not revoked, and that current roles satisfy `dashboard.auth.read_roles`.
+3. The bot sends a short-lived one-time token.
+4. The dashboard login form consumes that token, creates a normal dashboard session for that actor, and applies the same read/manage/admin gates.
 
 Operational rules:
 
 - Keep `require_dm: true` unless the platform can guarantee private ephemeral replies.
 - Set `dashboard_url` to the real intranet, VPN, or protected public dashboard URL; `127.0.0.1` is useful only on the server.
 - Tokens are one-time, short-lived, and stored hashed under `<HERMES_HOME>/dashboard/channel_login_tokens.json`.
-- Token issuance and dashboard login are audit events when audit logging is enabled.
-- Removing or downgrading a user in `governance.users` prevents future token issuance and prevents an unused token from becoming a useful session unless the user's remaining roles still satisfy `read_roles`.
+- Access requests, approvals, denials, revocations, token issuance, and dashboard login are audit events when audit logging is enabled.
+- Revoking a user in **Dashboard Access** blocks future token issuance and invalidates active dashboard sessions for that actor.
 
 ## Memory and Skill Governance
 
@@ -162,8 +242,8 @@ The policy is checked before `read_file`, `search_files`, `write_file`, `patch`,
 
 ### What To Do First
 
-1. Ask each real user to run `/whoami` in their channel, such as Slack, Discord, Telegram, or WhatsApp. That returns the exact actor key, for example `discord:99887766`, `slack:U123456`, or `whatsapp:+15551234567`.
-2. In **Dashboard -> Config**, map those keys under `governance.users` with roles and teams. You can also edit `<HERMES_HOME>/config.yaml` directly on the server.
+1. Ask each real user who needs dashboard or delegated file administration to run `/dashboard` in a private channel chat.
+2. Approve the request in **Dashboard Access** with the right roles and teams. This creates the `governance.users` mapping used by file policies.
 3. Keep `governance.default_file_policy: deny` in production.
 4. Open **Dashboard -> File Access** to create the actual folder policies.
 
@@ -171,20 +251,20 @@ The policy is checked before `read_file`, `search_files`, `write_file`, `patch`,
 
 Use this when you are deciding the maximum server folders Coorporate Hermes may ever touch.
 
-1. Log into the dashboard with the local admin token, SSO, trusted proxy identity, or a channel-issued `/dashboard` token whose role satisfies `dashboard.auth.admin_roles`.
+1. Log into the dashboard with the local admin token, a channel-issued `/dashboard` token whose role satisfies `dashboard.auth.admin_roles`, or a trusted header from an existing company SSO/proxy.
 2. Open **File Access**.
 3. Set **Default file policy** to `deny`.
 4. Add a policy for a shared folder only if all authenticated users should read it. Use **Read roles** / **Write roles** for broad tenant-wide grants; only admins can use role-wide fields.
 5. Add narrower policies for department folders. Use **Read teams** / **Write teams** for team-wide grants and **Read users** / **Write users** for named people.
 6. Add **Delegated team roots** when a team leader should manage day-to-day access inside one bounded folder. Fill **Team**, **Server root**, **Manager roles**, and optionally **Manager users**.
-7. Save, test with real mapped users, and review `governance.file_access` audit events for denials.
+7. Save, test with real approved users, and review `governance.file_access` audit events for denials.
 
 ### Team Leader Flow
 
 Team leaders use the same dashboard URL, but the File Access page is filtered by their identity.
 
-1. The team leader logs in through SSO/trusted headers or asks the bot for `/dashboard` from a private/direct channel.
-2. The dashboard matches that identity to `governance.users`.
+1. The team leader asks the bot for `/dashboard` from a private/direct channel. If access is not approved yet, a system admin approves the pending request in **Dashboard Access** first.
+2. The dashboard matches the approved identity to `governance.users`.
 3. **File Access** shows only delegated roots for teams the user manages, such as `/srv/company/marketing`.
 4. The team leader clicks **Add policy** and sets a **Server path** under the delegated root.
 5. They use **Read teams** / **Write teams** for their managed team or **Read users** / **Write users** for named users inside that team.
@@ -205,7 +285,7 @@ Goal:
 
 Dashboard actions:
 
-1. **Config**: add Ana, Bruno, and Carla to `governance.users`.
+1. **Dashboard Access**: approve Ana, Bruno, and Carla with the right roles and `marketing` team. This creates `governance.users`.
 2. **File Access -> Delegated team roots**: add team `marketing` with server root `/srv/company/marketing` and manager user `sso:ana@company.com`.
 3. **File Access -> Add policy**: add `/srv/company/marketing` with `read_teams: marketing` and `write_users: sso:ana@company.com`.
 4. **File Access -> Add policy**: add `/srv/company/marketing/campaigns` with `read_teams: marketing` and `write_teams: marketing`.

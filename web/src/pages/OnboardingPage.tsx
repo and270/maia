@@ -26,10 +26,10 @@ const STEPS = [
   },
   {
     icon: Users,
-    title: "Users and roles",
-    text: "Ask users for /whoami, then map identities such as slack:U123, discord:99887766, or whatsapp:+15551234567 to roles and teams.",
-    to: "/config?search=governance.users",
-    action: "Assign Roles",
+    title: "Dashboard access",
+    text: "Approve /dashboard requests, assign roles and teams, and revoke dashboard login access from one operational page.",
+    to: "/dashboard-access",
+    action: "Open Access",
   },
   {
     icon: Database,
@@ -62,9 +62,9 @@ const STEPS = [
   {
     icon: FileKey2,
     title: "Channel dashboard tokens",
-    text: "Configure dashboard.auth.channel_tokens so mapped users can request /dashboard one-time tokens from private channel chats.",
-    to: "/config?search=dashboard.auth.channel_tokens",
-    action: "Open Config",
+    text: "Keep channel tokens short-lived and approval-based so users get one-time login tokens only after admin review.",
+    to: "/dashboard-access",
+    action: "Open Access",
   },
   {
     icon: FileKey2,
@@ -76,9 +76,9 @@ const STEPS = [
 ];
 
 const CHECKLIST = [
-  "Gateway users are mapped by platform:user_id.",
-  "Users can run /whoami to reveal the exact identity key admins should map.",
-  "Dashboard channel tokens are enabled only with short TTL and private/direct chat requests.",
+  "Gateway users are identified by platform:user_id.",
+  "Users can run /dashboard in a private chat to create a dashboard access request.",
+  "Dashboard channel tokens are short-lived, one-use, approval-based, and revocable.",
   "Users that need shared team knowledge have governance.users.*.teams assigned.",
   "Production file policy is default deny.",
   "Corporate and team memories/skills are changed only through Knowledge approvals.",

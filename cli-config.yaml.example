@@ -1021,6 +1021,29 @@ display:
 #   redact_pii: false
 
 # =============================================================================
+# Protected Dashboard Access
+# =============================================================================
+# The dashboard binds to 127.0.0.1 by default. Before serving it on an intranet
+# or public interface, enable protected auth. Team leaders request access by
+# sending /dashboard in a private gateway chat; admins approve, deny, revoke, or
+# restore access from Dashboard -> Dashboard Access.
+#
+# dashboard:
+#   auth:
+#     enabled: true
+#     token_env: COORPORATE_DASHBOARD_TOKEN
+#     local_token_roles: [admin]
+#     read_roles: [auditor, manager, admin]
+#     manage_roles: [manager, admin]
+#     admin_roles: [admin]
+#     channel_tokens:
+#       enabled: true
+#       ttl_minutes: 10
+#       dashboard_url: "https://hermes.company.example"
+#       require_dm: true
+#       approval_required: true
+
+# =============================================================================
 # Enterprise Governance
 # =============================================================================
 # Enables role-aware gateway users, team/user folder access policies, and

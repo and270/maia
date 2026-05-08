@@ -27,7 +27,7 @@ Use:
 coorporate logs audit
 ```
 
-Audit events currently cover governance file-access denials, knowledge approval requests and decisions, cron authorization requests/decisions, dashboard channel-token issuance and denials, dashboard login/logout, dashboard role denials, and mutating dashboard API calls such as config, secret, plugin, cron, and policy changes.
+Audit events currently cover governance file-access denials, knowledge approval requests and decisions, cron authorization requests/decisions, dashboard access requests/approvals/denials/revocations/restores, dashboard channel-token issuance and denials, dashboard login/logout, dashboard role denials, and mutating dashboard API calls such as config, secret, plugin, cron, and policy changes.
 
 ```yaml
 observability:

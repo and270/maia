@@ -67,9 +67,7 @@ Role gates:
 | Manage | cron authorization decisions, knowledge approval decisions, and delegated File Access updates | `manager`, `admin` |
 | Admin | config, secrets, folder policies, plugin installation/removal, model settings | `admin` |
 
-Reverse-proxy/SSO mode is available with `dashboard.auth.trusted_user_header`. In that mode, bind Coorporate Hermes to `127.0.0.1` behind a TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
-
-Channel-token mode is available for deployments that rely on gateway identity instead of SSO:
+Channel-token mode is the default built-in path for team leaders:
 
 ```yaml
 dashboard:
@@ -80,9 +78,12 @@ dashboard:
       ttl_minutes: 10
       dashboard_url: "https://hermes.company.example"
       require_dm: true
+      approval_required: true
 ```
 
-The user runs `/dashboard` in a private/direct channel. The gateway identifies them as `discord:99887766`, `telegram:987654321`, `whatsapp:+15551234567`, etc. Coorporate Hermes checks that key in `governance.users`, verifies the role is allowed by `read_roles`, and sends a one-time token for the normal login form. Users can run `/whoami` first to see the exact key an admin should map.
+Setup flow: the user runs `/dashboard` in a private/direct channel. Coorporate Hermes creates a pending request in **Dashboard Access** with the authenticated actor key, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+15551234567`. A system admin approves the request in the dashboard, assigns roles and teams, and can later revoke or restore access. After approval, the user runs `/dashboard` again to receive a one-time token for the normal login form.
+
+Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or a reverse proxy. It provides trusted-header integration for companies that already operate that access layer. Configure `dashboard.auth.trusted_user_header`, bind Coorporate Hermes to `127.0.0.1` behind the TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
 
 Mutating dashboard API calls, login/logout, and denied role checks are written to the audit log when observability audit logging is enabled.
 
@@ -223,14 +224,14 @@ Manage the server-side folder policies that bound what Coorporate Hermes can rea
 There is one File Access page. The logged-in dashboard actor determines what it shows:
 
 - **System admins** can change `default_file_policy`, global shared folders, sensitive department folders, role-wide grants, and delegated team roots.
-- **Team leaders** can use the same page after SSO/trusted-header login or a private `/dashboard` token, but only for folders under a delegated team root such as `/srv/company/marketing`.
+- **Team leaders** can use the same page after a private `/dashboard` token, or trusted-header login from an existing company identity layer, but only for folders under a delegated team root such as `/srv/company/marketing`.
 - **Operators** normally do not use this page. They use CLI or gateway channels, and file tools are constrained by the policies saved here.
 
 Before using the page:
 
-1. Users run `/whoami` in their channel.
-2. An admin maps the returned actor keys in **Config** under `governance.users`.
-3. Each mapped user gets roles and teams, for example `roles: [operator]` and `teams: [marketing]`.
+1. Users who need dashboard or delegated file administration run `/dashboard` in a private channel.
+2. An admin approves the requests in **Dashboard Access** with roles and teams.
+3. The approved mapping is saved under `governance.users`, for example `roles: [operator]` and `teams: [marketing]`.
 
 System admin workflow:
 
@@ -239,7 +240,7 @@ System admin workflow:
 3. Add shared company roots only when the whole tenant should access them.
 4. Add sensitive department roots with **Read teams**, **Write teams**, **Read users**, or **Write users**.
 5. Add **Delegated team roots** for teams that should self-manage a bounded folder.
-6. Save and test with real mapped users.
+6. Save and test with real approved users.
 
 Team leader workflow:
 

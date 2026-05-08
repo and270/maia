@@ -37,6 +37,7 @@ import {
   RotateCw,
   Settings,
   Shield,
+  ShieldCheck,
   Sparkles,
   Star,
   Terminal,
@@ -65,6 +66,7 @@ import LogsPage from "@/pages/LogsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import OnboardingPage from "@/pages/OnboardingPage";
+import DashboardAccessPage from "@/pages/DashboardAccessPage";
 import KnowledgePage from "@/pages/KnowledgePage";
 import FileAccessPage from "@/pages/FileAccessPage";
 import CronPage from "@/pages/CronPage";
@@ -248,6 +250,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
   "/sessions": SessionsPage,
   "/onboarding": OnboardingPage,
+  "/dashboard-access": DashboardAccessPage,
   "/knowledge": KnowledgePage,
   "/file-access": FileAccessPage,
   "/analytics": AnalyticsPage,
@@ -282,6 +285,11 @@ const BUILTIN_NAV_REST: NavItem[] = [
     labelKey: "onboarding",
     label: "Onboarding",
     icon: Shield,
+  },
+  {
+    path: "/dashboard-access",
+    label: "Access",
+    icon: ShieldCheck,
   },
   {
     path: "/knowledge",
@@ -338,6 +346,7 @@ const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
   Database,
   FolderTree,
   Shield,
+  ShieldCheck,
   Users,
   Wrench,
   Zap,
