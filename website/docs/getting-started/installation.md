@@ -13,7 +13,7 @@ Get Coorporate Hermes up and running in under two minutes with the one-line inst
 ### Linux / macOS / WSL2
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```
@@ -23,7 +23,7 @@ cd coorporate-hermes
 Coorporate Hermes ships a Termux-aware installer path too:
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```

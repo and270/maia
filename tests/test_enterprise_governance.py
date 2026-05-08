@@ -134,6 +134,71 @@ governance:
     assert "explicitly denied" in reason
 
 
+def test_folder_policy_supports_team_read_write_and_team_denies(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    marketing_dir = tmp_path / "marketing"
+    marketing_dir.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+governance:
+  enabled: true
+  default_role: viewer
+  users:
+    "slack:U_LEAD":
+      roles: [manager]
+      teams: [marketing]
+    "slack:U_ANALYST":
+      roles: [operator]
+      teams: [marketing]
+    "slack:U_BLOCKED":
+      roles: [operator]
+      teams: [marketing]
+    "slack:U_FINANCE":
+      roles: [operator]
+      teams: [finance]
+  folder_policies:
+    - path: "{marketing_dir}"
+      read_teams: [marketing]
+      write_users: ["slack:U_LEAD"]
+      deny_users: ["slack:U_BLOCKED"]
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    target = str(marketing_dir / "campaign.md")
+    allowed, _ = check_file_access(
+        target,
+        "read",
+        actor=Actor(platform="slack", user_id="U_ANALYST"),
+    )
+    assert allowed is True
+
+    allowed, _ = check_file_access(
+        target,
+        "write",
+        actor=Actor(platform="slack", user_id="U_LEAD"),
+    )
+    assert allowed is True
+
+    allowed, reason = check_file_access(
+        target,
+        "read",
+        actor=Actor(platform="slack", user_id="U_FINANCE"),
+    )
+    assert allowed is False
+    assert "lacks read access" in reason
+
+    allowed, reason = check_file_access(
+        target,
+        "read",
+        actor=Actor(platform="slack", user_id="U_BLOCKED"),
+    )
+    assert allowed is False
+    assert "explicitly denied" in reason
+
+
 def test_file_tool_governance_uses_resolved_task_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     workspace = tmp_path / "workspace"

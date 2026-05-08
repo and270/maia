@@ -11,10 +11,10 @@ The web dashboard is a browser-based UI for managing your Coorporate Hermes inst
 ## Quick Start
 
 ```bash
-hermes dashboard
+coorporate dashboard
 ```
 
-This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine — no data leaves localhost.
+This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine and binds to localhost by default.
 
 ### Options
 
@@ -23,19 +23,68 @@ This starts a local web server and opens `http://127.0.0.1:9119` in your browser
 | `--port` | `9119` | Port to run the web server on |
 | `--host` | `127.0.0.1` | Bind address |
 | `--no-open` | — | Don't auto-open the browser |
-| `--insecure` | off | Allow binding to non-localhost hosts (**DANGEROUS** — exposes API keys on the network; pair with a firewall and strong auth) |
-| `--tui` | off | Expose the in-browser Chat tab (embedded `hermes --tui` via PTY/WebSocket). Alternatively set `HERMES_DASHBOARD_TUI=1`. |
+| `--insecure` | off | Allow non-localhost binding without `dashboard.auth` (**DANGEROUS** — exposes API keys, config, and server file controls) |
+| `--tui` | off | Expose the in-browser Chat tab (embedded `coorporate --tui` via PTY/WebSocket). Alternatively set `HERMES_DASHBOARD_TUI=1`. |
 
 ```bash
 # Custom port
-hermes dashboard --port 8080
+coorporate dashboard --port 8080
 
-# Bind to all interfaces (use with caution on shared networks)
-hermes dashboard --host 0.0.0.0
+# Bind to all interfaces only after dashboard.auth is configured
+coorporate dashboard --host 0.0.0.0
 
 # Start without opening browser
-hermes dashboard --no-open
+coorporate dashboard --no-open
 ```
+
+## Protected Intranet or Public Serving
+
+The dashboard can read and change `.env`, `config.yaml`, server folder policies, cron jobs, knowledge approvals, plugins, and model settings. Coorporate Hermes refuses to bind the dashboard to a non-loopback interface unless protected dashboard auth is configured, unless the operator explicitly uses `--insecure`.
+
+Token-based protected mode:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    token_env: COORPORATE_DASHBOARD_TOKEN
+    local_token_roles: [admin]
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+```
+
+```bash
+export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+coorporate dashboard --host 0.0.0.0 --no-open
+```
+
+Role gates:
+
+| Gate | Allows | Default roles |
+|---|---|---|
+| Read | sessions, logs, analytics, cron lists, knowledge review | `auditor`, `manager`, `admin` |
+| Manage | cron authorization decisions, knowledge approval decisions, and delegated File Access updates | `manager`, `admin` |
+| Admin | config, secrets, folder policies, plugin installation/removal, model settings | `admin` |
+
+Reverse-proxy/SSO mode is available with `dashboard.auth.trusted_user_header`. In that mode, bind Coorporate Hermes to `127.0.0.1` behind a TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
+
+Channel-token mode is available for deployments that rely on gateway identity instead of SSO:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    channel_tokens:
+      enabled: true
+      ttl_minutes: 10
+      dashboard_url: "https://hermes.company.example"
+      require_dm: true
+```
+
+The user runs `/dashboard` in a private/direct channel. The gateway identifies them as `discord:99887766`, `telegram:987654321`, `whatsapp:+15551234567`, etc. Coorporate Hermes checks that key in `governance.users`, verifies the role is allowed by `read_roles`, and sends a one-time token for the normal login form. Users can run `/whoami` first to see the exact key an admin should map.
+
+Mutating dashboard API calls, login/logout, and denied role checks are written to the audit log when observability audit logging is enabled.
 
 ## Prerequisites
 
@@ -47,7 +96,7 @@ pip install 'coorporate-hermes[web,pty]'
 
 The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install coorporate-hermes[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
 
-When you run `hermes dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
+When you run `coorporate dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
 
 ## Pages
 
@@ -69,7 +118,7 @@ The **Chat** tab embeds the full Hermes TUI (the same interface you get from `he
 **How it works:**
 
 - `/api/pty` opens a WebSocket authenticated with the dashboard's session token
-- The server spawns `hermes --tui` behind a POSIX pseudo-terminal
+- The server spawns `coorporate --tui` behind a POSIX pseudo-terminal
 - Keystrokes travel to the PTY; ANSI output streams back to the browser
 - xterm.js's WebGL renderer paints each cell to an integer-pixel grid; mouse tracking (SGR 1006), wide characters (Unicode 11), and box-drawing glyphs all render natively
 - Resizing the browser window resizes the TUI via the `@xterm/addon-fit` addon
@@ -167,6 +216,84 @@ Create and manage scheduled cron jobs that run agent prompts on a recurring sche
 - **Trigger now** — immediately execute a job outside its normal schedule
 - **Delete** — permanently remove a cron job
 
+### File Access
+
+Manage the server-side folder policies that bound what Coorporate Hermes can read, search, write, patch, or delete.
+
+There is one File Access page. The logged-in dashboard actor determines what it shows:
+
+- **System admins** can change `governance.default_file_policy`, global shared folders, sensitive department folders, role-wide grants, and delegated `team_file_roots`.
+- **Team leaders** can use the same page after SSO/trusted-header dashboard login, but only for folders under a delegated team root such as `/srv/company/marketing`.
+- **Operators** normally do not use this page. They use CLI or gateway channels and their file tools are constrained by the policies saved here.
+
+System admin workflow:
+
+1. Open **File Access** as an admin.
+2. Set **Default file policy** to `deny`.
+3. Add shared company roots and sensitive department roots.
+4. Define `team_file_roots` for teams that should self-manage a bounded folder.
+5. Save and test with real mapped users.
+
+Team leader workflow:
+
+1. Open the same dashboard URL through SSO or the trusted proxy.
+2. Confirm the page shows the expected managed team badge.
+3. Add a policy below the delegated root.
+4. Use `read_teams`/`write_teams` for team-wide grants or `read_users`/`write_users` for named users.
+5. Use `recursive: false` for one exact file, such as a read-only brand guideline PDF.
+6. Save and ask the user to retry the file operation.
+
+Team leaders cannot change the global default, cannot edit another team's root, cannot grant role-wide access such as `read_roles: [viewer]`, and cannot reference users outside the managed team unless they also have system-admin dashboard access.
+
+Example backing YAML in `<HERMES_HOME>/config.yaml`:
+
+```yaml
+governance:
+  enabled: true
+  default_file_policy: deny
+  users:
+    "sso:ana@company.com":
+      name: Ana Marketing Lead
+      roles: [manager]
+      teams: [marketing]
+    "sso:bruno@company.com":
+      name: Bruno Marketing Analyst
+      roles: [operator]
+      teams: [marketing]
+  team_file_roots:
+    marketing:
+      path: "/srv/company/marketing"
+      manager_roles: [manager]
+      managers: ["sso:ana@company.com"]
+  folder_policies:
+    - path: "/srv/company/marketing"
+      read_teams: [marketing]
+      write_users: ["sso:ana@company.com"]
+    - path: "/srv/company/marketing/campaigns"
+      read_teams: [marketing]
+      write_teams: [marketing]
+    - path: "/srv/company/marketing/brand-guidelines.pdf"
+      recursive: false
+      read_teams: [marketing]
+      write_users: ["sso:ana@company.com"]
+    - path: "/srv/company/marketing/private-budget.xlsx"
+      recursive: false
+      read_users: ["sso:ana@company.com"]
+      write_users: ["sso:ana@company.com"]
+```
+
+Field guide:
+
+| Field | Meaning | Who can normally set it |
+|---|---|---|
+| `path` | Absolute server folder or file path. | Admin; team leader below delegated root. |
+| `recursive` | `true` for folders, `false` for one exact file. | Admin or delegated team leader. |
+| `read_teams`, `write_teams` | Grants to users assigned to a team. | Admin; team leader for managed team only. |
+| `read_users`, `write_users` | Grants to named actor keys such as `sso:ana@company.com` or `slack:U123`. | Admin; team leader for users assigned to managed team only. |
+| `deny_users`, `deny_teams` | Explicit block that overrides broader grants. | Admin or delegated team leader. |
+| `read_roles`, `write_roles` | Broad tenant-wide grants by role. | System admin only. |
+| `team_file_roots` | Delegated roots that decide what a team leader can manage. | System admin only. |
+
 ### Skills
 
 Browse, search, and toggle skills and toolsets. Skills are loaded from `~/.hermes/skills/` and grouped by category.
@@ -177,7 +304,7 @@ Browse, search, and toggle skills and toolsets. Skills are loaded from `~/.herme
 - **Toolsets** — a separate section shows built-in toolsets (file operations, web browsing, etc.) with their active/inactive status, setup requirements, and list of included tools
 
 :::warning Security
-The web dashboard reads and writes your `.env` file, which contains API keys and secrets. It binds to `127.0.0.1` by default — only accessible from your local machine. If you bind to `0.0.0.0`, anyone on your network can view and modify your credentials. The dashboard has no authentication of its own.
+The web dashboard reads and writes `.env` and `config.yaml`, including API keys, governance roles, and server folder policies. It binds to `127.0.0.1` by default. Before binding to `0.0.0.0` or any intranet/public address, enable `dashboard.auth`, use TLS or a private network boundary, and keep `--insecure` for temporary trusted-network testing only.
 :::
 
 ## `/reload` Slash Command
@@ -307,7 +434,7 @@ If you're contributing to the web dashboard frontend:
 
 ```bash
 # Terminal 1: start the backend API
-hermes dashboard --no-open
+coorporate dashboard --no-open
 
 # Terminal 2: start the Vite dev server with HMR
 cd web/
@@ -321,7 +448,7 @@ The frontend is built with React 19, TypeScript, Tailwind CSS v4, and shadcn/ui-
 
 ## Automatic Build on Update
 
-When you run `hermes update`, the web frontend is automatically rebuilt if `npm` is available. This keeps the dashboard in sync with code updates. If `npm` isn't installed, the update skips the frontend build and `hermes dashboard` will build it on first launch.
+When you run `coorporate update`, the web frontend is automatically rebuilt if `npm` is available. This keeps the dashboard in sync with code updates. If `npm` isn't installed, the update skips the frontend build and `coorporate dashboard` will build it on first launch.
 
 ## Themes & plugins
 

@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import hashlib
 import hmac
 import importlib.util
 import json
@@ -22,6 +23,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -67,12 +69,28 @@ _log = logging.getLogger(__name__)
 app = FastAPI(title="Coorporate Hermes", version=__version__)
 
 # ---------------------------------------------------------------------------
-# Session token for protecting sensitive endpoints (reveal).
-# Generated fresh on every server start — dies when the process exits.
-# Injected into the SPA HTML so only the legitimate web UI can use it.
+# Dashboard authentication.
+#
+# Default local mode stays backward compatible: a per-process token is injected
+# into localhost-served HTML. Corporate/protected mode is enabled through
+# dashboard.auth in config.yaml and issues per-user dashboard sessions from an
+# admin token or trusted reverse-proxy identity headers.
 # ---------------------------------------------------------------------------
 _SESSION_TOKEN = secrets.token_urlsafe(32)
 _SESSION_HEADER_NAME = "X-Hermes-Session-Token"
+_DASHBOARD_SESSION_STORAGE_KEY = "coorporateHermes.dashboardSessionToken"
+
+
+@dataclass(frozen=True)
+class DashboardSession:
+    token: str
+    actor: Any
+    roles: List[str]
+    expires_at: float
+    source: str
+
+
+_DASHBOARD_AUTH_SESSIONS: Dict[str, DashboardSession] = {}
 
 # In-browser Chat tab (/chat, /api/pty, …).  Off unless ``hermes dashboard --tui``
 # or HERMES_DASHBOARD_TUI=1.  Set from :func:`start_server`.
@@ -107,7 +125,686 @@ _PUBLIC_API_PATHS: frozenset = frozenset({
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
     "/api/dashboard/plugins/rescan",
+    "/api/dashboard/auth/status",
+    "/api/dashboard/auth/login",
 })
+
+
+def _is_public_api_path(path: str) -> bool:
+    if path in {"/api/dashboard/auth/status", "/api/dashboard/auth/login"}:
+        return True
+    if _dashboard_auth_enabled():
+        return path == "/api/status"
+    return path in _PUBLIC_API_PATHS or path.startswith("/api/plugins/")
+
+
+def _coerce_role_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _dashboard_auth_config() -> Dict[str, Any]:
+    defaults = (
+        DEFAULT_CONFIG.get("dashboard", {})
+        .get("auth", {})
+        if isinstance(DEFAULT_CONFIG.get("dashboard"), dict)
+        else {}
+    )
+    merged: Dict[str, Any] = dict(defaults) if isinstance(defaults, dict) else {}
+    try:
+        cfg = load_config()
+    except Exception:
+        cfg = {}
+    dashboard = cfg.get("dashboard", {}) if isinstance(cfg, dict) else {}
+    auth = dashboard.get("auth", {}) if isinstance(dashboard, dict) else {}
+    if isinstance(auth, dict):
+        merged.update(auth)
+    return merged
+
+
+def _dashboard_auth_enabled(auth_config: Optional[Dict[str, Any]] = None) -> bool:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    return bool(cfg.get("enabled"))
+
+
+def _dashboard_env_token(auth_config: Optional[Dict[str, Any]] = None) -> str:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    token_env = str(cfg.get("token_env") or "COORPORATE_DASHBOARD_TOKEN").strip()
+    return os.getenv(token_env, "").strip() if token_env else ""
+
+
+def _dashboard_has_token_secret(auth_config: Optional[Dict[str, Any]] = None) -> bool:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    env_token = _dashboard_env_token(cfg)
+    return bool((env_token and len(env_token) >= 16) or str(cfg.get("token_hash") or "").strip())
+
+
+def _dashboard_has_trusted_headers(auth_config: Optional[Dict[str, Any]] = None) -> bool:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    return bool(str(cfg.get("trusted_user_header") or "").strip())
+
+
+def _dashboard_channel_tokens_config(auth_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    raw = cfg.get("channel_tokens", {}) if isinstance(cfg, dict) else {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, bool):
+        return {"enabled": raw}
+    return {}
+
+
+def _dashboard_channel_tokens_enabled(auth_config: Optional[Dict[str, Any]] = None) -> bool:
+    cfg = _dashboard_channel_tokens_config(auth_config)
+    return bool(cfg.get("enabled", True))
+
+
+def _dashboard_trusted_headers_allowed(
+    auth_config: Optional[Dict[str, Any]] = None,
+) -> bool:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    if not _dashboard_has_trusted_headers(cfg):
+        return False
+    bound_host = getattr(app.state, "bound_host", "127.0.0.1")
+    if bound_host in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return bool(cfg.get("allow_trusted_headers_on_public_bind"))
+
+
+def _dashboard_auth_configured_for_bind(
+    host: str,
+    auth_config: Optional[Dict[str, Any]] = None,
+) -> bool:
+    cfg = _dashboard_auth_config() if auth_config is None else auth_config
+    if not _dashboard_auth_enabled(cfg):
+        return False
+    if _dashboard_has_token_secret(cfg):
+        return True
+    if _dashboard_channel_tokens_enabled(cfg):
+        return True
+    if not _dashboard_has_trusted_headers(cfg):
+        return False
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return bool(cfg.get("allow_trusted_headers_on_public_bind"))
+
+
+def _verify_dashboard_token_hash(raw_token: str, token_hash: str) -> bool:
+    value = str(token_hash or "").strip()
+    if not raw_token or not value:
+        return False
+    if value.startswith("sha256:"):
+        value = value.split(":", 1)[1].strip()
+    if len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(digest.encode(), value.encode())
+
+
+def _verify_local_dashboard_login(raw_token: str, auth_config: Dict[str, Any]) -> bool:
+    if not raw_token:
+        return False
+    env_token = _dashboard_env_token(auth_config)
+    if env_token:
+        if len(env_token) < 16:
+            _log.warning("Ignoring dashboard token from env because it is shorter than 16 characters.")
+        elif hmac.compare_digest(raw_token.encode(), env_token.encode()):
+            return True
+    return _verify_dashboard_token_hash(raw_token, str(auth_config.get("token_hash") or ""))
+
+
+def _consume_channel_dashboard_login(raw_token: str, auth_config: Dict[str, Any]) -> Optional[DashboardSession]:
+    if not _dashboard_channel_tokens_enabled(auth_config):
+        return None
+    try:
+        from hermes_cli.dashboard_tokens import (
+            actor_from_payload,
+            consume_channel_dashboard_token,
+        )
+    except Exception:
+        return None
+
+    record = consume_channel_dashboard_token(raw_token)
+    if not record:
+        return None
+    actor_payload = record.get("actor", {})
+    if not isinstance(actor_payload, dict):
+        return None
+    actor = actor_from_payload(actor_payload)
+    roles = _dashboard_roles_for_actor(
+        actor,
+        fallback_roles=_coerce_role_list(record.get("roles")),
+    )
+    if not _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("read_roles"))):
+        return None
+    return _issue_dashboard_session(actor, roles, "channel_token")
+
+
+def _dashboard_governance_config() -> Dict[str, Any]:
+    try:
+        from agent.governance import load_governance_config
+
+        cfg = load_governance_config()
+    except Exception:
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    if not cfg.get("role_hierarchy"):
+        cfg = dict(cfg)
+        cfg["role_hierarchy"] = DEFAULT_CONFIG.get("governance", {}).get(
+            "role_hierarchy",
+            ["viewer", "operator", "manager", "admin"],
+        )
+    return cfg
+
+
+def _governance_has_user_record(actor: Any, governance_config: Dict[str, Any]) -> bool:
+    users = governance_config.get("users", {})
+    if not isinstance(users, dict):
+        return False
+    for key in getattr(actor, "keys", ()):
+        if key in users:
+            return True
+    return False
+
+
+def _dashboard_roles_for_actor(
+    actor: Any,
+    *,
+    explicit_roles: Optional[List[str]] = None,
+    fallback_roles: Optional[List[str]] = None,
+) -> List[str]:
+    explicit = _coerce_role_list(explicit_roles)
+    fallback = _coerce_role_list(fallback_roles)
+    governance_cfg = _dashboard_governance_config()
+    roles: List[str] = []
+    try:
+        from agent.governance import actor_roles
+
+        if _governance_has_user_record(actor, governance_cfg):
+            roles.extend(actor_roles(actor, governance_cfg))
+    except Exception:
+        pass
+    roles.extend(explicit)
+    if not roles:
+        roles.extend(fallback)
+    return list(dict.fromkeys(role for role in roles if role))
+
+
+def _dashboard_roles_allow(
+    granted_roles: List[str],
+    required_roles: List[str],
+    governance_config: Optional[Dict[str, Any]] = None,
+) -> bool:
+    required = _coerce_role_list(required_roles)
+    if not required:
+        return True
+    granted = _coerce_role_list(granted_roles)
+    if not granted:
+        return False
+    cfg = _dashboard_governance_config() if governance_config is None else governance_config
+    try:
+        from agent.governance import role_satisfies
+    except Exception:
+        role_satisfies = None
+
+    for granted_role in granted:
+        for required_role in required:
+            if granted_role == required_role:
+                return True
+            if role_satisfies and role_satisfies(cfg, granted_role, required_role):
+                return True
+    return False
+
+
+def _dashboard_session_ttl(auth_config: Dict[str, Any]) -> float:
+    try:
+        minutes = float(auth_config.get("session_ttl_minutes") or 480)
+    except (TypeError, ValueError):
+        minutes = 480
+    return max(1.0, minutes) * 60.0
+
+
+def _prune_dashboard_sessions(now: Optional[float] = None) -> None:
+    current = time.time() if now is None else now
+    expired = [
+        token
+        for token, session in _DASHBOARD_AUTH_SESSIONS.items()
+        if session.expires_at <= current
+    ]
+    for token in expired:
+        _DASHBOARD_AUTH_SESSIONS.pop(token, None)
+
+
+def _issue_dashboard_session(actor: Any, roles: List[str], source: str) -> DashboardSession:
+    auth_config = _dashboard_auth_config()
+    token = secrets.token_urlsafe(32)
+    session_roles = list(dict.fromkeys(roles))
+    try:
+        from agent.governance import Actor
+
+        if isinstance(actor, Actor):
+            actor = Actor(
+                platform=actor.platform,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                roles=tuple(session_roles),
+            )
+    except Exception:
+        pass
+    session = DashboardSession(
+        token=token,
+        actor=actor,
+        roles=session_roles,
+        expires_at=time.time() + _dashboard_session_ttl(auth_config),
+        source=source,
+    )
+    _DASHBOARD_AUTH_SESSIONS[token] = session
+    return session
+
+
+def _session_from_dashboard_token(token: str) -> Optional[DashboardSession]:
+    if not token:
+        return None
+    _prune_dashboard_sessions()
+    session = _DASHBOARD_AUTH_SESSIONS.get(token)
+    if session:
+        return session
+    if not _dashboard_auth_enabled() and hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
+        try:
+            from agent.governance import current_actor
+
+            actor = current_actor()
+        except Exception:
+            actor = "local"
+        return DashboardSession(
+            token=_SESSION_TOKEN,
+            actor=actor,
+            roles=["admin"],
+            expires_at=time.time() + 60,
+            source="local_ephemeral",
+        )
+    return None
+
+
+def _dashboard_session_from_request(request: Request) -> Optional[DashboardSession]:
+    session_header = request.headers.get(_SESSION_HEADER_NAME, "").strip()
+    if session_header:
+        session = _session_from_dashboard_token(session_header)
+        if session:
+            request.state.dashboard_session = session
+            return session
+
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        session = _session_from_dashboard_token(token)
+        if session:
+            request.state.dashboard_session = session
+            return session
+    return None
+
+
+def _request_dashboard_session(request: Request) -> Optional[DashboardSession]:
+    existing = getattr(request.state, "dashboard_session", None)
+    if existing:
+        return existing
+    return _dashboard_session_from_request(request)
+
+
+def _request_dashboard_actor(request: Request) -> Any:
+    session = _request_dashboard_session(request)
+    if session:
+        return session.actor
+    try:
+        from agent.governance import current_actor
+
+        return current_actor()
+    except Exception:
+        return "local"
+
+
+def _dashboard_governance_config_for_request(request: Request) -> Dict[str, Any]:
+    cfg = _dashboard_governance_config()
+    session = _request_dashboard_session(request)
+    if not session:
+        return cfg
+    actor = session.actor
+    users = dict(cfg.get("users", {}) if isinstance(cfg.get("users"), dict) else {})
+    actor_keys = list(getattr(actor, "keys", ()) or [])
+    if actor_keys:
+        users[actor_keys[0]] = {
+            "roles": session.roles,
+            "name": getattr(actor, "user_name", None) or actor_keys[0],
+        }
+    cfg = dict(cfg)
+    cfg["users"] = users
+    return cfg
+
+
+def _dashboard_session_payload(session: DashboardSession) -> Dict[str, Any]:
+    try:
+        from agent.governance import actor_display
+
+        actor_id = actor_display(session.actor)
+    except Exception:
+        actor_id = str(session.actor)
+    return {
+        "token": session.token,
+        "actor": {
+            "id": actor_id,
+            "platform": getattr(session.actor, "platform", None),
+            "user_id": getattr(session.actor, "user_id", None),
+            "user_name": getattr(session.actor, "user_name", None),
+        },
+        "roles": session.roles,
+        "source": session.source,
+        "expires_at": session.expires_at,
+        "capabilities": _dashboard_capabilities(session.roles),
+    }
+
+
+def _dashboard_capabilities(roles: List[str]) -> Dict[str, bool]:
+    auth_config = _dashboard_auth_config()
+    return {
+        "read": _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("read_roles"))),
+        "manage": _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("manage_roles"))),
+        "admin": _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("admin_roles"))),
+    }
+
+
+def _dashboard_actor_is_admin(request: Request) -> bool:
+    session = _request_dashboard_session(request)
+    if not session:
+        return False
+    auth_config = _dashboard_auth_config()
+    return _dashboard_roles_allow(session.roles, _coerce_role_list(auth_config.get("admin_roles")))
+
+
+def _safe_policy_path(raw: Any) -> Optional[Path]:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        return Path(text).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return path == root
+
+
+def _dashboard_actor_teams(request: Request, config: Dict[str, Any]) -> List[str]:
+    try:
+        from agent.governance import actor_teams
+
+        return actor_teams(_request_dashboard_actor(request), config)
+    except Exception:
+        return []
+
+
+def _governance_user_keys_by_team(config: Dict[str, Any], teams: List[str]) -> set[str]:
+    wanted = set(_coerce_role_list(teams))
+    if not wanted:
+        return set()
+    users = config.get("users", {})
+    if not isinstance(users, dict):
+        return set()
+    allowed: set[str] = set()
+    for key, record in users.items():
+        if not isinstance(record, dict):
+            continue
+        user_teams = set(_coerce_role_list(record.get("teams") or record.get("team")))
+        if user_teams.intersection(wanted):
+            allowed.add(str(key))
+    return allowed
+
+
+def _team_root_entries(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    raw = config.get("team_file_roots", {})
+    if not isinstance(raw, dict):
+        return {}
+    entries: Dict[str, Dict[str, Any]] = {}
+    for team, value in raw.items():
+        if isinstance(value, str):
+            entries[str(team)] = {"path": value}
+        elif isinstance(value, dict):
+            entries[str(team)] = dict(value)
+    return entries
+
+
+def _manageable_team_roots(request: Request, config: Dict[str, Any]) -> Dict[str, Path]:
+    actor = _request_dashboard_actor(request)
+    actor_keys = set(getattr(actor, "keys", ()) or [])
+    actor_team_set = set(_dashboard_actor_teams(request, config))
+    result: Dict[str, Path] = {}
+    try:
+        from agent.governance import actor_has_any_role
+    except Exception:
+        actor_has_any_role = None
+
+    default_roles = _coerce_role_list(config.get("team_file_manager_roles")) or ["manager", "admin"]
+    for team, entry in _team_root_entries(config).items():
+        root = _safe_policy_path(entry.get("path"))
+        if root is None:
+            continue
+        managers = set(_coerce_role_list(entry.get("managers") or entry.get("manager_users")))
+        if managers and actor_keys.intersection(managers):
+            result[team] = root
+            continue
+        roles = _coerce_role_list(entry.get("manager_roles")) or default_roles
+        if team in actor_team_set and actor_has_any_role and actor_has_any_role(
+            roles,
+            actor=actor,
+            config=config,
+        ):
+            result[team] = root
+    return result
+
+
+_FOLDER_POLICY_LIST_KEYS = (
+    "roles",
+    "read_roles",
+    "write_roles",
+    "teams",
+    "read_teams",
+    "write_teams",
+    "deny_teams",
+    "users",
+    "read_users",
+    "write_users",
+    "deny_users",
+)
+
+
+def _normalise_folder_policy(raw: Dict[str, Any]) -> Dict[str, Any]:
+    policy: Dict[str, Any] = {}
+    path = str(raw.get("path") or "").strip()
+    if path:
+        policy["path"] = path
+    if "recursive" in raw:
+        policy["recursive"] = bool(raw.get("recursive"))
+    if raw.get("label"):
+        policy["label"] = str(raw.get("label")).strip()
+    if raw.get("description"):
+        policy["description"] = str(raw.get("description")).strip()
+    for key in _FOLDER_POLICY_LIST_KEYS:
+        values = _coerce_role_list(raw.get(key))
+        if values:
+            policy[key] = values
+    return policy
+
+
+def _policy_matches_any_team_root(policy: Dict[str, Any], roots: Dict[str, Path]) -> bool:
+    path = _safe_policy_path(policy.get("path"))
+    if path is None:
+        return False
+    return any(_path_is_under(path, root) for root in roots.values())
+
+
+def _validate_team_managed_policy(
+    policy: Dict[str, Any],
+    *,
+    managed_roots: Dict[str, Path],
+    allowed_user_keys: set[str],
+) -> None:
+    path = _safe_policy_path(policy.get("path"))
+    if path is None:
+        raise HTTPException(status_code=400, detail="Every folder policy needs a path.")
+    matching_teams = [
+        team for team, root in managed_roots.items()
+        if _path_is_under(path, root)
+    ]
+    if not matching_teams:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Team managers can only edit policies under their configured team root. Rejected: {policy.get('path')}",
+        )
+
+    role_keys = {"roles", "read_roles", "write_roles"}
+    if any(policy.get(key) for key in role_keys):
+        raise HTTPException(
+            status_code=403,
+            detail="Team managers cannot grant role-wide folder access; use team or user grants.",
+        )
+
+    allowed_teams = set(matching_teams)
+    for key in ("teams", "read_teams", "write_teams", "deny_teams"):
+        requested = set(_coerce_role_list(policy.get(key)))
+        if requested and not requested.issubset(allowed_teams):
+            raise HTTPException(
+                status_code=403,
+                detail=f"{key} must stay inside the managed team root: {sorted(allowed_teams)}.",
+            )
+
+    for key in ("users", "read_users", "write_users", "deny_users"):
+        requested_users = set(_coerce_role_list(policy.get(key)))
+        if requested_users and not requested_users.issubset(allowed_user_keys):
+            raise HTTPException(
+                status_code=403,
+                detail=f"{key} can only reference users assigned to the managed team.",
+            )
+
+    has_grant = any(
+        _coerce_role_list(policy.get(key))
+        for key in ("teams", "read_teams", "write_teams", "users", "read_users", "write_users")
+    )
+    if not has_grant:
+        raise HTTPException(
+            status_code=400,
+            detail="Team-managed folder policies must grant at least one team or user.",
+        )
+
+
+def _trusted_dashboard_session_from_request(request: Request) -> Optional[DashboardSession]:
+    auth_config = _dashboard_auth_config()
+    if not _dashboard_auth_enabled(auth_config):
+        return None
+    if not _dashboard_trusted_headers_allowed(auth_config):
+        return None
+    user_header = str(auth_config.get("trusted_user_header") or "").strip()
+    user_id = request.headers.get(user_header, "").strip() if user_header else ""
+    if not user_id:
+        return None
+    name_header = str(auth_config.get("trusted_name_header") or "").strip()
+    roles_header = str(auth_config.get("trusted_roles_header") or "").strip()
+    user_name = request.headers.get(name_header, "").strip() if name_header else user_id
+    explicit_roles = _coerce_role_list(request.headers.get(roles_header, "")) if roles_header else []
+    try:
+        from agent.governance import Actor
+
+        actor = Actor(
+            platform=str(auth_config.get("trusted_platform") or "sso").strip() or "sso",
+            user_id=user_id,
+            user_name=user_name,
+        )
+    except Exception:
+        actor = user_id
+    roles = _dashboard_roles_for_actor(actor, explicit_roles=explicit_roles)
+    if not _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("read_roles"))):
+        return None
+    return _issue_dashboard_session(actor, roles, "trusted_header")
+
+
+def _dashboard_required_roles(path: str, method: str) -> List[str]:
+    auth_config = _dashboard_auth_config()
+    admin_roles = _coerce_role_list(auth_config.get("admin_roles"))
+    manage_roles = _coerce_role_list(auth_config.get("manage_roles")) or admin_roles
+    read_roles = _coerce_role_list(auth_config.get("read_roles")) or manage_roles
+    verb = method.upper()
+
+    if path == "/api/dashboard/auth/logout":
+        return []
+    if path.startswith("/api/governance/folder-policies"):
+        return manage_roles
+    if path.startswith("/api/knowledge/approvals/") and path.endswith("/decide"):
+        return manage_roles
+    if path.startswith("/api/cron/jobs/") and path.endswith("/authorize"):
+        return manage_roles
+    if verb in {"GET", "HEAD", "OPTIONS"}:
+        read_prefixes = (
+            "/api/status",
+            "/api/sessions",
+            "/api/logs",
+            "/api/analytics",
+            "/api/model",
+            "/api/knowledge",
+            "/api/cron/jobs",
+            "/api/dashboard/themes",
+            "/api/dashboard/plugins",
+            "/api/plugins",
+        )
+        if path.startswith(read_prefixes):
+            return read_roles
+    return admin_roles
+
+
+def _audit_dashboard_event(
+    event_type: str,
+    *,
+    request: Optional[Request] = None,
+    actor: Optional[Any] = None,
+    action: Optional[str] = None,
+    resource: Optional[str] = None,
+    outcome: Optional[str] = None,
+    reason: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    try:
+        from agent.audit_log import record_audit_event
+
+        who = actor if actor is not None else (_request_dashboard_actor(request) if request else None)
+        meta = dict(metadata or {})
+        if request is not None:
+            meta.setdefault("client", request.client.host if request.client else None)
+            meta.setdefault("path", request.url.path)
+            meta.setdefault("method", request.method)
+        record_audit_event(
+            event_type,
+            actor=who,
+            action=action,
+            resource=resource,
+            outcome=outcome,
+            reason=reason,
+            metadata=meta,
+        )
+    except Exception:
+        pass
 
 
 def _has_valid_session_token(request: Request) -> bool:
@@ -118,16 +815,7 @@ def _has_valid_session_token(request: Request) -> bool:
     accept the legacy Bearer path for backward compatibility with older
     dashboard bundles.
     """
-    session_header = request.headers.get(_SESSION_HEADER_NAME, "")
-    if session_header and hmac.compare_digest(
-        session_header.encode(),
-        _SESSION_TOKEN.encode(),
-    ):
-        return True
-
-    auth = request.headers.get("authorization", "")
-    expected = f"Bearer {_SESSION_TOKEN}"
-    return hmac.compare_digest(auth.encode(), expected.encode())
+    return _dashboard_session_from_request(request) is not None
 
 
 def _require_token(request: Request) -> None:
@@ -223,15 +911,65 @@ async def host_header_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """Require the session token on all /api/ routes except the public list."""
+    """Require dashboard auth on API routes and apply role gates when enabled."""
     path = request.url.path
-    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS and not path.startswith("/api/plugins/"):
-        if not _has_valid_session_token(request):
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    if _is_public_api_path(path):
+        return await call_next(request)
+
+    auth_enabled = _dashboard_auth_enabled()
+    session = _dashboard_session_from_request(request)
+    if not session and auth_enabled:
+        session = _trusted_dashboard_session_from_request(request)
+        if session:
+            request.state.dashboard_session = session
+
+    if not session:
+        if auth_enabled or not path.startswith("/api/plugins/"):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Unauthorized"},
             )
-    return await call_next(request)
+        return await call_next(request)
+
+    if auth_enabled:
+        required_roles = _dashboard_required_roles(path, request.method)
+        if not _dashboard_roles_allow(session.roles, required_roles):
+            _audit_dashboard_event(
+                "dashboard.authorization",
+                request=request,
+                actor=session.actor,
+                action=request.method.upper(),
+                resource=path,
+                outcome="denied",
+                reason=f"required_roles={required_roles}",
+            )
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        "Dashboard role denied. "
+                        f"Required roles: {required_roles}; session roles: {session.roles}"
+                    ),
+                },
+            )
+
+    response = await call_next(request)
+
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and path not in {
+        "/api/dashboard/auth/login",
+    }:
+        _audit_dashboard_event(
+            "dashboard.api_action",
+            request=request,
+            actor=session.actor,
+            action=request.method.upper(),
+            resource=path,
+            outcome=str(response.status_code),
+        )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +1022,66 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "type": "select",
         "description": "Web dashboard visual theme",
         "options": ["default", "midnight", "ember", "mono", "cyberpunk", "rose"],
+    },
+    "dashboard.auth.enabled": {
+        "type": "boolean",
+        "description": "Require login for dashboard API access",
+        "category": "security",
+    },
+    "dashboard.auth.token_env": {
+        "type": "string",
+        "description": "Environment variable containing the dashboard admin token",
+        "category": "security",
+    },
+    "dashboard.auth.token_hash": {
+        "type": "string",
+        "description": "Optional sha256 hash of the dashboard admin token",
+        "category": "security",
+    },
+    "dashboard.auth.trusted_user_header": {
+        "type": "string",
+        "description": "Reverse-proxy header containing the authenticated dashboard user",
+        "category": "security",
+    },
+    "dashboard.auth.local_token_roles": {
+        "type": "list",
+        "description": "Roles granted to successful local-token dashboard logins",
+        "category": "security",
+    },
+    "dashboard.auth.channel_tokens.enabled": {
+        "type": "boolean",
+        "description": "Allow /dashboard to issue one-time login tokens to authenticated channel users",
+        "category": "security",
+    },
+    "dashboard.auth.channel_tokens.ttl_minutes": {
+        "type": "number",
+        "description": "Minutes before channel-issued dashboard login tokens expire",
+        "category": "security",
+    },
+    "dashboard.auth.channel_tokens.dashboard_url": {
+        "type": "string",
+        "description": "Dashboard URL shown to users who request /dashboard from a channel",
+        "category": "security",
+    },
+    "dashboard.auth.channel_tokens.require_dm": {
+        "type": "boolean",
+        "description": "Require channel-issued dashboard tokens to be requested from private/direct chats",
+        "category": "security",
+    },
+    "dashboard.auth.read_roles": {
+        "type": "list",
+        "description": "Roles allowed to read dashboard data",
+        "category": "security",
+    },
+    "dashboard.auth.manage_roles": {
+        "type": "list",
+        "description": "Roles allowed to approve team knowledge and cron checkpoints",
+        "category": "security",
+    },
+    "dashboard.auth.admin_roles": {
+        "type": "list",
+        "description": "Roles allowed to change dashboard, governance, secrets, and server policies",
+        "category": "security",
     },
     "display.resume_display": {
         "type": "select",
@@ -459,6 +1257,166 @@ class ModelAssignment(BaseModel):
     provider: str
     model: str
     task: str = ""
+
+
+class DashboardLoginBody(BaseModel):
+    token: str = ""
+
+
+class FolderPoliciesUpdate(BaseModel):
+    default_file_policy: Optional[str] = None
+    folder_policies: List[dict] = []
+    team_file_roots: Optional[dict] = None
+
+
+@app.get("/api/dashboard/auth/status")
+async def dashboard_auth_status(request: Request):
+    auth_config = _dashboard_auth_config()
+    if not _dashboard_auth_enabled(auth_config):
+        return {
+            "auth_required": False,
+            "authenticated": True,
+            "token": _SESSION_TOKEN,
+            "actor": {"id": "local"},
+            "roles": ["admin"],
+            "capabilities": _dashboard_capabilities(["admin"]),
+        }
+
+    session = _dashboard_session_from_request(request)
+    if not session:
+        session = _trusted_dashboard_session_from_request(request)
+    if session:
+        return {
+            "auth_required": True,
+            "authenticated": True,
+            **_dashboard_session_payload(session),
+        }
+    return {
+        "auth_required": True,
+        "authenticated": False,
+        "modes": {
+            "local_token": _dashboard_has_token_secret(auth_config),
+            "trusted_header": _dashboard_trusted_headers_allowed(auth_config),
+            "channel_token": _dashboard_channel_tokens_enabled(auth_config),
+        },
+    }
+
+
+@app.post("/api/dashboard/auth/login")
+async def dashboard_auth_login(request: Request, body: DashboardLoginBody):
+    auth_config = _dashboard_auth_config()
+    if not _dashboard_auth_enabled(auth_config):
+        return {
+            "auth_required": False,
+            "authenticated": True,
+            "token": _SESSION_TOKEN,
+            "actor": {"id": "local"},
+            "roles": ["admin"],
+            "capabilities": _dashboard_capabilities(["admin"]),
+        }
+
+    session = _trusted_dashboard_session_from_request(request)
+    if session:
+        _audit_dashboard_event(
+            "dashboard.auth",
+            request=request,
+            actor=session.actor,
+            action="login",
+            resource="dashboard",
+            outcome="success",
+            metadata={"source": session.source, "roles": session.roles},
+        )
+        return {
+            "auth_required": True,
+            "authenticated": True,
+            **_dashboard_session_payload(session),
+        }
+
+    raw_token = str(body.token or "")
+    session = _consume_channel_dashboard_login(raw_token, auth_config)
+    if session:
+        _audit_dashboard_event(
+            "dashboard.auth",
+            request=request,
+            actor=session.actor,
+            action="login",
+            resource="dashboard",
+            outcome="success",
+            metadata={"source": session.source, "roles": session.roles},
+        )
+        return {
+            "auth_required": True,
+            "authenticated": True,
+            **_dashboard_session_payload(session),
+        }
+
+    if not _verify_local_dashboard_login(raw_token, auth_config):
+        _audit_dashboard_event(
+            "dashboard.auth",
+            request=request,
+            action="login",
+            resource="dashboard",
+            outcome="denied",
+            reason="invalid_token",
+        )
+        raise HTTPException(status_code=401, detail="Invalid dashboard token")
+
+    try:
+        from agent.governance import Actor
+
+        actor = Actor(platform="dashboard", user_id="local-admin", user_name="Local Dashboard Admin")
+    except Exception:
+        actor = "dashboard:local-admin"
+
+    roles = _dashboard_roles_for_actor(
+        actor,
+        fallback_roles=_coerce_role_list(auth_config.get("local_token_roles")) or ["admin"],
+    )
+    if not _dashboard_roles_allow(roles, _coerce_role_list(auth_config.get("read_roles"))):
+        _audit_dashboard_event(
+            "dashboard.auth",
+            request=request,
+            actor=actor,
+            action="login",
+            resource="dashboard",
+            outcome="denied",
+            reason="role_denied",
+            metadata={"roles": roles},
+        )
+        raise HTTPException(status_code=403, detail="Dashboard token is valid, but roles are not allowed.")
+
+    session = _issue_dashboard_session(actor, roles, "local_token")
+    _audit_dashboard_event(
+        "dashboard.auth",
+        request=request,
+        actor=session.actor,
+        action="login",
+        resource="dashboard",
+        outcome="success",
+        metadata={"source": session.source, "roles": session.roles},
+    )
+    return {
+        "auth_required": True,
+        "authenticated": True,
+        **_dashboard_session_payload(session),
+    }
+
+
+@app.post("/api/dashboard/auth/logout")
+async def dashboard_auth_logout(request: Request):
+    session = _request_dashboard_session(request)
+    if session:
+        _DASHBOARD_AUTH_SESSIONS.pop(session.token, None)
+        _audit_dashboard_event(
+            "dashboard.auth",
+            request=request,
+            actor=session.actor,
+            action="logout",
+            resource="dashboard",
+            outcome="success",
+            metadata={"source": session.source},
+        )
+    return {"ok": True}
 
 
 _GATEWAY_HEALTH_URL = os.getenv("GATEWAY_HEALTH_URL")
@@ -1212,6 +2170,115 @@ async def update_config(body: ConfigUpdate):
     except Exception:
         _log.exception("PUT /api/config failed")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/governance/folder-policies")
+async def get_folder_policies(request: Request):
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+    admin = _dashboard_actor_is_admin(request)
+    managed_roots = _manageable_team_roots(request, governance)
+
+    policies = [
+        _normalise_folder_policy(policy)
+        for policy in governance.get("folder_policies", [])
+        if isinstance(policy, dict)
+    ]
+    if not admin:
+        policies = [
+            policy for policy in policies
+            if _policy_matches_any_team_root(policy, managed_roots)
+        ]
+
+    return {
+        "enabled": bool(governance.get("enabled")),
+        "default_file_policy": governance.get("default_file_policy", "allow"),
+        "folder_policies": policies,
+        "team_file_roots": _team_root_entries(governance) if admin else {
+            team: {"path": str(path)}
+            for team, path in managed_roots.items()
+        },
+        "actor": {
+            "teams": _dashboard_actor_teams(request, governance),
+            "can_admin": admin,
+            "managed_teams": sorted(managed_roots.keys()),
+        },
+    }
+
+
+@app.put("/api/governance/folder-policies")
+async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+    governance = dict(governance)
+    admin = _dashboard_actor_is_admin(request)
+    incoming = [
+        _normalise_folder_policy(policy)
+        for policy in body.folder_policies
+        if isinstance(policy, dict)
+    ]
+
+    for policy in incoming:
+        if not policy.get("path"):
+            raise HTTPException(status_code=400, detail="Every folder policy needs a path.")
+
+    if admin:
+        if body.default_file_policy is not None:
+            value = str(body.default_file_policy).strip().lower()
+            if value not in {"allow", "deny"}:
+                raise HTTPException(status_code=400, detail="default_file_policy must be allow or deny.")
+            governance["default_file_policy"] = value
+        if body.team_file_roots is not None:
+            governance["team_file_roots"] = body.team_file_roots
+        governance["folder_policies"] = incoming
+    else:
+        managed_roots = _manageable_team_roots(request, governance)
+        if not managed_roots:
+            raise HTTPException(status_code=403, detail="No team file roots are delegated to this dashboard user.")
+        actor_teams = sorted(managed_roots.keys())
+        allowed_user_keys = _governance_user_keys_by_team(governance, actor_teams)
+        for policy in incoming:
+            _validate_team_managed_policy(
+                policy,
+                managed_roots=managed_roots,
+                allowed_user_keys=allowed_user_keys,
+            )
+
+        current = [
+            _normalise_folder_policy(policy)
+            for policy in governance.get("folder_policies", [])
+            if isinstance(policy, dict)
+        ]
+        retained = [
+            policy for policy in current
+            if not _policy_matches_any_team_root(policy, managed_roots)
+        ]
+        governance["folder_policies"] = retained + incoming
+
+    cfg["governance"] = governance
+    try:
+        save_config(cfg)
+    except Exception:
+        _log.exception("PUT /api/governance/folder-policies failed")
+        raise HTTPException(status_code=500, detail="Could not save folder policies.")
+
+    _audit_dashboard_event(
+        "governance.folder_policies_updated",
+        request=request,
+        action="folder_policies.update",
+        resource="governance.folder_policies",
+        outcome="success",
+        metadata={
+            "policy_count": len(governance.get("folder_policies", [])),
+            "admin": admin,
+            "managed_teams": sorted(_manageable_team_roots(request, governance).keys()),
+        },
+    )
+    return {
+        "ok": True,
+        "folder_policies": governance.get("folder_policies", []),
+        "default_file_policy": governance.get("default_file_policy", "allow"),
+    }
 
 
 @app.get("/api/env")
@@ -2454,8 +3521,8 @@ async def trigger_cron_job(job_id: str):
 
 
 @app.post("/api/cron/jobs/{job_id}/authorize")
-async def authorize_cron_job(job_id: str, body: CronAuthorizationDecision):
-    from agent.governance import actor_display, can_authorize, current_actor
+async def authorize_cron_job(job_id: str, body: CronAuthorizationDecision, request: Request):
+    from agent.governance import actor_display, can_authorize
     from cron.jobs import authorize_job, get_job
 
     job = get_job(job_id)
@@ -2464,8 +3531,12 @@ async def authorize_cron_job(job_id: str, body: CronAuthorizationDecision):
     auth = job.get("authorization")
     if not auth:
         raise HTTPException(status_code=400, detail="Job does not require authorization")
-    actor = current_actor()
-    allowed, reason = can_authorize(auth, actor=actor)
+    actor = _request_dashboard_actor(request)
+    allowed, reason = can_authorize(
+        auth,
+        actor=actor,
+        config=_dashboard_governance_config_for_request(request),
+    )
     if not allowed:
         raise HTTPException(status_code=403, detail=reason)
     updated = authorize_job(
@@ -2509,15 +3580,18 @@ async def get_knowledge_approvals(status: str = "pending"):
 
 
 @app.post("/api/knowledge/approvals/{approval_id}/decide")
-async def decide_knowledge_approval_endpoint(approval_id: str, body: KnowledgeApprovalDecision):
+async def decide_knowledge_approval_endpoint(
+    approval_id: str,
+    body: KnowledgeApprovalDecision,
+    request: Request,
+):
     from agent.enterprise_knowledge import decide_knowledge_approval
-    from agent.governance import current_actor
 
     result = decide_knowledge_approval(
         approval_id,
         approve=bool(body.approve),
         note=body.note or None,
-        actor=current_actor(),
+        actor=_request_dashboard_actor(request),
     )
     if not result.get("success"):
         raise HTTPException(
@@ -3069,7 +4143,7 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 
 def _is_public_bind() -> bool:
-    """True when bound to all-interfaces (operator used --insecure)."""
+    """True when bound to all interfaces."""
     return getattr(app.state, "bound_host", "") in ("0.0.0.0", "::")
 
 
@@ -3173,6 +4247,19 @@ def _channel_or_close_code(ws: WebSocket) -> Optional[str]:
     return channel if _VALID_CHANNEL_RE.match(channel) else None
 
 
+def _websocket_dashboard_session(ws: WebSocket) -> Optional[DashboardSession]:
+    token = ws.query_params.get("token", "")
+    return _session_from_dashboard_token(token)
+
+
+def _websocket_session_can_chat(session: DashboardSession) -> bool:
+    if not _dashboard_auth_enabled():
+        return True
+    auth_config = _dashboard_auth_config()
+    required = _coerce_role_list(auth_config.get("manage_roles")) or _coerce_role_list(auth_config.get("admin_roles"))
+    return _dashboard_roles_allow(session.roles, required)
+
+
 @app.websocket("/api/pty")
 async def pty_ws(ws: WebSocket) -> None:
     if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
@@ -3180,10 +4267,12 @@ async def pty_ws(ws: WebSocket) -> None:
         return
 
     # --- auth + loopback check (before accept so we can close cleanly) ---
-    token = ws.query_params.get("token", "")
-    expected = _SESSION_TOKEN
-    if not hmac.compare_digest(token.encode(), expected.encode()):
+    session = _websocket_dashboard_session(ws)
+    if not session:
         await ws.close(code=4401)
+        return
+    if not _websocket_session_can_chat(session):
+        await ws.close(code=4403)
         return
 
     if not _ws_client_is_allowed(ws):
@@ -3288,9 +4377,12 @@ async def gateway_ws(ws: WebSocket) -> None:
         await ws.close(code=4403)
         return
 
-    token = ws.query_params.get("token", "")
-    if not hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
+    session = _websocket_dashboard_session(ws)
+    if not session:
         await ws.close(code=4401)
+        return
+    if not _websocket_session_can_chat(session):
+        await ws.close(code=4403)
         return
 
     if not _ws_client_is_allowed(ws):
@@ -3349,8 +4441,8 @@ async def events_ws(ws: WebSocket) -> None:
         await ws.close(code=4403)
         return
 
-    token = ws.query_params.get("token", "")
-    if not hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
+    session = _websocket_dashboard_session(ws)
+    if not session:
         await ws.close(code=4401)
         return
 
@@ -3443,8 +4535,11 @@ def mount_spa(application: FastAPI):
         """
         html = _index_path.read_text()
         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
+        auth_required = _dashboard_auth_enabled()
+        token_part = "" if auth_required else f'window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
         token_script = (
-            f'<script>window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f"<script>{token_part}"
+            f"window.__HERMES_DASHBOARD_AUTH_REQUIRED__={'true' if auth_required else 'false'};"
             f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
             f'window.__HERMES_BASE_PATH__="{prefix}";</script>'
         )
@@ -4281,13 +5376,23 @@ def start_server(
     _DASHBOARD_EMBEDDED_CHAT_ENABLED = embedded_chat
 
     _LOCALHOST = ("127.0.0.1", "localhost", "::1")
-    if host not in _LOCALHOST and not allow_public:
+    auth_config = _dashboard_auth_config()
+    auth_ready = _dashboard_auth_configured_for_bind(host, auth_config)
+    if host not in _LOCALHOST and not allow_public and not auth_ready:
         raise SystemExit(
-            f"Refusing to bind to {host} — the dashboard exposes API keys "
-            f"and config without robust authentication.\n"
-            f"Use --insecure to override (NOT recommended on untrusted networks)."
+            f"Refusing to bind to {host} — the dashboard exposes API keys, "
+            f"config, and server file controls.\n"
+            f"Enable dashboard.auth with {auth_config.get('token_env') or 'COORPORATE_DASHBOARD_TOKEN'} "
+            f"or dashboard.auth.token_hash, trusted SSO headers, or channel_tokens "
+            f"before serving it on an intranet/public interface. "
+            f"Use --insecure only for temporary trusted-network testing."
         )
-    if host not in _LOCALHOST:
+    if host not in _LOCALHOST and auth_ready:
+        _log.warning(
+            "Binding protected dashboard to %s. Keep TLS/reverse-proxy and "
+            "firewall rules in front of public deployments.", host,
+        )
+    elif host not in _LOCALHOST:
         _log.warning(
             "Binding to %s with --insecure — the dashboard has no robust "
             "authentication. Only use on trusted networks.", host,

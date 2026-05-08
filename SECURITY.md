@@ -10,11 +10,47 @@ Coorporate Hermes is an AmpliIA distribution intended for a private, one-tenant 
 - **Knowledge hierarchy:** Corporate memory/skills apply to every conversation, team memory/skills apply by `governance.users.*.teams`, and user memory/skills remain profile-level.
 - **Gateway sessions:** Regular group/channel conversations are isolated per user by default. Explicit threads/topics are shared by default for multi-user operational workflows.
 - **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders.
+- **Team file delegation:** `governance.team_file_roots` lets a team leader manage policies only under their team's configured root from the dashboard.
+- **Dashboard access:** The dashboard is localhost-only by default. Intranet or public serving requires `dashboard.auth` unless an operator explicitly uses `--insecure` for temporary trusted-network testing.
+- **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team-leader dashboard access should use SSO or trusted reverse-proxy headers mapped through `governance.users`, so edits are tied to a specific human actor.
+- **Channel dashboard tokens:** Authenticated gateway users can request one-time dashboard tokens with `/dashboard` only when enabled and role-allowed. Tokens are short-lived, one-use, hashed on disk, and should be requested from private/direct chats.
 - **Shared knowledge approval:** Corporate and team memory/skill edits are proposal-first and require an authorized human approval before files under `<HERMES_HOME>/corporate/` or `<HERMES_HOME>/teams/` are changed.
 - **Cron authorization:** Scheduled workflows can require role or user approval before execution. Approval and denial metadata is persisted in the cron job record.
 - **Audit trail:** Governance denials, knowledge approvals, and cron authorization decisions are written to `<HERMES_HOME>/logs/audit.jsonl` when observability is enabled.
 
 ## Governance Controls
+
+Dashboard protected mode:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    token_env: COORPORATE_DASHBOARD_TOKEN
+    local_token_roles: [admin]
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+```
+
+Set `COORPORATE_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. For SSO, configure `trusted_user_header` only behind a reverse proxy that strips spoofed client headers, and prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
+
+System admins can edit global folder policy, role-wide grants, and `team_file_roots`. Team leaders can save policies only under delegated roots, cannot change `default_file_policy`, cannot grant role-wide access, and cannot reference users outside the managed team.
+
+Channel dashboard token baseline:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    channel_tokens:
+      enabled: true
+      ttl_minutes: 10
+      dashboard_url: "https://hermes.company.example"
+      require_dm: true
+```
+
+Use `/whoami` to identify the exact `platform:user_id` to place under `governance.users`. `/dashboard` issues a login token only after role checks pass. Do not set `require_dm: false` unless the platform reply is guaranteed private.
 
 Example production baseline:
 
@@ -25,16 +61,24 @@ governance:
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
   default_file_policy: deny
+  team_file_roots:
+    marketing:
+      path: "/srv/company/marketing"
+      manager_roles: [manager]
+      managers: ["slack:U123"]
   users:
-    "slack:U123": {roles: [manager], teams: [finance]}
+    "slack:U123": {roles: [manager], teams: [marketing]}
     "telegram:987654": {roles: [admin]}
   folder_policies:
     - path: "/srv/company/shared"
       read_roles: [viewer]
       write_roles: [operator]
     - path: "/srv/company/finance"
-      read_roles: [manager]
+      read_teams: [finance]
       write_roles: [manager]
+    - path: "/srv/company/marketing"
+      read_teams: [marketing]
+      write_users: ["slack:U123"]
   cron:
     default_authorizer_roles: [admin]
 ```
@@ -65,6 +109,7 @@ pause at `awaiting_authorization` until an authorized user runs `cronjob(action=
 ## Deployment Hardening
 
 - Run the gateway and API server behind VPN, private network ingress, or an identity-aware proxy.
+- Keep `coorporate dashboard` bound to `127.0.0.1` unless `dashboard.auth` is enabled. For public dashboard access, use TLS and a reverse proxy; do not use `--insecure` outside short-lived tests.
 - Use a container, VM, or dedicated service account for production workloads. Avoid broad host access from `terminal.backend: local`.
 - Set filesystem ownership and mode so only the service account can read secrets and job state.
 - Keep API keys in the environment or `.env`; do not store secrets in prompts, docs, or `config.yaml`.
@@ -86,7 +131,7 @@ observability:
   retention_days: 180
 ```
 
-Use `coorporate logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, and cron authorization; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
+Use `coorporate logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, cron authorization, dashboard login/logout, dashboard role denials, and mutating dashboard API calls; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
 
 ## Guarded Migration
 

@@ -162,6 +162,25 @@ def _float_env(name: str, default: float) -> float:
         return float(default)
 
 
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return int(default)
+    return parsed if parsed > 0 else int(default)
+
+
+def _coerce_csv_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
 def _is_fresh_gateway_interruption(
     value: Any,
     *,
@@ -5339,6 +5358,10 @@ class GatewayRunner:
                     return await self._handle_help_command(event)
                 if _cmd_def_inner.name == "commands":
                     return await self._handle_commands_command(event)
+                if _cmd_def_inner.name == "whoami":
+                    return await self._handle_whoami_command(event)
+                if _cmd_def_inner.name == "dashboard":
+                    return await self._handle_dashboard_command(event)
                 if _cmd_def_inner.name == "profile":
                     return await self._handle_profile_command(event)
                 if _cmd_def_inner.name == "update":
@@ -5553,6 +5576,12 @@ class GatewayRunner:
 
         if canonical == "commands":
             return await self._handle_commands_command(event)
+
+        if canonical == "whoami":
+            return await self._handle_whoami_command(event)
+
+        if canonical == "dashboard":
+            return await self._handle_dashboard_command(event)
         
         if canonical == "profile":
             return await self._handle_profile_command(event)
@@ -7386,6 +7415,160 @@ class GatewayRunner:
         ]
 
         return "\n".join(lines)
+
+
+    async def _handle_whoami_command(self, event: MessageEvent) -> str:
+        """Handle /whoami — show the channel identity used by governance."""
+        source = event.source
+        platform = source.platform.value if source and source.platform else "unknown"
+        user_id = str(source.user_id or "") if source else ""
+        user_name = str(source.user_name or "") if source else ""
+        identity = f"{platform}:{user_id}" if user_id else f"{platform}:<missing-user-id>"
+
+        lines = [
+            "Identity used by Coorporate Hermes:",
+            f"- User key: `{identity}`",
+        ]
+        if user_name:
+            lines.append(f"- Display name: `{user_name}`")
+        if source:
+            lines.append(f"- Chat type: `{source.chat_type}`")
+            lines.append(f"- Chat ID: `{source.chat_id}`")
+
+        try:
+            from agent.governance import Actor, actor_roles, actor_teams, is_enabled
+            from hermes_cli.config import load_config
+
+            cfg = load_config()
+            governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+            actor = Actor(platform=platform, user_id=user_id, user_name=user_name)
+            if is_enabled(governance):
+                roles = actor_roles(actor, governance)
+                teams = actor_teams(actor, governance)
+                lines.append(f"- Governance roles: `{', '.join(roles) if roles else 'none'}`")
+                lines.append(f"- Governance teams: `{', '.join(teams) if teams else 'none'}`")
+            else:
+                lines.append("- Governance: `disabled`")
+        except Exception:
+            lines.append("- Governance: `unavailable`")
+
+        lines.append("")
+        lines.append("An admin can copy the user key into `governance.users` to assign roles and teams.")
+        return "\n".join(lines)
+
+
+    async def _handle_dashboard_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
+        """Handle /dashboard — issue a one-time dashboard login token."""
+        source = event.source
+        if source is None:
+            return "Dashboard token request failed: missing channel identity."
+
+        try:
+            from agent.governance import Actor, actor_has_any_role, actor_roles
+            from hermes_cli.config import load_config
+            from hermes_cli.dashboard_tokens import issue_channel_dashboard_token
+        except Exception as exc:
+            logger.warning("Dashboard token dependencies unavailable: %s", exc)
+            return "Dashboard token request failed: dashboard token support is unavailable."
+
+        cfg = load_config()
+        dashboard = cfg.get("dashboard", {}) if isinstance(cfg.get("dashboard"), dict) else {}
+        auth = dashboard.get("auth", {}) if isinstance(dashboard.get("auth"), dict) else {}
+        if not is_truthy_value(auth.get("enabled")):
+            return "Dashboard protected auth is not enabled. Ask a system admin to enable `dashboard.auth.enabled` first."
+
+        raw_channel_cfg = auth.get("channel_tokens", {})
+        if isinstance(raw_channel_cfg, dict):
+            channel_cfg = raw_channel_cfg
+        elif isinstance(raw_channel_cfg, bool):
+            channel_cfg = {"enabled": raw_channel_cfg}
+        else:
+            channel_cfg = {}
+        if not is_truthy_value(channel_cfg.get("enabled", True)):
+            return "Channel-issued dashboard tokens are disabled by `dashboard.auth.channel_tokens.enabled`."
+
+        require_dm = is_truthy_value(channel_cfg.get("require_dm", True))
+        if require_dm and source.chat_type != "dm":
+            return EphemeralReply(
+                "For safety, request a dashboard token in a private DM with the bot. "
+                "Tokens are not posted into shared channels.",
+                ttl_seconds=60,
+            )
+
+        user_id = str(source.user_id or "").strip()
+        if not user_id:
+            return "Dashboard token request denied: this platform event did not include a stable user ID."
+
+        platform = source.platform.value if source.platform else "unknown"
+        actor = Actor(
+            platform=platform,
+            user_id=user_id,
+            user_name=str(source.user_name or ""),
+        )
+        governance = cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+        roles = actor_roles(actor, governance)
+        read_roles = _coerce_csv_list(auth.get("read_roles")) or ["auditor", "manager", "admin"]
+        if not actor_has_any_role(read_roles, actor=actor, config=governance):
+            identity = f"{platform}:{user_id}"
+            role_text = ", ".join(roles) if roles else "none"
+            required = ", ".join(read_roles)
+            try:
+                from agent.audit_log import record_audit_event
+
+                record_audit_event(
+                    "dashboard.channel_token",
+                    actor=actor,
+                    action="issue",
+                    resource="dashboard",
+                    outcome="denied",
+                    reason="role_denied",
+                    metadata={"roles": roles, "required_roles": read_roles},
+                )
+            except Exception:
+                pass
+            return (
+                "Dashboard token request denied.\n"
+                f"- Your user key: `{identity}`\n"
+                f"- Your roles: `{role_text}`\n"
+                f"- Required dashboard read roles: `{required}`\n\n"
+                "Ask a system admin to add or update this user under `governance.users`."
+            )
+
+        ttl_minutes = _positive_int(channel_cfg.get("ttl_minutes"), default=10)
+        token = issue_channel_dashboard_token(
+            actor=actor,
+            roles=roles,
+            ttl_seconds=ttl_minutes * 60,
+        )
+        try:
+            from agent.audit_log import record_audit_event
+
+            record_audit_event(
+                "dashboard.channel_token",
+                actor=actor,
+                action="issue",
+                resource="dashboard",
+                outcome="success",
+                metadata={"roles": roles, "ttl_minutes": ttl_minutes},
+            )
+        except Exception:
+            pass
+        dashboard_url = (
+            str(channel_cfg.get("dashboard_url") or "").strip()
+            or str(dashboard.get("public_url") or "").strip()
+            or os.getenv("COORPORATE_DASHBOARD_URL", "").strip()
+            or "http://127.0.0.1:9119"
+        )
+        identity = f"{platform}:{user_id}"
+        message = (
+            "Dashboard sign-in token issued.\n"
+            f"- User key: `{identity}`\n"
+            f"- Open: {dashboard_url}\n"
+            f"- Token: `{token}`\n"
+            f"- Expires: {ttl_minutes} minute(s), one use only.\n\n"
+            "Paste the token into the dashboard login form. Do not share it."
+        )
+        return EphemeralReply(message, ttl_seconds=ttl_minutes * 60)
 
 
     async def _handle_kanban_command(self, event: MessageEvent) -> str:

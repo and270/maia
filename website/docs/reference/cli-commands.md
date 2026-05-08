@@ -70,7 +70,7 @@ hermes [global-options] <command> [subcommand/options]
 | `hermes insights` | Show token/cost/activity analytics. |
 | `hermes fallback` | Interactive manager for the fallback provider chain. |
 | `hermes claw` | OpenClaw migration helpers. |
-| `hermes dashboard` | Launch the web dashboard for managing config, API keys, and sessions. |
+| `coorporate dashboard` | Launch the web dashboard for managing config, API keys, sessions, and governed admin workflows. |
 | `hermes profile` | Manage profiles — multiple isolated Hermes instances. |
 | `hermes completion` | Print shell completion scripts (bash/zsh/fish). |
 | `hermes version` | Show version information. |
@@ -1037,10 +1037,10 @@ hermes claw migrate --preset user-data --overwrite
 hermes claw migrate --source /home/user/old-openclaw
 ```
 
-## `hermes dashboard`
+## `coorporate dashboard`
 
 ```bash
-hermes dashboard [options]
+coorporate dashboard [options]
 ```
 
 Launch the web dashboard — a browser-based UI for managing configuration, API keys, and monitoring sessions. Requires `pip install coorporate-hermes[web]` (FastAPI + Uvicorn). See [Web Dashboard](/docs/user-guide/features/web-dashboard) for full documentation.
@@ -1050,13 +1050,15 @@ Launch the web dashboard — a browser-based UI for managing configuration, API 
 | `--port` | `9119` | Port to run the web server on |
 | `--host` | `127.0.0.1` | Bind address |
 | `--no-open` | — | Don't auto-open the browser |
+| `--insecure` | off | Allow non-localhost binding without `dashboard.auth` (dangerous; exposes secrets and server file controls) |
+| `--tui` | off | Expose the in-browser Chat tab |
 
 ```bash
 # Default — opens browser to http://127.0.0.1:9119
-hermes dashboard
+coorporate dashboard
 
 # Custom port, no browser
-hermes dashboard --port 8080 --no-open
+coorporate dashboard --port 8080 --no-open
 ```
 
 ## `hermes profile`
@@ -1088,7 +1090,7 @@ hermes profile use work
 hermes profile alias work --name h-work
 hermes profile export work -o work-backup.tar.gz
 hermes profile import work-backup.tar.gz --name restored
-hermes -p work chat -q "Hello from work profile"
+coorporate -p work chat -q "Hello from work profile"
 ```
 
 ## `hermes completion`

@@ -180,6 +180,10 @@ COMMAND_REGISTRY: list[CommandDef] = [
     # Info
     CommandDef("commands", "Browse all commands and skills (paginated)", "Info",
                gateway_only=True, args_hint="[page]"),
+    CommandDef("whoami", "Show your channel identity, roles, and teams", "Info",
+               gateway_only=True),
+    CommandDef("dashboard", "Request a one-time dashboard login token", "Info",
+               gateway_only=True),
     CommandDef("help", "Show available commands", "Info"),
     CommandDef("restart", "Gracefully restart the gateway after draining active runs", "Session",
                gateway_only=True),
@@ -319,6 +323,7 @@ ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
         "approve",
         "background",
         "commands",
+        "dashboard",
         "deny",
         "help",
         "new",
@@ -329,6 +334,7 @@ ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
         "steer",
         "stop",
         "update",
+        "whoami",
     }
 )
 

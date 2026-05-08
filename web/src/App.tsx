@@ -4,6 +4,7 @@ import {
   useMemo,
   useState,
   type ComponentType,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import {
@@ -25,6 +26,7 @@ import {
   Download,
   Eye,
   FileText,
+  FolderTree,
   Globe,
   Heart,
   KeyRound,
@@ -64,6 +66,7 @@ import AnalyticsPage from "@/pages/AnalyticsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import OnboardingPage from "@/pages/OnboardingPage";
 import KnowledgePage from "@/pages/KnowledgePage";
+import FileAccessPage from "@/pages/FileAccessPage";
 import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
@@ -77,9 +80,144 @@ import { PluginPage, PluginSlot, usePlugins } from "@/plugins";
 import type { PluginManifest } from "@/plugins";
 import { useTheme } from "@/themes";
 import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
+import {
+  api,
+  isDashboardAuthRequired,
+  setDashboardSessionToken,
+  type DashboardAuthStatus,
+} from "@/lib/api";
 
 function RootRedirect() {
   return <Navigate to="/sessions" replace />;
+}
+
+function DashboardAuthGate({ children }: { children: ReactNode }) {
+  const authRequired = isDashboardAuthRequired();
+  const [checking, setChecking] = useState(authRequired);
+  const [authenticated, setAuthenticated] = useState(!authRequired);
+  const [token, setToken] = useState("");
+  const [status, setStatus] = useState<DashboardAuthStatus | null>(null);
+  const [error, setError] = useState("");
+
+  const applyStatus = useCallback((next: DashboardAuthStatus) => {
+    setStatus(next);
+    if (next.authenticated && next.token) {
+      setDashboardSessionToken(next.token);
+      setAuthenticated(true);
+      return true;
+    }
+    if (!next.auth_required) {
+      if (next.token) setDashboardSessionToken(next.token);
+      setAuthenticated(true);
+      return true;
+    }
+    setAuthenticated(false);
+    return false;
+  }, []);
+
+  useEffect(() => {
+    if (!authRequired) return;
+    let active = true;
+    api
+      .getDashboardAuthStatus()
+      .then((next) => {
+        if (!active) return;
+        applyStatus(next);
+      })
+      .catch(() => {
+        if (active) setAuthenticated(false);
+      })
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyStatus, authRequired]);
+
+  const submit = useCallback(
+    async (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      setError("");
+      try {
+        const next = await api.loginDashboard(token);
+        if (!applyStatus(next)) {
+          setError("Access denied for this dashboard.");
+        }
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : "Dashboard login failed.");
+      }
+    },
+    [applyStatus, token],
+  );
+
+  if (!authRequired || authenticated) {
+    return <>{children}</>;
+  }
+
+  const trustedOnly =
+    Boolean(status?.modes?.trusted_header) &&
+    !Boolean(status?.modes?.local_token) &&
+    !Boolean(status?.modes?.channel_token);
+
+  return (
+    <div className="font-mondwest flex min-h-dvh items-center justify-center bg-black px-6 text-midground antialiased">
+      <Backdrop />
+      <div className="relative z-10 w-full max-w-md border border-current/20 bg-background-base/95 p-6 shadow-2xl">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center border border-current/25">
+            <Shield className="h-5 w-5" />
+          </div>
+          <div>
+            <Typography className="text-lg font-bold leading-none tracking-normal text-midground">
+              Dashboard Access
+            </Typography>
+            <Typography className="mt-1 text-xs leading-tight tracking-normal text-midground/65">
+              Coorporate Hermes
+            </Typography>
+          </div>
+        </div>
+
+        {checking ? (
+          <div className="flex items-center gap-3 text-sm normal-case tracking-normal text-midground/70">
+            <Spinner className="h-4 w-4" />
+            Checking access
+          </div>
+        ) : (
+          <form className="space-y-4" onSubmit={submit}>
+            {!trustedOnly && (
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-midground/70">
+                  Admin or channel token
+                </span>
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  autoFocus
+                  className="h-11 w-full border border-current/25 bg-black px-3 text-sm normal-case tracking-normal text-midground outline-none focus:border-current"
+                />
+                {status?.modes?.channel_token && (
+                  <span className="block text-xs normal-case leading-5 tracking-normal text-midground/60">
+                    Channel users can request a short-lived token with /dashboard.
+                  </span>
+                )}
+              </label>
+            )}
+            {error && (
+              <div className="border border-red-500/50 bg-red-950/40 px-3 py-2 text-xs normal-case tracking-normal text-red-100">
+                {error}
+              </div>
+            )}
+            <Button type="submit" className="w-full justify-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              {trustedOnly ? "Continue" : "Sign in"}
+            </Button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
@@ -111,6 +249,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/sessions": SessionsPage,
   "/onboarding": OnboardingPage,
   "/knowledge": KnowledgePage,
+  "/file-access": FileAccessPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -149,6 +288,11 @@ const BUILTIN_NAV_REST: NavItem[] = [
     labelKey: "knowledge",
     label: "Knowledge",
     icon: Database,
+  },
+  {
+    path: "/file-access",
+    label: "File Access",
+    icon: FolderTree,
   },
   {
     path: "/analytics",
@@ -192,6 +336,7 @@ const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
   Terminal,
   Globe,
   Database,
+  FolderTree,
   Shield,
   Users,
   Wrench,
@@ -413,10 +558,11 @@ export default function App() {
   }, []);
 
   return (
-    <div
-      data-layout-variant={layoutVariant}
-      className="font-mondwest flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-black uppercase text-midground antialiased"
-    >
+    <DashboardAuthGate>
+      <div
+        data-layout-variant={layoutVariant}
+        className="font-mondwest flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-black uppercase text-midground antialiased"
+      >
       <SelectionSwitcher />
       <Backdrop />
       <PluginSlot name="backdrop" />
@@ -646,8 +792,9 @@ export default function App() {
         </div>
       </div>
 
-      <PluginSlot name="overlay" />
-    </div>
+        <PluginSlot name="overlay" />
+      </div>
+    </DashboardAuthGate>
   );
 }
 

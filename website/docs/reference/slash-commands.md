@@ -201,6 +201,8 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/reload-mcp` (alias: `/reload_mcp`) | Reload MCP servers from config. |
 | `/yolo` | Toggle YOLO mode — skip all dangerous command approval prompts. |
 | `/commands [page]` | Browse all commands and skills (paginated). |
+| `/whoami` | Show your authenticated channel identity, governance roles, and teams. Use this when an admin needs the exact `platform:user_id` key to add you. |
+| `/dashboard` | Request a short-lived one-time dashboard login token. Requires `dashboard.auth.channel_tokens.enabled`, a private/direct chat by default, and a role allowed by `dashboard.auth.read_roles`. |
 | `/approve [session\|always]` | Approve and execute a pending dangerous command. `session` approves for this session only; `always` adds to permanent allowlist. |
 | `/deny` | Reject a pending dangerous command. |
 | `/update` | Update Coorporate Hermes to the latest version. |
@@ -213,6 +215,6 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 
 - `/skin`, `/snapshot`, `/gquota`, `/reload`, `/tools`, `/toolsets`, `/browser`, `/config`, `/cron`, `/skills`, `/platforms`, `/paste`, `/image`, `/statusbar`, `/plugins`, `/busy`, `/indicator`, `/redraw`, `/clear`, `/history`, `/save`, `/copy`, and `/quit` are **CLI-only** commands.
 - `/verbose` is **CLI-only by default**, but can be enabled for messaging platforms by setting `display.tool_progress_command: true` in `config.yaml`. When enabled, it cycles the `display.tool_progress` mode and saves to config.
-- `/sethome`, `/update`, `/restart`, `/approve`, `/deny`, `/topic`, and `/commands` are **messaging-only** commands.
+- `/sethome`, `/update`, `/restart`, `/approve`, `/deny`, `/topic`, `/commands`, `/whoami`, and `/dashboard` are **messaging-only** commands.
 - `/status`, `/background`, `/queue`, `/steer`, `/voice`, `/reload-mcp`, `/rollback`, `/debug`, `/fast`, `/footer`, `/curator`, `/kanban`, and `/yolo` work in **both** the CLI and the messaging gateway.
 - `/voice join`, `/voice channel`, and `/voice leave` are only meaningful on Discord.

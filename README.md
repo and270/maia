@@ -17,7 +17,7 @@ coorporate-agent        # direct agent runner
 ## Install
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 coorporate setup
@@ -32,6 +32,51 @@ source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 coorporate --help
 ```
+
+## Dashboard Access
+
+Local setup:
+
+```bash
+coorporate dashboard
+```
+
+The dashboard binds to `127.0.0.1` by default. It can edit `.env`, `config.yaml`, folder policies, cron jobs, knowledge approvals, plugins, and model settings, so configure protected mode before serving it on an intranet or public interface:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    token_env: COORPORATE_DASHBOARD_TOKEN
+    local_token_roles: [admin]
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+```
+
+```bash
+export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+coorporate dashboard --host 0.0.0.0 --no-open
+```
+
+Use a TLS reverse proxy or private network boundary for public access. Coorporate Hermes refuses non-loopback dashboard binding unless `dashboard.auth` is configured, unless `--insecure` is explicitly used for temporary trusted-network testing.
+
+Use the local token for bootstrap and system-admin access. For team leaders, put the dashboard behind SSO or a trusted reverse proxy and map identities such as `sso:ana@company.com` in `governance.users`; the same dashboard then shows only the pages and File Access roots allowed by that user's roles and teams.
+
+If SSO is not available, mapped gateway users can request a short-lived dashboard token from the same channel identity:
+
+```yaml
+dashboard:
+  auth:
+    enabled: true
+    channel_tokens:
+      enabled: true
+      ttl_minutes: 10
+      dashboard_url: "https://hermes.company.example"
+      require_dm: true
+```
+
+Users run `/whoami` to show their exact `platform:user_id`, then an admin maps that key under `governance.users`. Users with roles allowed by `dashboard.auth.read_roles` can run `/dashboard` in a private/direct chat and paste the one-time token into the dashboard login form.
 
 ## Corporate Governance
 
@@ -52,13 +97,21 @@ governance:
       name: Platform Admin
       roles: [admin]
   default_file_policy: deny
+  team_file_roots:
+    marketing:
+      path: "/srv/company/marketing"
+      manager_roles: [manager]
+      managers: ["slack:U123"]
   folder_policies:
     - path: "/srv/company/shared"
       read_roles: [viewer]
       write_roles: [operator]
     - path: "/srv/company/finance"
-      read_roles: [manager]
+      read_teams: [finance]
       write_roles: [manager]
+    - path: "/srv/company/marketing"
+      read_teams: [marketing]
+      write_users: ["slack:U123"]
     - path: "/srv/company/security"
       read_roles: [admin]
       write_roles: [admin]
@@ -73,7 +126,8 @@ What this enforces today:
 
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies.
+- `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Coorporate Hermes may access for any channel, cron job, or dashboard-triggered action.
+- Admins can manage global file access from dashboard **File Access** or YAML. Team leaders can manage only delegated roots, such as the marketing folder, after dashboard login, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.
 - Cron jobs can pause at an authorization node until an allowed user or role approves them.
@@ -138,7 +192,7 @@ This stages memories and skills for review, imports MCP servers disabled by defa
 
 ## Observability
 
-Operational logs are available through `coorporate logs` and the dashboard Logs page. Corporate audit events are written to `<HERMES_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, and cron authorization requests, approvals, and denials.
+Operational logs are available through `coorporate logs` and the dashboard Logs page. Corporate audit events are written to `<HERMES_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, cron authorization requests/decisions, dashboard login/logout, dashboard role denials, and mutating dashboard API calls.
 
 ```bash
 coorporate logs audit

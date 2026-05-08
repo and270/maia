@@ -345,39 +345,45 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyTheme(resolveTheme(themeName));
   }, [themeName, resolveTheme]);
 
-  // Load server-side themes (built-ins + user YAMLs) once on mount.
+  // Load server-side themes (built-ins + user YAMLs) on mount and after
+  // protected dashboard login.
   useEffect(() => {
     let cancelled = false;
-    api
-      .getThemes()
-      .then((resp) => {
-        if (cancelled) return;
-        if (resp.themes?.length) {
-          setAvailableThemes(
-            resp.themes.map((t) => ({
-              name: t.name,
-              label: t.label,
-              description: t.description,
-              definition: t.definition,
-            })),
-          );
-          // Index any definitions the server shipped (user themes).
-          const defs: Record<string, DashboardTheme> = {};
-          for (const entry of resp.themes) {
-            if (entry.definition) {
-              defs[entry.name] = entry.definition;
+    const loadThemes = () => {
+      api
+        .getThemes()
+        .then((resp) => {
+          if (cancelled) return;
+          if (resp.themes?.length) {
+            setAvailableThemes(
+              resp.themes.map((t) => ({
+                name: t.name,
+                label: t.label,
+                description: t.description,
+                definition: t.definition,
+              })),
+            );
+            // Index any definitions the server shipped (user themes).
+            const defs: Record<string, DashboardTheme> = {};
+            for (const entry of resp.themes) {
+              if (entry.definition) {
+                defs[entry.name] = entry.definition;
+              }
             }
+            if (Object.keys(defs).length > 0) setUserThemeDefs(defs);
           }
-          if (Object.keys(defs).length > 0) setUserThemeDefs(defs);
-        }
-        if (resp.active && resp.active !== themeName) {
-          setThemeName(resp.active);
-          window.localStorage.setItem(STORAGE_KEY, resp.active);
-        }
-      })
-      .catch(() => {});
+          if (resp.active && resp.active !== themeName) {
+            setThemeName(resp.active);
+            window.localStorage.setItem(STORAGE_KEY, resp.active);
+          }
+        })
+        .catch(() => {});
+    };
+    loadThemes();
+    window.addEventListener("coorporate-hermes-dashboard-authenticated", loadThemes);
     return () => {
       cancelled = true;
+      window.removeEventListener("coorporate-hermes-dashboard-authenticated", loadThemes);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -23,15 +23,28 @@ export function usePlugins() {
   const [loading, setLoading] = useState(true);
   const loadedScripts = useRef<Set<string>>(new Set());
 
-  // Fetch manifests on mount.
+  // Fetch manifests on mount and after protected dashboard login.
   useEffect(() => {
-    api
-      .getPlugins()
-      .then((list) => {
-        setManifests(list);
-        if (list.length === 0) setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    let active = true;
+    const load = () => {
+      setLoading(true);
+      api
+        .getPlugins()
+        .then((list) => {
+          if (!active) return;
+          setManifests(list);
+          if (list.length === 0) setLoading(false);
+        })
+        .catch(() => {
+          if (active) setLoading(false);
+        });
+    };
+    load();
+    window.addEventListener("coorporate-hermes-dashboard-authenticated", load);
+    return () => {
+      active = false;
+      window.removeEventListener("coorporate-hermes-dashboard-authenticated", load);
+    };
   }, []);
 
   // Load plugin assets when manifests arrive.

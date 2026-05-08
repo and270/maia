@@ -73,7 +73,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/andreloureiro/coorporate-hermes/edit/main/website/',
+          editUrl: 'https://github.com/and270/coorporate-hermes/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -123,7 +123,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/andreloureiro/coorporate-hermes',
+          href: 'https://github.com/and270/coorporate-hermes',
           label: 'GitHub',
           position: 'right',
         },
@@ -151,7 +151,7 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            { label: 'GitHub', href: 'https://github.com/andreloureiro/coorporate-hermes' },
+            { label: 'GitHub', href: 'https://github.com/and270/coorporate-hermes' },
             { label: 'Upstream Hermes Agent', href: 'https://github.com/NousResearch/hermes-agent' },
           ],
         },

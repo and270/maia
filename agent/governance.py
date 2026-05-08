@@ -23,6 +23,7 @@ class Actor:
     platform: str = "local"
     user_id: str = ""
     user_name: str = ""
+    roles: tuple[str, ...] = ()
 
     @property
     def keys(self) -> tuple[str, ...]:
@@ -123,6 +124,9 @@ def actor_roles(
 ) -> list[str]:
     cfg = load_governance_config() if config is None else config
     who = current_actor() if actor is None else actor
+    direct_roles = _coerce_list(getattr(who, "roles", None))
+    if direct_roles:
+        return direct_roles
     record = _user_record(cfg, who)
     roles = _coerce_list(record.get("roles"))
     if not roles:
@@ -288,8 +292,19 @@ def check_file_access(
             f"Access denied by governance: {actor_display(who)} is explicitly denied for {path!r}.",
         )
 
+    denied_teams = _coerce_list(policy.get("deny_teams"))
+    who_teams = actor_teams(who, cfg)
+    if denied_teams and set(who_teams).intersection(denied_teams):
+        return _deny(
+            f"Access denied by governance: {actor_display(who)} is explicitly denied by team for {path!r}.",
+        )
+
     user_keys = _coerce_list(policy.get(f"{op}_users")) or _coerce_list(policy.get("users"))
     if user_keys and _actor_matches_any(who, user_keys):
+        return True, ""
+
+    team_keys = _coerce_list(policy.get(f"{op}_teams")) or _coerce_list(policy.get("teams"))
+    if team_keys and set(who_teams).intersection(team_keys):
         return True, ""
 
     required_roles = _coerce_list(policy.get(f"{op}_roles"))

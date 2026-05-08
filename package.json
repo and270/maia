@@ -8,13 +8,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/andreloureiro/coorporate-hermes.git"
+    "url": "git+https://github.com/and270/coorporate-hermes.git"
   },
   "license": "UNLICENSED",
   "bugs": {
-    "url": "https://github.com/andreloureiro/coorporate-hermes/issues"
+    "url": "https://github.com/and270/coorporate-hermes/issues"
   },
-  "homepage": "https://github.com/andreloureiro/coorporate-hermes#readme",
+  "homepage": "https://github.com/and270/coorporate-hermes#readme",
   "dependencies": {
     "@askjo/camofox-browser": "^1.5.2",
     "agent-browser": "^0.26.0"

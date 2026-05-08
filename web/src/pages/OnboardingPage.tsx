@@ -27,7 +27,7 @@ const STEPS = [
   {
     icon: Users,
     title: "Users and roles",
-    text: "Map gateway identities such as slack:U123 or telegram:987654 to viewer, operator, manager, or admin roles and team memberships.",
+    text: "Ask users for /whoami, then map identities such as slack:U123, discord:99887766, or whatsapp:+15551234567 to roles and teams.",
     to: "/config?search=governance.users",
     action: "Assign Roles",
   },
@@ -41,9 +41,9 @@ const STEPS = [
   {
     icon: FolderLock,
     title: "Folder access",
-    text: "Define explicit read_roles, write_roles, read_users, write_users, and deny_users for company folders.",
-    to: "/config?search=folder_policies",
-    action: "Set Access",
+    text: "Set default deny, add company roots, and delegate bounded team folders for manager-controlled read/write policies.",
+    to: "/file-access",
+    action: "Open File Access",
   },
   {
     icon: Clock,
@@ -61,8 +61,15 @@ const STEPS = [
   },
   {
     icon: FileKey2,
+    title: "Channel dashboard tokens",
+    text: "Configure dashboard.auth.channel_tokens so mapped users can request /dashboard one-time tokens from private channel chats.",
+    to: "/config?search=dashboard.auth.channel_tokens",
+    action: "Open Config",
+  },
+  {
+    icon: FileKey2,
     title: "Hermes migration",
-    text: "Import upstream Hermes tar/tar.gz exports with the guarded migration mode, then review staged skills and secrets.",
+    text: "Import upstream Hermes tar/tar.gz exports with guarded migration mode, then review staged skills and secrets.",
     to: "/docs",
     action: "Read Docs",
   },
@@ -70,10 +77,12 @@ const STEPS = [
 
 const CHECKLIST = [
   "Gateway users are mapped by platform:user_id.",
+  "Users can run /whoami to reveal the exact identity key admins should map.",
+  "Dashboard channel tokens are enabled only with short TTL and private/direct chat requests.",
   "Users that need shared team knowledge have governance.users.*.teams assigned.",
   "Production file policy is default deny.",
   "Corporate and team memories/skills are changed only through Knowledge approvals.",
-  "Finance, HR, legal, security, and shared folders have separate policies.",
+  "Finance, HR, legal, security, shared folders, and delegated team roots have separate policies.",
   "Cron jobs that touch governed folders require manager or admin approval.",
   "Audit log retention and SIEM export are configured for regulated data.",
   "Migrated skills and MCP servers are reviewed before activation.",

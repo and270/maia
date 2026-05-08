@@ -46,7 +46,7 @@ That does not stop Hermes from working well as a phone-native CLI agent — it j
 Hermes now ships a Termux-aware installer path:
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```
@@ -82,7 +82,7 @@ Why these packages?
 ### 2. Clone Hermes
 
 ```bash
-git clone --recurse-submodules https://github.com/andreloureiro/coorporate-hermes.git
+git clone --recurse-submodules https://github.com/and270/coorporate-hermes.git
 cd hermes-agent
 ```
 

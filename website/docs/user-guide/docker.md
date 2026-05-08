@@ -21,7 +21,7 @@ If this is your first time running Coorporate Hermes, create a data directory on
 mkdir -p ~/.hermes
 docker run -it --rm \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes setup
+  and270/coorporate-hermes setup
 ```
 
 This drops you into the setup wizard, which will prompt you for your API keys and write them to `~/.hermes/.env`. You only need to do this once. It is highly recommended to set up a chat system for the gateway to work with at this point.
@@ -36,7 +36,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes:/opt/data \
   -p 8642:8642 \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 Port 8642 exposes the gateway's [OpenAI-compatible API server](./features/api-server.md) and health endpoint. It's optional if you only use chat platforms (Telegram, Discord, etc.), but required if you want the dashboard or external tools to reach the gateway.
@@ -53,7 +53,7 @@ docker run -d \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY=your_api_key_here \
   -e API_SERVER_CORS_ORIGINS='*' \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 Opening any port on an internet facing machine is a security risk. You should not do it unless you understand the risks.
@@ -70,19 +70,19 @@ docker run -d \
   -p 8642:8642 \
   -p 9119:9119 \
   -e HERMES_DASHBOARD=1 \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
-The entrypoint starts `hermes dashboard` in the background (running as the non-root `hermes` user) before `exec`-ing the main command. Dashboard output is prefixed with `[dashboard]` in `docker logs` so it's easy to separate from gateway logs.
+The entrypoint starts `coorporate dashboard` in the background (running as the non-root `hermes` user) before `exec`-ing the main command. Dashboard output is prefixed with `[dashboard]` in `docker logs` so it's easy to separate from gateway logs.
 
 | Environment variable | Description | Default |
 |---------------------|-------------|---------|
 | `HERMES_DASHBOARD` | Set to `1` (or `true` / `yes`) to launch the dashboard alongside the main command | *(unset — dashboard not started)* |
 | `HERMES_DASHBOARD_HOST` | Bind address for the dashboard HTTP server | `0.0.0.0` |
 | `HERMES_DASHBOARD_PORT` | Port for the dashboard HTTP server | `9119` |
-| `HERMES_DASHBOARD_TUI` | Set to `1` to expose the in-browser Chat tab (embedded `hermes --tui` via PTY/WebSocket) | *(unset)* |
+| `HERMES_DASHBOARD_TUI` | Set to `1` to expose the in-browser Chat tab (embedded `coorporate --tui` via PTY/WebSocket) | *(unset)* |
 
-The default `HERMES_DASHBOARD_HOST=0.0.0.0` is required for the host to reach the dashboard through the published port; the entrypoint automatically passes `--insecure` to `hermes dashboard` in that case. Override to `127.0.0.1` if you want to restrict the dashboard to in-container access only (e.g. behind a reverse proxy in a sidecar).
+The default `HERMES_DASHBOARD_HOST=0.0.0.0` is required for the host to reach the dashboard through the published port. Configure `dashboard.auth` and set `COORPORATE_DASHBOARD_TOKEN` before publishing `9119`; the entrypoint should only use `--insecure` for temporary trusted-network tests. Override to `127.0.0.1` if you want to restrict the dashboard to in-container access only (e.g. behind a reverse proxy in a sidecar).
 
 :::note
 The dashboard side-process is **not supervised** — if it crashes, it stays down until the container restarts. Running it as a separate container is not supported: the dashboard's gateway-liveness detection requires a shared PID namespace with the gateway process.
@@ -95,7 +95,7 @@ To open an interactive chat session against a running data directory:
 ```sh
 docker run -it --rm \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes
+  and270/coorporate-hermes
 ```
 
 Or if you have already opened a terminal in your running container (via Docker Desktop for instance), just run:
@@ -138,7 +138,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes-work:/opt/data \
   -p 8642:8642 \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 
 # Personal profile
 docker run -d \
@@ -146,7 +146,7 @@ docker run -d \
   --restart unless-stopped \
   -v ~/.hermes-personal:/opt/data \
   -p 8643:8642 \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 Why separate containers over profiles in Docker:
@@ -162,7 +162,7 @@ In Docker Compose, this just means declaring one service per profile with distin
 ```yaml
 services:
   hermes-work:
-    image: andreloureiro/coorporate-hermes:latest
+    image: and270/coorporate-hermes:latest
     container_name: hermes-work
     restart: unless-stopped
     command: gateway run
@@ -172,7 +172,7 @@ services:
       - ~/.hermes-work:/opt/data
 
   hermes-personal:
-    image: andreloureiro/coorporate-hermes:latest
+    image: and270/coorporate-hermes:latest
     container_name: hermes-personal
     restart: unless-stopped
     command: gateway run
@@ -191,7 +191,7 @@ docker run -it --rm \
   -v ~/.hermes:/opt/data \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -e OPENAI_API_KEY="sk-..." \
-  andreloureiro/coorporate-hermes
+  and270/coorporate-hermes
 ```
 
 Direct `-e` flags override values from `.env`. This is useful for CI/CD or secrets-manager integrations where you don't want keys on disk.
@@ -203,7 +203,7 @@ For persistent deployment with both the gateway and dashboard, a `docker-compose
 ```yaml
 services:
   hermes:
-    image: andreloureiro/coorporate-hermes:latest
+    image: and270/coorporate-hermes:latest
     container_name: hermes
     restart: unless-stopped
     command: gateway run
@@ -247,7 +247,7 @@ docker run -d \
   --restart unless-stopped \
   --memory=4g --cpus=2 \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 ## What the Dockerfile does
@@ -268,11 +268,11 @@ The entrypoint script (`docker/entrypoint.sh`) bootstraps the data volume on fir
 - Copies default `config.yaml` if missing
 - Copies default `SOUL.md` if missing
 - Syncs bundled skills using a manifest-based approach (preserves user edits)
-- Optionally launches `hermes dashboard` as a background side-process when `HERMES_DASHBOARD=1` (see [Running the dashboard](#running-the-dashboard))
-- Then runs `hermes` with whatever arguments you pass
+- Optionally launches `coorporate dashboard` as a background side-process when `HERMES_DASHBOARD=1` (see [Running the dashboard](#running-the-dashboard))
+- Then runs `coorporate` with whatever arguments you pass
 
 :::warning
-Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the `hermes` user before gateway state files are created. Starting `hermes gateway run` as root inside the official image is refused by default because it can leave root-owned files in `/opt/data` and break later dashboard or gateway starts. Set `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
+Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the `hermes` user before gateway state files are created. Starting `coorporate gateway run` as root inside the official image is refused by default because it can leave root-owned files in `/opt/data` and break later dashboard or gateway starts. Set `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
 :::
 
 ## Upgrading
@@ -280,13 +280,13 @@ Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypo
 Pull the latest image and recreate the container. Your data directory is untouched.
 
 ```sh
-docker pull andreloureiro/coorporate-hermes:latest
+docker pull and270/coorporate-hermes:latest
 docker rm -f hermes
 docker run -d \
   --name hermes \
   --restart unless-stopped \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 Or with Docker Compose:
@@ -331,7 +331,7 @@ services:
             - capabilities: [gpu]
 
   hermes:
-    image: andreloureiro/coorporate-hermes:latest
+    image: and270/coorporate-hermes:latest
     container_name: hermes
     restart: unless-stopped
     command: gateway run
@@ -375,7 +375,7 @@ docker run -d \
   --name hermes \
   -v ~/.hermes:/opt/data \
   -p 8642:8642 \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 ```yaml
@@ -394,7 +394,7 @@ docker run -d \
   --name hermes \
   --network host \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 ```yaml
@@ -460,7 +460,7 @@ docker run -d \
   --name hermes \
   --shm-size=1g \
   -v ~/.hermes:/opt/data \
-  andreloureiro/coorporate-hermes gateway run
+  and270/coorporate-hermes gateway run
 ```
 
 ### Gateway not reconnecting after network issues
@@ -475,6 +475,6 @@ docker restart hermes
 
 ```sh
 docker logs --tail 50 hermes          # Recent logs
-docker run -it --rm andreloureiro/coorporate-hermes:latest version     # Verify version
+docker run -it --rm and270/coorporate-hermes:latest version     # Verify version
 docker stats hermes                    # Resource usage
 ```

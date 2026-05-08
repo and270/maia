@@ -38,6 +38,10 @@ The audit trail records:
 - knowledge approval requests, approvals, and denials;
 - cron authorization requests;
 - cron approvals and denials;
+- dashboard login/logout events;
+- dashboard channel-token issuance and denials;
+- dashboard role denials;
+- mutating dashboard API calls such as config, secret, plugin, cron, and policy changes;
 - future migration and policy events that need compliance review.
 
 Inspect it with:

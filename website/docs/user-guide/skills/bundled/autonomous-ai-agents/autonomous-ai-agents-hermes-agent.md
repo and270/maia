@@ -51,7 +51,7 @@ People use Hermes for software development, research, system administration, dat
 
 ```bash
 # Install
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 

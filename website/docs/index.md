@@ -25,6 +25,7 @@ It is a private corporate assistant for a single organization. Administrators ma
 | | |
 |---|---|
 | 🛡️ **[Admin Onboarding](/docs/enterprise/admin-onboarding)** | Configure tenant, users, roles, folders, cron approvals, and audit logs |
+| 🧭 **[Enterprise Governance](/docs/enterprise/governance)** | Dashboard access, identity mapping, role gates, folder policies, and audit controls |
 | 🧠 **[Knowledge Governance](/docs/enterprise/knowledge-governance)** | Manage corporate, team, and user memory/skill layers with approvals |
 | 🔁 **[Migrate From Hermes](/docs/enterprise/migration-from-hermes)** | Bring memories, skills, and MCP configuration from upstream Hermes exports safely |
 | ⏱️ **[Cron Authorization](/docs/enterprise/cron-authorization-panel)** | Use role/user approval checkpoints for scheduled jobs |
@@ -50,7 +51,7 @@ It is a private corporate assistant for a single organization. Administrators ma
 
 ## Key Features
 
-- **Corporate governance** — role-aware users, folder policies, gateway session isolation, and default-deny production patterns
+- **Corporate governance** — protected dashboard access, role-aware users, folder policies, gateway session isolation, and default-deny production patterns
 - **Knowledge governance** — corporate/team/user memories and skills, with shared changes gated by human approval
 - **Guarded migration** — import upstream Hermes tar/tar.gz exports without overwriting corporate guardrails
 - **Cron approvals** — scheduled jobs can pause for role or user approval before execution

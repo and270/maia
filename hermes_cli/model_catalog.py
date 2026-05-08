@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DEFAULT_CATALOG_URL = (
-    "https://raw.githubusercontent.com/andreloureiro/coorporate-hermes/main/website/static/api/model-catalog.json"
+    "https://raw.githubusercontent.com/and270/coorporate-hermes/main/website/static/api/model-catalog.json"
 )
 DEFAULT_TTL_HOURS = 24
 DEFAULT_FETCH_TIMEOUT = 8.0

@@ -136,7 +136,7 @@ so path-traversal tricks can't name a board.
 
 ### Managing boards from the dashboard
 
-`hermes dashboard` → Kanban tab shows a board switcher at the top as soon
+`coorporate dashboard` → Kanban tab shows a board switcher at the top as soon
 as more than one board exists (or any board has tasks). Single-board users
 see only a small `+ New board` button; the switcher is hidden until it
 matters.
@@ -341,13 +341,13 @@ whichever profile you use for kanban workers (`researcher`, `writer`, `ops`,
 etc.):
 
 ```bash
-hermes -p <your-worker-profile> skills list | grep kanban-worker
+coorporate -p <your-worker-profile> skills list | grep kanban-worker
 ```
 
 If the bundled copy is missing, restore it for that profile:
 
 ```bash
-hermes -p <your-worker-profile> skills reset kanban-worker --restore
+coorporate -p <your-worker-profile> skills reset kanban-worker --restore
 ```
 
 The dispatcher also auto-passes `--skills kanban-worker` when spawning every worker, so the worker always has the pattern library available even if a profile's default skills config doesn't include it.
@@ -417,13 +417,13 @@ install and update, so there is no separate Skills Hub install step. Verify it i
 present in your orchestrator profile:
 
 ```bash
-hermes -p orchestrator skills list | grep kanban-orchestrator
+coorporate -p orchestrator skills list | grep kanban-orchestrator
 ```
 
 If the bundled copy is missing, restore it for that profile:
 
 ```bash
-hermes -p orchestrator skills reset kanban-orchestrator --restore
+coorporate -p orchestrator skills reset kanban-orchestrator --restore
 ```
 
 For best results, pair it with a profile whose toolsets are restricted to board operations (`kanban`, `gateway`, `memory`) so the orchestrator literally cannot execute implementation tasks even if it tries.
@@ -436,7 +436,7 @@ Open it with:
 
 ```bash
 hermes kanban init      # one-time: create kanban.db if not already present
-hermes dashboard        # "Kanban" tab appears in the nav, after "Skills"
+coorporate dashboard    # "Kanban" tab appears in the nav, after "Skills"
 ```
 
 ### What the plugin gives you
@@ -521,13 +521,13 @@ Each key is optional and falls back to the shown default.
 
 ### Security model
 
-The dashboard's HTTP auth middleware [explicitly skips `/api/plugins/`](./extending-the-dashboard#backend-api-routes) — plugin routes are unauthenticated by design because the dashboard binds to localhost by default. That means the kanban REST surface is reachable from any process on the host.
+When `dashboard.auth.enabled` is false, the dashboard's HTTP auth middleware keeps the historical localhost behavior for `/api/plugins/`. When protected dashboard auth is enabled, plugin routes are covered by the same dashboard session and role gates as the rest of the dashboard API.
 
 The WebSocket takes one additional step: it requires the dashboard's ephemeral session token as a `?token=…` query parameter (browsers can't set `Authorization` on an upgrade request), matching the pattern used by the in-browser PTY bridge.
 
-If you run `hermes dashboard --host 0.0.0.0`, every plugin route — kanban included — becomes reachable from the network. **Don't do that on a shared host.** The board contains task bodies, comments, and workspace paths; an attacker reaching these routes gets read access to your entire collaboration surface and can also create / reassign / archive tasks.
+If you run `coorporate dashboard --host 0.0.0.0`, configure `dashboard.auth` first. The board contains task bodies, comments, and workspace paths, so network serving must use protected dashboard auth plus a firewall, VPN, or TLS reverse proxy.
 
-Tasks in `~/.hermes/kanban.db` are profile-agnostic on purpose (that's the coordination primitive). If you open the dashboard with `hermes -p <profile> dashboard`, the board still shows tasks created by any other profile on the host. Same user owns all profiles, but this is worth knowing if multiple personas coexist.
+Tasks in `~/.hermes/kanban.db` are profile-agnostic on purpose (that's the coordination primitive). If you open the dashboard with `coorporate -p <profile> dashboard`, the board still shows tasks created by any other profile on the host. Same user owns all profiles, but this is worth knowing if multiple personas coexist.
 
 ### Live updates
 
@@ -535,7 +535,7 @@ Tasks in `~/.hermes/kanban.db` are profile-agnostic on purpose (that's the coord
 
 ### Extending it
 
-The plugin uses the standard Hermes dashboard plugin contract — see [Extending the Dashboard](./extending-the-dashboard) for the full manifest reference, shell slots, page-scoped slots, and the Plugin SDK. Extra columns, custom card chrome, tenant-filtered layouts, or full `tab.override` replacements are all expressible without forking this plugin.
+The plugin uses the standard Coorporate Hermes dashboard plugin contract — see [Extending the Dashboard](./extending-the-dashboard) for the full manifest reference, shell slots, page-scoped slots, and the Plugin SDK. Extra columns, custom card chrome, tenant-filtered layouts, or full `tab.override` replacements are all expressible without forking this plugin.
 
 To disable without removing: add `dashboard.plugins.kanban.enabled: false` to `config.yaml` (or delete `plugins/kanban/dashboard/manifest.json`).
 

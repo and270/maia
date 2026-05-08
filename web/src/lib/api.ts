@@ -25,10 +25,95 @@ declare global {
   interface Window {
     __HERMES_SESSION_TOKEN__?: string;
     __HERMES_BASE_PATH__?: string;
+    __HERMES_DASHBOARD_AUTH_REQUIRED__?: boolean;
   }
 }
 let _sessionToken: string | null = null;
 const SESSION_HEADER = "X-Hermes-Session-Token";
+const SESSION_STORAGE_KEY = "coorporateHermes.dashboardSessionToken";
+
+export type DashboardAuthStatus = {
+  auth_required: boolean;
+  authenticated: boolean;
+  token?: string;
+  actor?: {
+    id?: string;
+    platform?: string | null;
+    user_id?: string | null;
+    user_name?: string | null;
+  };
+  roles?: string[];
+  source?: string;
+  expires_at?: number;
+  capabilities?: Record<string, boolean>;
+  modes?: {
+    local_token?: boolean;
+    trusted_header?: boolean;
+    channel_token?: boolean;
+  };
+};
+
+export type FolderPolicy = {
+  path: string;
+  recursive?: boolean;
+  label?: string;
+  description?: string;
+  roles?: string[];
+  read_roles?: string[];
+  write_roles?: string[];
+  teams?: string[];
+  read_teams?: string[];
+  write_teams?: string[];
+  deny_teams?: string[];
+  users?: string[];
+  read_users?: string[];
+  write_users?: string[];
+  deny_users?: string[];
+};
+
+export type FolderPoliciesResponse = {
+  enabled: boolean;
+  default_file_policy: string;
+  folder_policies: FolderPolicy[];
+  team_file_roots: Record<string, { path: string; [key: string]: unknown }>;
+  actor: {
+    teams: string[];
+    can_admin: boolean;
+    managed_teams: string[];
+  };
+};
+
+export function isDashboardAuthRequired(): boolean {
+  return Boolean(window.__HERMES_DASHBOARD_AUTH_REQUIRED__);
+}
+
+function readStoredSessionToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(SESSION_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setDashboardSessionToken(token: string): void {
+  _sessionToken = token || null;
+  if (token) {
+    window.__HERMES_SESSION_TOKEN__ = token;
+  } else {
+    delete window.__HERMES_SESSION_TOKEN__;
+  }
+  try {
+    if (token) {
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // sessionStorage can be disabled by policy; in-memory state still works.
+  }
+  window.dispatchEvent(new CustomEvent("coorporate-hermes-dashboard-authenticated"));
+}
 
 function setSessionHeader(headers: Headers, token: string): void {
   if (!headers.has(SESSION_HEADER)) {
@@ -39,7 +124,7 @@ function setSessionHeader(headers: Headers, token: string): void {
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   // Inject the session token into all /api/ requests.
   const headers = new Headers(init?.headers);
-  const token = window.__HERMES_SESSION_TOKEN__;
+  const token = window.__HERMES_SESSION_TOKEN__ || _sessionToken || readStoredSessionToken();
   if (token) {
     setSessionHeader(headers, token);
   }
@@ -58,10 +143,40 @@ async function getSessionToken(): Promise<string> {
     _sessionToken = injected;
     return _sessionToken;
   }
+  const stored = readStoredSessionToken();
+  if (stored) {
+    _sessionToken = stored;
+    return _sessionToken;
+  }
   throw new Error("Session token not available — page must be served by the Hermes dashboard server");
 }
 
 export const api = {
+  getDashboardAuthStatus: () =>
+    fetchJSON<DashboardAuthStatus>("/api/dashboard/auth/status"),
+  loginDashboard: (token: string) =>
+    fetchJSON<DashboardAuthStatus>("/api/dashboard/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+  logoutDashboard: () =>
+    fetchJSON<{ ok: boolean }>("/api/dashboard/auth/logout", { method: "POST" }),
+  getFolderPolicies: () =>
+    fetchJSON<FolderPoliciesResponse>("/api/governance/folder-policies"),
+  saveFolderPolicies: (body: {
+    default_file_policy?: string;
+    folder_policies: FolderPolicy[];
+    team_file_roots?: Record<string, unknown>;
+  }) =>
+    fetchJSON<{ ok: boolean; folder_policies: FolderPolicy[]; default_file_policy: string }>(
+      "/api/governance/folder-policies",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
   getSessions: (limit = 20, offset = 0) =>
     fetchJSON<PaginatedSessions>(`/api/sessions?limit=${limit}&offset=${offset}`),

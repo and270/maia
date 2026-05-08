@@ -147,6 +147,8 @@ hermes gateway status --system         # Linux only: inspect the system service 
 | `/rollback [number]` | List or restore filesystem checkpoints |
 | `/background <prompt>` | Run a prompt in a separate background session |
 | `/reload-mcp` | Reload MCP servers from config |
+| `/whoami` | Show your channel identity, governance roles, and teams |
+| `/dashboard` | Request a one-time dashboard login token if your role allows it |
 | `/update` | Update Coorporate Hermes to the latest version |
 | `/help` | Show available commands |
 | `/<skill-name>` | Invoke any installed skill |

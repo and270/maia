@@ -33,7 +33,7 @@ Set your provider with `hermes model` or by editing `~/.hermes/.env`. See the [E
 **Not natively.** Coorporate Hermes requires a Unix-like environment. On Windows, install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Hermes from inside it. The standard install command works perfectly in WSL2:
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```
@@ -63,7 +63,7 @@ Yes — Hermes now has a tested Termux install path for Android phones.
 Quick install:
 
 ```bash
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```
@@ -229,7 +229,7 @@ source ~/.bashrc
 # If you previously installed with sudo, clean up:
 sudo rm /usr/local/bin/hermes
 # Then re-run the standard installer
-git clone https://github.com/andreloureiro/coorporate-hermes.git
+git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
 ```
@@ -757,7 +757,7 @@ Skills with very long descriptions are truncated to 40 characters in the Telegra
 
 1. Install Coorporate Hermes on the new machine:
    ```bash
-   git clone https://github.com/andreloureiro/coorporate-hermes.git
+   git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
    ```
@@ -863,6 +863,6 @@ If using OpenRouter, make sure your API key has credits. A 400 from OpenRouter o
 
 If your issue isn't covered here:
 
-1. **Search existing issues:** [GitHub Issues](https://github.com/andreloureiro/coorporate-hermes/issues)
+1. **Search existing issues:** [GitHub Issues](https://github.com/and270/coorporate-hermes/issues)
 2. **Enterprise support:** contact [AmpliIA](https://ampliia.com/en/) for onboarding, support, or deployment review.
 3. **File a bug report:** Include your OS, Python version (`python3 --version`), Hermes version (`hermes --version`), and the full error message

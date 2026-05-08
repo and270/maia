@@ -856,6 +856,44 @@ DEFAULT_CONFIG = {
     # Web dashboard settings
     "dashboard": {
         "theme": "default",  # Dashboard visual theme: "default", "midnight", "ember", "mono", "cyberpunk", "rose"
+        "auth": {
+            "enabled": False,
+            # Local token mode reads the shared admin token from this env var.
+            # Prefer an env var or secret manager over storing secrets in config.yaml.
+            "token_env": "COORPORATE_DASHBOARD_TOKEN",
+            # Optional sha256:<hex> hash of the dashboard token for deployments
+            # that cannot inject env vars. The plaintext token is never stored.
+            "token_hash": "",
+            # Reverse-proxy/SSO mode. Bind the dashboard to loopback behind the
+            # proxy unless allow_trusted_headers_on_public_bind is explicitly set.
+            "trusted_user_header": "",
+            "trusted_name_header": "",
+            "trusted_roles_header": "",
+            "trusted_platform": "sso",
+            "allow_trusted_headers_on_public_bind": False,
+            # Roles granted to a successful local-token login when governance
+            # does not define an explicit dashboard user mapping.
+            "local_token_roles": ["admin"],
+            # Channel-issued one-time dashboard tokens. A user requests one
+            # from an authenticated gateway channel with /dashboard; the token
+            # is accepted by the normal dashboard login form only when the
+            # mapped actor satisfies read_roles.
+            "channel_tokens": {
+                "enabled": True,
+                "ttl_minutes": 10,
+                # Public or intranet URL shown in /dashboard replies. Leave
+                # empty for local server tests; production should set this.
+                "dashboard_url": "",
+                # Keep true so tokens are not posted into shared channels.
+                "require_dm": True,
+            },
+            # Dashboard-level gates. Governance role_hierarchy is still honored
+            # when it can compare granted and required roles.
+            "read_roles": ["auditor", "manager", "admin"],
+            "manage_roles": ["manager", "admin"],
+            "admin_roles": ["admin"],
+            "session_ttl_minutes": 480,
+        },
     },
 
     # Privacy settings
@@ -888,12 +926,22 @@ DEFAULT_CONFIG = {
         # Example:
         # folder_policies:
         #   - path: "/srv/company/finance"
-        #     read_roles: ["viewer"]
+        #     read_teams: ["finance"]
         #     write_roles: ["manager"]
         #   - path: "/srv/company/hr"
         #     read_roles: ["admin"]
         #     write_roles: ["admin"]
         "folder_policies": [],
+        # Team-scoped folder roots that team leads can administer from the
+        # dashboard without receiving full system-admin access.
+        # Example:
+        # team_file_roots:
+        #   marketing:
+        #     path: "/srv/company/marketing"
+        #     manager_roles: ["manager"]
+        #     managers: ["slack:U123"]
+        "team_file_roots": {},
+        "team_file_manager_roles": ["manager", "admin"],
         "gateway": {
             # Defaults preserve the existing multi-user gateway behavior:
             # shared regular groups are isolated per user, while explicit
@@ -1367,7 +1415,7 @@ DEFAULT_CONFIG = {
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
         "enabled": True,
-        "url": "https://raw.githubusercontent.com/andreloureiro/coorporate-hermes/main/website/static/api/model-catalog.json",
+        "url": "https://raw.githubusercontent.com/and270/coorporate-hermes/main/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.
