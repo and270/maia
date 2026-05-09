@@ -680,6 +680,48 @@ class TestTemplateVarSubstitution:
         # Template token must survive when substitution is disabled.
         assert "${HERMES_SKILL_DIR}/scripts/foo.js" in msg
 
+    def test_substitutes_coorporate_governance_context(self, tmp_path, monkeypatch):
+        from agent.skill_preprocessing import substitute_template_vars
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("COORPORATE_USER_PLATFORM", "slack")
+        monkeypatch.setenv("COORPORATE_USER_ID", "U_OPERATOR")
+        (tmp_path / "config.yaml").write_text(
+            """
+dashboard:
+  auth:
+    enabled: true
+    read_roles: [manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+governance:
+  enabled: true
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "slack:U_OPERATOR":
+      roles: [operator]
+      teams: [support]
+""",
+            encoding="utf-8",
+        )
+
+        msg = substitute_template_vars(
+            "${COORPORATE_GOVERNANCE_CONTEXT}",
+            skill_dir=None,
+            session_id=None,
+        )
+
+        assert msg is not None
+        assert "${COORPORATE_GOVERNANCE_CONTEXT}" not in msg
+        assert "Actor: slack:U_OPERATOR" in msg
+        assert "Roles: operator" in msg
+        assert "Teams: support" in msg
+        assert (
+            "Administer config, secrets, models, gateway settings, dashboard auth, "
+            "user authorization, plugins, global folder policies, and roles: no"
+        ) in msg
+        assert "Operator/viewer-scope actors may do assigned work" in msg
+
 
 class TestInlineShellExpansion:
     """Inline ``!`cmd`` snippets in SKILL.md run before the agent sees the

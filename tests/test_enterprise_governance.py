@@ -314,3 +314,59 @@ governance:
     stored = get_job(job["id"])
     assert stored["state"] == "awaiting_authorization"
     assert stored["authorization"]["status"] == "pending"
+
+
+def test_self_configuration_context_is_actor_and_role_aware(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    marketing_dir = tmp_path / "marketing"
+    marketing_dir.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+dashboard:
+  auth:
+    enabled: true
+    read_roles: [auditor, manager, admin]
+    manage_roles: [manager, admin]
+    admin_roles: [admin]
+knowledge:
+  enabled: true
+  corporate:
+    approver_roles: [admin]
+  team:
+    approver_roles: [manager, admin]
+governance:
+  enabled: true
+  tenant_id: acme-corp
+  default_role: viewer
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "slack:U_MARKETING":
+      roles: [manager]
+      teams: [marketing]
+  team_file_roots:
+    marketing:
+      path: "{marketing_dir}"
+      manager_roles: [manager]
+  cron:
+    default_authorizer_roles: [admin]
+""",
+    )
+
+    from agent.governance import Actor, render_self_configuration_context
+
+    text = render_self_configuration_context(
+        actor=Actor(platform="slack", user_id="U_MARKETING")
+    )
+
+    assert "Actor: slack:U_MARKETING" in text
+    assert "Roles: manager" in text
+    assert "Teams: marketing" in text
+    assert "Read dashboard data: yes" in text
+    assert "Manage approvals or delegated File Access: yes" in text
+    assert (
+        "Administer config, secrets, models, gateway settings, dashboard auth, "
+        "user authorization, plugins, global folder policies, and roles: no"
+    ) in text
+    assert f"'marketing': '{marketing_dir}'" in text
+    assert "Management-scope actions are limited" in text

@@ -803,6 +803,8 @@ def _dashboard_required_roles(path: str, method: str) -> List[str]:
     if path.startswith("/api/cron/jobs/") and path.endswith("/authorize"):
         return manage_roles
     if verb in {"GET", "HEAD", "OPTIONS"}:
+        if path == "/api/config":
+            return read_roles
         read_prefixes = (
             "/api/status",
             "/api/sessions",

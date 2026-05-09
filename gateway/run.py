@@ -4791,6 +4791,110 @@ class GatewayRunner:
 
         return bool(check_ids & allowed_ids)
 
+    @staticmethod
+    def _coerce_gateway_role_list(value) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+    def _gateway_admin_action_for_command(
+        self,
+        canonical: str,
+        event: MessageEvent,
+    ) -> Optional[str]:
+        """Return a description when a gateway command mutates admin state."""
+
+        raw_args = (event.get_command_args() or "").strip()
+        args = raw_args.lower()
+        if canonical == "model" and "--global" in args.split():
+            return "persist global model configuration"
+        if canonical == "personality" and args:
+            return "change the global personality/system prompt"
+        if canonical == "reasoning":
+            if "--global" in args.split():
+                return "persist global reasoning configuration"
+            if args in {"show", "on", "hide", "off"}:
+                return "change platform reasoning display configuration"
+        if canonical == "fast" and args not in {"", "status"}:
+            return "change global service-tier configuration"
+        if canonical == "verbose":
+            return "change platform tool-progress configuration"
+        if canonical == "footer" and args not in {"status", "?"}:
+            return "change global runtime-footer configuration"
+        if canonical == "sethome":
+            return "change the gateway home channel"
+        if canonical == "restart":
+            return "restart the gateway process"
+        if canonical == "update":
+            return "update the server installation"
+        if canonical == "reload-mcp":
+            return "reload MCP server configuration"
+        if canonical == "yolo":
+            return "change dangerous-command approval behavior"
+        return None
+
+    def _gateway_admin_denial_for_command(
+        self,
+        canonical: str,
+        event: MessageEvent,
+    ) -> Optional[str]:
+        """Block admin-scope gateway slash commands for non-admin actors.
+
+        This only activates when governance or protected dashboard auth is
+        enabled. Personal/single-user Hermes deployments keep the historical
+        behavior, while Coorporate Hermes deployments prevent allowed gateway
+        users from bypassing admin role gates with slash commands.
+        """
+
+        action = self._gateway_admin_action_for_command(canonical, event)
+        if not action:
+            return None
+
+        try:
+            cfg = _load_gateway_config() or {}
+        except Exception:
+            return None
+        governance = cfg.get("governance", {})
+        governance = governance if isinstance(governance, dict) else {}
+        dashboard = cfg.get("dashboard", {})
+        dashboard = dashboard if isinstance(dashboard, dict) else {}
+        auth = dashboard.get("auth", {})
+        auth = auth if isinstance(auth, dict) else {}
+
+        if not (bool(governance.get("enabled")) or bool(auth.get("enabled"))):
+            return None
+
+        try:
+            from agent.governance import Actor, actor_has_any_role, actor_roles
+
+            source = event.source
+            platform = getattr(getattr(source, "platform", None), "value", None) or "gateway"
+            actor = Actor(
+                platform=str(platform),
+                user_id=str(getattr(source, "user_id", "") or ""),
+                user_name=str(getattr(source, "user_name", "") or ""),
+            )
+            admin_roles = self._coerce_gateway_role_list(auth.get("admin_roles")) or ["admin"]
+            if actor_has_any_role(admin_roles, actor=actor, config=governance):
+                return None
+            roles = actor_roles(actor, governance)
+            actor_key = next(iter(actor.keys), actor.platform)
+        except Exception:
+            return None
+
+        return (
+            f"Denied: `/{canonical}` would {action}. "
+            "That is restricted to dashboard admin roles in this Coorporate Hermes deployment.\n"
+            f"- Actor: `{actor_key}`\n"
+            f"- Current roles: `{', '.join(roles) if roles else 'none'}`\n"
+            f"- Required admin roles: `{', '.join(admin_roles)}`"
+        )
+
     def _get_unauthorized_dm_behavior(self, platform: Optional[Platform]) -> str:
         """Return how unauthorized DMs should be handled for a platform.
 
@@ -5567,6 +5671,10 @@ class GatewayRunner:
             if self._is_telegram_topic_root_lobby(source):
                 return self._telegram_topic_root_new_message()
             return await self._handle_reset_command(event)
+
+        admin_denial = self._gateway_admin_denial_for_command(canonical, event)
+        if admin_denial:
+            return admin_denial
 
         if canonical == "topic":
             return await self._handle_topic_command(event)

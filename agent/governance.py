@@ -60,9 +60,8 @@ def _config_path() -> Path:
     return get_hermes_home() / "config.yaml"
 
 
-def load_governance_config() -> dict[str, Any]:
-    """Load the ``governance`` section from config.yaml."""
-
+def _load_config_document() -> dict[str, Any]:
+    """Load config.yaml as a plain dict without importing the CLI loader."""
     path = _config_path()
     if not path.exists():
         return {}
@@ -71,6 +70,13 @@ def load_governance_config() -> dict[str, Any]:
             cfg = yaml.safe_load(f) or {}
     except Exception:
         return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def load_governance_config() -> dict[str, Any]:
+    """Load the ``governance`` section from config.yaml."""
+
+    cfg = _load_config_document()
     governance = cfg.get("governance", {})
     return governance if isinstance(governance, dict) else {}
 
@@ -372,3 +378,303 @@ def can_authorize(
         False,
         f"{actor_display(who)} is not authorized. Required roles: {roles}; allowed users: {users or 'none'}.",
     )
+
+
+def _roles_allow(
+    config: dict[str, Any],
+    granted_roles: list[str],
+    required_roles: list[str],
+) -> bool:
+    required = _coerce_list(required_roles)
+    if not required:
+        return True
+    granted = _coerce_list(granted_roles)
+    if not granted:
+        return False
+    return any(
+        role_satisfies(config, granted_role, required_role)
+        for granted_role in granted
+        for required_role in required
+    )
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _dashboard_auth_config(full_config: dict[str, Any]) -> dict[str, Any]:
+    dashboard = full_config.get("dashboard", {})
+    if not isinstance(dashboard, dict):
+        return {}
+    auth = dashboard.get("auth", {})
+    return auth if isinstance(auth, dict) else {}
+
+
+def _knowledge_config(full_config: dict[str, Any]) -> dict[str, Any]:
+    knowledge = full_config.get("knowledge", {})
+    return knowledge if isinstance(knowledge, dict) else {}
+
+
+def _knowledge_scope_roles(
+    knowledge_config: dict[str, Any],
+    scope: str,
+) -> list[str]:
+    section = knowledge_config.get(scope, {})
+    if not isinstance(section, dict):
+        section = {}
+    fallback = ["admin"] if scope == "corporate" else ["manager", "admin"]
+    return _coerce_list(section.get("approver_roles")) or fallback
+
+
+def _managed_team_roots_for_actor(
+    actor: Actor,
+    config: dict[str, Any],
+) -> dict[str, str]:
+    roots = config.get("team_file_roots", {})
+    if not isinstance(roots, dict):
+        return {}
+
+    actor_keys = set(actor.keys)
+    teams = set(actor_teams(actor, config))
+    default_roles = _coerce_list(config.get("team_file_manager_roles")) or [
+        "manager",
+        "admin",
+    ]
+    result: dict[str, str] = {}
+
+    for team, raw_entry in roots.items():
+        if isinstance(raw_entry, str):
+            entry: dict[str, Any] = {"path": raw_entry}
+        elif isinstance(raw_entry, dict):
+            entry = raw_entry
+        else:
+            continue
+
+        path = str(entry.get("path") or "").strip()
+        if not path:
+            continue
+
+        managers = set(
+            _coerce_list(entry.get("managers") or entry.get("manager_users"))
+        )
+        if managers and actor_keys.intersection(managers):
+            result[str(team)] = path
+            continue
+
+        manager_roles = _coerce_list(entry.get("manager_roles")) or default_roles
+        if str(team) in teams and actor_has_any_role(
+            manager_roles,
+            actor=actor,
+            config=config,
+        ):
+            result[str(team)] = path
+
+    return result
+
+
+def render_self_configuration_context(
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+    full_config: Optional[dict[str, Any]] = None,
+) -> str:
+    """Render actor-aware self-configuration guidance for skills.
+
+    The returned text is intentionally advisory: it tells the model which
+    configuration surfaces should be considered in-scope for the current actor,
+    while the dashboard, file tools, knowledge approvals, and cron authorization
+    code remain the enforcing controls.
+    """
+
+    cfg = dict(load_governance_config() if config is None else config)
+    cfg.setdefault("default_role", "viewer")
+    cfg.setdefault("role_hierarchy", ["viewer", "operator", "manager", "admin"])
+    full = _load_config_document() if full_config is None else full_config
+    full = full if isinstance(full, dict) else {}
+    who = current_actor() if actor is None else actor
+
+    roles = actor_roles(who, cfg)
+    teams = actor_teams(who, cfg)
+    hierarchy = _coerce_list(cfg.get("role_hierarchy")) or [
+        "viewer",
+        "operator",
+        "manager",
+        "admin",
+    ]
+    tenant = str(cfg.get("tenant_id") or "default")
+    governance_enabled = is_enabled(cfg)
+
+    auth = _dashboard_auth_config(full)
+    dashboard_auth_enabled = bool(auth.get("enabled"))
+    dashboard_read_roles = _coerce_list(auth.get("read_roles")) or [
+        "auditor",
+        "manager",
+        "admin",
+    ]
+    dashboard_manage_roles = _coerce_list(auth.get("manage_roles")) or [
+        "manager",
+        "admin",
+    ]
+    dashboard_admin_roles = _coerce_list(auth.get("admin_roles")) or ["admin"]
+    can_dashboard_read = _roles_allow(cfg, roles, dashboard_read_roles)
+    can_dashboard_manage = _roles_allow(cfg, roles, dashboard_manage_roles)
+    can_dashboard_admin = _roles_allow(cfg, roles, dashboard_admin_roles)
+
+    knowledge = _knowledge_config(full)
+    knowledge_enabled = bool(knowledge.get("enabled", True))
+    corporate_approver_roles = _knowledge_scope_roles(knowledge, "corporate")
+    team_approver_roles = _knowledge_scope_roles(knowledge, "team")
+    can_approve_corporate_knowledge = _roles_allow(cfg, roles, corporate_approver_roles)
+    can_approve_team_knowledge = _roles_allow(cfg, roles, team_approver_roles)
+
+    cron_cfg = cfg.get("cron", {}) if isinstance(cfg.get("cron"), dict) else {}
+    cron_authorizer_roles = _coerce_list(cron_cfg.get("default_authorizer_roles")) or [
+        "admin"
+    ]
+    can_authorize_default_cron = _roles_allow(cfg, roles, cron_authorizer_roles)
+
+    managed_roots = _managed_team_roots_for_actor(who, cfg)
+    managed_roots_text = str(managed_roots) if managed_roots else "none"
+    default_file_policy = str(cfg.get("default_file_policy", "allow") or "allow")
+
+    lines = [
+        "## Live Coorporate Hermes Governance Context",
+        "",
+        (
+            "This block is generated when the skill loads. Use it to choose "
+            "safe self-configuration actions for the current actor. "
+            "Server-side policy checks remain authoritative."
+        ),
+        "",
+        f"- Governance: {'enabled' if governance_enabled else 'disabled'}",
+        f"- Tenant: {tenant}",
+        f"- Actor: {actor_display(who)}",
+        f"- Roles: {', '.join(roles) if roles else 'none'}",
+        f"- Teams: {', '.join(teams) if teams else 'none'}",
+        f"- Role hierarchy: {' < '.join(hierarchy)}",
+        f"- Default file policy: {default_file_policy}",
+        "",
+        "### Dashboard Scope",
+        f"- Dashboard auth enabled: {_yes_no(dashboard_auth_enabled)}",
+        (
+            f"- Read dashboard data: {_yes_no(can_dashboard_read)} "
+            f"(requires one of: {dashboard_read_roles})"
+        ),
+        (
+            "- Manage approvals or delegated File Access: "
+            f"{_yes_no(can_dashboard_manage)} "
+            f"(requires one of: {dashboard_manage_roles})"
+        ),
+        (
+            "- Administer config, secrets, models, gateway settings, dashboard "
+            "auth, user authorization, plugins, global folder policies, "
+            f"and roles: {_yes_no(can_dashboard_admin)} "
+            f"(requires one of: {dashboard_admin_roles})"
+        ),
+        "",
+        "### Knowledge And Skills",
+        f"- Shared knowledge enabled: {_yes_no(knowledge_enabled)}",
+        "- User memory and user skills: immediate when the corresponding tool is enabled.",
+        (
+            "- Team memory and team skills: stage a pending approval; do not "
+            "write shared files directly."
+        ),
+        (
+            "- Corporate memory and corporate skills: stage a pending "
+            "approval; do not write shared files directly."
+        ),
+        (
+            f"- Can approve team knowledge now: "
+            f"{_yes_no(can_approve_team_knowledge)} "
+            f"(approver roles: {team_approver_roles})"
+        ),
+        (
+            "- Can approve corporate knowledge now: "
+            f"{_yes_no(can_approve_corporate_knowledge)} "
+            f"(approver roles: {corporate_approver_roles})"
+        ),
+        "",
+        "### File And Cron Boundaries",
+        (
+            "- File reads, searches, writes, patches, deletes, and moves are "
+            "checked per path against governance folder policies."
+        ),
+        (
+            "- A prompt or skill instruction cannot grant itself a folder. "
+            "Ask for a File Access policy change when access is denied."
+        ),
+        f"- Delegated team file roots this actor can manage: {managed_roots_text}",
+        (
+            "- Can approve cron jobs that omit explicit authorizers: "
+            f"{_yes_no(can_authorize_default_cron)} "
+            f"(default authorizer roles: {cron_authorizer_roles})"
+        ),
+        "",
+        "### Self-Configuration Rule For This Actor",
+    ]
+
+    if not governance_enabled:
+        lines.extend(
+            [
+                (
+                    "- Governance is disabled, so this actor snapshot is not "
+                    "a sufficient enterprise authorization decision."
+                ),
+                (
+                    "- Treat global configuration, secrets, models, toolsets, "
+                    "MCP servers, gateway settings, dashboard auth, user "
+                    "authorization, roles, and folder policies "
+                    "as server-operator or administrator work."
+                ),
+            ]
+        )
+    elif can_dashboard_admin:
+        lines.extend(
+            [
+                (
+                    "- Admin-scope self-configuration is in scope when "
+                    "requested by the user and done through audited "
+                    "config/dashboard/CLI paths."
+                ),
+                (
+                    "- Preserve existing governance, approval, dashboard auth, "
+                    "audit, and default-deny file settings unless the user "
+                    "explicitly asks for a reviewed change."
+                ),
+            ]
+        )
+    elif can_dashboard_manage:
+        lines.extend(
+            [
+                (
+                    "- Management-scope actions are limited to approval "
+                    "decisions and delegated File Access roots listed above."
+                ),
+                (
+                    "- Do not change global config, secrets, models, plugins, "
+                    "gateway settings, user authorization, role hierarchy, "
+                    "dashboard auth, or tenant-wide folder policy."
+                ),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                (
+                    "- Operator/viewer-scope actors may do assigned work only "
+                    "inside enabled tools and allowed folders."
+                ),
+                (
+                    "- Do not self-configure global settings, secrets, models, "
+                    "toolsets, MCP servers, gateway settings, user "
+                    "authorization, roles, dashboard auth, or folder policy."
+                ),
+                (
+                    "- For broader access, stage a knowledge proposal if "
+                    "appropriate or ask an authorized manager/admin to approve "
+                    "the change."
+                ),
+            ]
+        )
+
+    return "\n".join(lines)

@@ -147,6 +147,18 @@ What this enforces today:
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.
 - Cron jobs can pause at an authorization node until an allowed user or role approves them.
 
+## Role-Aware Self-Configuration Skill
+
+Coorporate Hermes keeps the upstream `hermes-agent` skill, but extends it with a live governance block rendered at skill load time. The block includes the current actor, roles, teams, tenant, dashboard read/manage/admin gates, delegated team file roots, shared-knowledge approval roles, and cron authorization defaults.
+
+This makes the agent aware of what it may configure for the current user:
+
+- Operators and viewers can do assigned work only inside enabled tools and allowed folders. They must not change global config, secrets, models, providers, dashboard auth, roles, folder policies, plugins, MCP servers, toolsets, or gateway settings.
+- Managers can act only inside the configured management surface: approval decisions, shared-knowledge approvals allowed by role, and delegated File Access roots.
+- Admins can perform global self-configuration when requested, but should preserve dashboard auth, audit logging, human approvals, and default-deny file policy unless a reviewed change explicitly says otherwise.
+
+Corporate and team memory/skill changes are still proposal-first. The skill tells the agent to use `memory(scope="team"|"corporate", ...)` or `skill_manage(scope="team"|"corporate", ...)` with an `approval_note`, not to edit shared knowledge files directly. Server-side governance remains authoritative: if a file operation, dashboard action, or cron approval is denied, the model must ask an authorized manager/admin instead of bypassing the policy.
+
 Create a scheduled flow with an approval gate:
 
 ```python
