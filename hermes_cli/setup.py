@@ -5,7 +5,7 @@ Modular wizard with independently-runnable sections:
   1. Model & Provider — choose your AI provider and model
   2. Terminal Backend — where your agent runs commands
   3. Agent Settings — iterations, compression, session reset
-  4. Messaging Platforms — connect Telegram, Discord, etc.
+  4. Messaging Platforms — connect Slack, Discord, Mattermost, etc.
   5. Tools — configure TTS, web search, image generation, etc.
 
 Config files are stored in ~/.hermes/ for easy access.
@@ -185,12 +185,12 @@ def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     print_info("The interactive wizard cannot be used here.")
     print()
     print_info("Configure Hermes using environment variables or config commands:")
-    print_info("  hermes config set model.provider custom")
-    print_info("  hermes config set model.base_url http://localhost:8080/v1")
-    print_info("  hermes config set model.default your-model-name")
+    print_info("  coorporate config set model.provider custom")
+    print_info("  coorporate config set model.base_url http://localhost:8080/v1")
+    print_info("  coorporate config set model.default your-model-name")
     print()
     print_info("Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.")
-    print_info("Run 'hermes setup' in an interactive terminal to use the full wizard.")
+    print_info("Run 'coorporate setup' in an interactive terminal to use the full wizard.")
     print()
 
 
@@ -354,7 +354,7 @@ def _prompt_api_key(var: dict):
         save_env_value(var["name"], value)
         print_success("  ✓ Saved")
     else:
-        print_warning("  Skipped (configure later with 'hermes setup')")
+        print_warning("  Skipped (configure later with 'coorporate setup')")
 
 
 def _print_setup_summary(config: dict, hermes_home):
@@ -377,7 +377,7 @@ def _print_setup_summary(config: dict, hermes_home):
     if _vision_backends:
         tool_status.append(("Vision (image analysis)", True, None))
     else:
-        tool_status.append(("Vision (image analysis)", False, "run 'hermes setup' to configure"))
+        tool_status.append(("Vision (image analysis)", False, "run 'coorporate setup' to configure"))
 
     # Mixture of Agents — requires OpenRouter specifically (calls multiple models)
     if get_env_value("OPENROUTER_API_KEY"):
@@ -479,7 +479,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if neutts_ok:
             tool_status.append(("Text-to-Speech (NeuTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'hermes setup tts'"))
+            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'coorporate setup tts'"))
     elif tts_provider == "kittentts":
         try:
             import importlib.util
@@ -489,7 +489,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if kittentts_ok:
             tool_status.append(("Text-to-Speech (KittenTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'hermes setup tts'"))
+            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'coorporate setup tts'"))
     else:
         tool_status.append(("Text-to-Speech (Edge TTS)", True, None))
 
@@ -499,7 +499,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if subscription_features.modal.direct_override:
             tool_status.append(("Modal Execution (direct Modal)", True, None))
         else:
-            tool_status.append(("Modal Execution", False, "run 'hermes setup terminal'"))
+            tool_status.append(("Modal Execution", False, "run 'coorporate setup terminal'"))
     elif managed_nous_tools_enabled() and subscription_features.nous_auth_present:
         tool_status.append(("Modal Execution (optional via Nous subscription)", True, None))
 
@@ -559,7 +559,7 @@ def _print_setup_summary(config: dict, hermes_home):
     disabled_tools = [(name, var) for name, avail, var in tool_status if not avail]
     if disabled_tools:
         print_warning(
-            "Some tools are disabled. Run 'hermes setup tools' to configure them,"
+            "Some tools are disabled. Run 'coorporate setup tools' to configure them,"
         )
         from hermes_constants import display_hermes_home as _dhh
         print_warning(f"or edit {_dhh()}/.env directly to add the missing API keys.")
@@ -599,17 +599,17 @@ def _print_setup_summary(config: dict, hermes_home):
     print()
     print(color("📝 To edit your configuration:", Colors.CYAN, Colors.BOLD))
     print()
-    print(f"   {color('hermes setup', Colors.GREEN)}          Re-run the full wizard")
-    print(f"   {color('hermes setup model', Colors.GREEN)}    Change model/provider")
-    print(f"   {color('hermes setup terminal', Colors.GREEN)} Change terminal backend")
-    print(f"   {color('hermes setup gateway', Colors.GREEN)}  Configure messaging")
-    print(f"   {color('hermes setup tools', Colors.GREEN)}    Configure tool providers")
+    print(f"   {color('coorporate setup', Colors.GREEN)}          Re-run the full wizard")
+    print(f"   {color('coorporate setup model', Colors.GREEN)}    Change model/provider")
+    print(f"   {color('coorporate setup terminal', Colors.GREEN)} Change terminal backend")
+    print(f"   {color('coorporate setup gateway', Colors.GREEN)}  Configure messaging")
+    print(f"   {color('coorporate setup tools', Colors.GREEN)}    Configure tool providers")
     print()
     print(f"   {color('hermes config', Colors.GREEN)}         View current settings")
     print(
         f"   {color('hermes config edit', Colors.GREEN)}    Open config in your editor"
     )
-    print(f"   {color('hermes config set <key> <value>', Colors.GREEN)}")
+    print(f"   {color('coorporate config set <key> <value>', Colors.GREEN)}")
     print("                          Set a specific value")
     print()
     print("   Or edit the files directly:")
@@ -622,7 +622,7 @@ def _print_setup_summary(config: dict, hermes_home):
     print(color("🚀 Ready to go!", Colors.CYAN, Colors.BOLD))
     print()
     print(f"   {color('hermes', Colors.GREEN)}              Start chatting")
-    print(f"   {color('hermes gateway', Colors.GREEN)}      Start messaging gateway")
+    print(f"   {color('coorporate gateway', Colors.GREEN)}      Start messaging gateway")
     print(f"   {color('hermes doctor', Colors.GREEN)}       Check for issues")
     print()
 
@@ -985,7 +985,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
             else:
                 print_info("Skipped — vision won't be available")
         else:
-            print_info("Skipped — add later with 'hermes setup' or configure AUXILIARY_VISION_* settings")
+            print_info("Skipped — add later with 'coorporate setup' or configure AUXILIARY_VISION_* settings")
 
 
     # Tool Gateway prompt is already shown by _model_flow_nous() above.
@@ -1199,7 +1199,7 @@ def _setup_tts_provider(config: dict):
                 from hermes_constants import display_hermes_home as _dhh
                 print_warning(
                     "No xAI API key provided for TTS. Configure XAI_API_KEY via "
-                    f"hermes setup model or {_dhh()}/.env to use xAI TTS. "
+                    f"coorporate setup model or {_dhh()}/.env to use xAI TTS. "
                     "Falling back to Edge TTS."
                 )
                 selected = "edge"
@@ -1684,7 +1684,7 @@ def _apply_default_agent_settings(config: dict):
     print_info("  Tool progress: all")
     print_info("  Compression threshold: 0.50")
     print_info("  Session reset: inactivity (1440 min) + daily (4:00)")
-    print_info("  Run `hermes setup agent` later to customize.")
+    print_info("  Run `coorporate setup agent` later to customize.")
 
 
 def setup_agent_settings(config: dict):
@@ -2364,10 +2364,20 @@ def _setup_webhooks():
 
 def setup_gateway(config: dict):
     """Configure messaging platform integrations."""
-    from hermes_cli.gateway import _all_platforms, _platform_status, _configure_platform
+    from hermes_cli.gateway import (
+        _all_platforms,
+        _configure_platform,
+        _platform_menu_label,
+        _platform_status,
+        _platform_status_is_configured,
+        _platform_status_is_progress,
+    )
 
     print_header("Messaging Platforms")
-    print_info("Connect to messaging platforms to chat with Hermes from anywhere.")
+    print_info(
+        "Connect to corporate messaging platforms to chat with Coorporate Hermes from anywhere."
+    )
+    print_info("Recommended for teams: Slack, Discord, Mattermost, or Matrix.")
     print_info("Toggle with Space, confirm with Enter.")
     print()
 
@@ -2378,38 +2388,45 @@ def setup_gateway(config: dict):
     pre_selected = []
     for i, plat in enumerate(platforms):
         status = _platform_status(plat)
-        items.append(f"{plat['emoji']} {plat['label']}  ({status})")
-        if status == "configured":
+        items.append(f"{_platform_menu_label(plat)}  ({status})")
+        if _platform_status_is_configured(status):
             pre_selected.append(i)
 
     selected = prompt_checklist("Select platforms to configure:", items, pre_selected)
 
     if not selected:
-        print_info("No platforms selected. Run 'hermes setup gateway' later to configure.")
+        print_info("No platforms selected. Run 'coorporate setup gateway' later to configure.")
         return
 
-    for idx in selected:
-        _configure_platform(platforms[idx])
+    selected_platforms = [platforms[idx] for idx in selected]
+    for platform in selected_platforms:
+        _configure_platform(platform)
+        status = _platform_status(platform)
+        if not _platform_status_is_configured(status):
+            print_warning(
+                f"{platform['label']} is still {status}. "
+                "Complete its credentials before users can access the gateway."
+            )
 
     # ── Gateway Service Setup ──
     # Count any platform (built-in or plugin) the user configured during this
     # setup pass — reuses ``_platform_status`` so plugin platforms like IRC
     # are picked up without another hard-coded env-var list.
-    def _is_progress(status: str) -> bool:
-        s = status.lower()
-        return not (
-            s == "not configured"
-            or s.startswith("partially")
-            or s.startswith("plugin disabled")
-        )
-
     any_messaging = any(
-        _is_progress(_platform_status(p)) for p in _all_platforms()
+        _platform_status_is_progress(_platform_status(p)) for p in _all_platforms()
     )
     if any_messaging:
         print()
         print_info("━" * 50)
-        print_success("Messaging platforms configured!")
+        if any(
+            _platform_status_is_configured(_platform_status(p)) for p in _all_platforms()
+        ):
+            print_success("Messaging platforms configured!")
+        else:
+            print_warning(
+                "Gateway setup was started, but no platform is fully configured yet."
+            )
+            print_info("Complete a corporate gateway before inviting users.")
 
         # Check if any home channels are missing
         missing_home = []
@@ -2438,7 +2455,7 @@ def setup_gateway(config: dict):
             print_info("   Set one later with /set-home in your chat, or:")
             for plat in missing_home:
                 print_info(
-                    f"     hermes config set {plat.upper()}_HOME_CHANNEL <channel_id>"
+                    f"     coorporate config set {plat.upper()}_HOME_CHANNEL <channel_id>"
                 )
 
         # Offer to install the gateway as a system service
@@ -2553,26 +2570,32 @@ def setup_gateway(config: dict):
                             print_error(f"  Start failed: {e}")
                 except Exception as e:
                     print_error(f"  Install failed: {e}")
-                    print_info("  You can try manually: hermes gateway install")
+                    print_info("  You can try manually: coorporate gateway install")
             else:
-                print_info("  You can install later: hermes gateway install")
+                print_info("  You can install later: coorporate gateway install")
                 if supports_systemd:
-                    print_info("  Or as a boot-time service: sudo hermes gateway install --system")
-                print_info("  Or run in foreground:  hermes gateway")
+                    print_info("  Or as a boot-time service: sudo coorporate gateway install --system")
+                print_info("  Or run in foreground:  coorporate gateway")
         else:
             from hermes_constants import is_container
             if is_container():
                 print_info("Start the gateway to bring your bots online:")
-                print_info("   hermes gateway run          # Run as container main process")
+                print_info("   coorporate gateway run      # Run as container main process")
                 print_info("")
                 print_info("For automatic restarts, use a Docker restart policy:")
                 print_info("   docker run --restart unless-stopped ...")
                 print_info("   docker restart <container>  # Manual restart")
             else:
                 print_info("Start the gateway to bring your bots online:")
-                print_info("   hermes gateway              # Run in foreground")
+                print_info("   coorporate gateway          # Run in foreground")
 
         print_info("━" * 50)
+    else:
+        print_warning("No gateway platform was configured.")
+        print_info(
+            "Run `coorporate setup gateway` and complete Slack, Discord, "
+            "Mattermost, Matrix, or another gateway before inviting users."
+        )
 
 
 # =============================================================================
@@ -3011,13 +3034,13 @@ def run_setup_wizard(args):
     """Run the interactive setup wizard.
 
     Supports full, quick, and section-specific setup:
-      hermes setup           — full or quick (auto-detected)
-      hermes setup model     — just model/provider
-      hermes setup tts       — just text-to-speech
-      hermes setup terminal  — just terminal backend
-      hermes setup gateway   — just messaging platforms
-      hermes setup tools     — just tool configuration
-      hermes setup agent     — just agent settings
+      coorporate setup           — full or quick (auto-detected)
+      coorporate setup model     — just model/provider
+      coorporate setup tts       — just text-to-speech
+      coorporate setup terminal  — just terminal backend
+      coorporate setup gateway   — just messaging platforms
+      coorporate setup tools     — just tool configuration
+      coorporate setup agent     — just agent settings
     """
     from hermes_cli.config import is_managed, managed_error
     if is_managed():
@@ -3154,7 +3177,7 @@ def run_setup_wizard(args):
         print_info("Running the full wizard — each prompt shows your current value.")
         print_info("Press Enter to keep it, or type a new value to change it.")
         print_info("")
-        print_info("Tip: jump straight to a section with 'hermes setup model|terminal|")
+        print_info("Tip: jump straight to a section with 'coorporate setup model|terminal|")
         print_info("     gateway|tools|agent', or fill only missing items with --quick.")
         # Fall through to the "Full Setup — run all sections" block below.
         # --reconfigure is now the default on existing installs; the flag
@@ -3258,10 +3281,10 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     # Step 3: Offer messaging gateway setup
     print()
     gateway_choice = prompt_choice(
-        "Connect a messaging platform? (Telegram, Discord, etc.)",
+        "Connect a corporate messaging platform? (Slack, Discord, Mattermost, etc.)",
         [
             "Set up messaging now (recommended)",
-            "Skip — set up later with 'hermes setup gateway'",
+            "Skip — set up later with 'coorporate setup gateway'",
         ],
         0,
     )
@@ -3273,9 +3296,9 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     print()
     print_success("Setup complete! You're ready to go.")
     print()
-    print_info("  Configure all settings:    hermes setup")
+    print_info("  Configure all settings:    coorporate setup")
     if gateway_choice != 0:
-        print_info("  Connect Telegram/Discord:  hermes setup gateway")
+        print_info("  Connect Slack/Discord:     coorporate setup gateway")
     print()
 
     _print_setup_summary(config, hermes_home)
@@ -3314,7 +3337,7 @@ def _run_quick_setup(config: dict, hermes_home):
     if not has_anything_missing:
         print_success("Everything is configured! Nothing to do.")
         print()
-        print_info("Run 'hermes setup' and choose 'Full Setup' to reconfigure,")
+        print_info("Run 'coorporate setup' and choose 'Full Setup' to reconfigure,")
         print_info("or pick a specific section from the menu.")
         return
 
@@ -3377,7 +3400,7 @@ def _run_quick_setup(config: dict, hermes_home):
         print()
         print_header("Messaging Platforms")
         print_info("Connect Hermes to messaging apps to chat from anywhere.")
-        print_info("You can configure these later with 'hermes setup gateway'.")
+        print_info("You can configure these later with 'coorporate setup gateway'.")
 
         # Group by platform (preserving order)
         platform_order = []

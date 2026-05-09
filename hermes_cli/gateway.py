@@ -3243,6 +3243,56 @@ _PLATFORMS = [
         ],
     },
 ]
+
+_CORPORATE_PLATFORM_ORDER = {
+    "slack": 0,
+    "discord": 1,
+    "mattermost": 2,
+    "matrix": 3,
+    "telegram": 10,
+    "whatsapp": 11,
+    "signal": 12,
+    "email": 13,
+}
+
+_CORPORATE_PLATFORM_BADGES = {
+    "slack": "recommended for companies",
+    "discord": "recommended for teams",
+    "mattermost": "self-hosted corporate chat",
+    "matrix": "self-hosted/open corporate chat",
+}
+
+
+def _platform_sort_key(platform: dict) -> tuple[int, str]:
+    key = str(platform.get("key") or "")
+    return (
+        _CORPORATE_PLATFORM_ORDER.get(key, 100),
+        str(platform.get("label") or key).lower(),
+    )
+
+
+def _platform_menu_label(platform: dict) -> str:
+    key = str(platform.get("key") or "")
+    label = f"{platform.get('emoji', '')} {platform.get('label', key)}".strip()
+    badge = _CORPORATE_PLATFORM_BADGES.get(key)
+    if badge:
+        return f"{label} — {badge}"
+    return label
+
+
+def _platform_status_is_configured(status: str) -> bool:
+    return status.lower().startswith("configured")
+
+
+def _platform_status_is_progress(status: str) -> bool:
+    s = status.lower()
+    return not (
+        s == "not configured"
+        or s.startswith("partially")
+        or s.startswith("plugin disabled")
+    )
+
+
 def _all_platforms() -> list[dict]:
     """Return the full list of platforms for setup menus.
 
@@ -3270,6 +3320,7 @@ def _all_platforms() -> list[dict]:
     try:
         from gateway.platform_registry import platform_registry
     except Exception:
+        platforms.sort(key=_platform_sort_key)
         return platforms
 
     for entry in platform_registry.all_entries():
@@ -3283,6 +3334,7 @@ def _all_platforms() -> list[dict]:
             "install_hint": entry.install_hint,
             "_registry_entry": entry,
         })
+    platforms.sort(key=_platform_sort_key)
     return platforms
 
 
@@ -4399,7 +4451,7 @@ def gateway_setup():
         platforms = _all_platforms()
 
         menu_items = [
-            f"{p['emoji']} {p['label']}  ({_platform_status(p)})"
+            f"{_platform_menu_label(p)}  ({_platform_status(p)})"
             for p in platforms
         ]
         menu_items.append("Done")
@@ -4408,23 +4460,22 @@ def gateway_setup():
         if choice == len(platforms):
             break
 
-        _configure_platform(platforms[choice])
+        platform = platforms[choice]
+        _configure_platform(platform)
+        status = _platform_status(platform)
+        if not _platform_status_is_configured(status):
+            print_warning(
+                f"{platform['label']} is still {status}. "
+                "Complete its credentials before users can access the gateway."
+            )
 
     # ── Post-setup: offer to install/restart gateway ──
     # Consider any platform (built-in or plugin) where the user has made
     # meaningful progress.  ``_platform_status`` already handles plugin
     # entries via their check_fn and per-platform dual-states like
     # WhatsApp's "enabled, not paired".
-    def _is_progress(status: str) -> bool:
-        s = status.lower()
-        return not (
-            s == "not configured"
-            or s.startswith("partially")
-            or s.startswith("plugin disabled")
-        )
-
     any_configured = any(
-        _is_progress(_platform_status(p)) for p in _all_platforms()
+        _platform_status_is_progress(_platform_status(p)) for p in _all_platforms()
     )
 
     if any_configured:

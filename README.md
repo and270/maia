@@ -2,6 +2,8 @@
 
 Private one-tenant corporate AI assistant by [AmpliIA](https://ampliia.com/en/), based on the upstream Hermes Agent codebase and refit for company use: role-aware gateway conversations, governed folder access, corporate/team/user knowledge layers, guarded migration from upstream Hermes exports, human-in-the-loop cron authorization, and corporate observability.
 
+Public documentation: [https://ampliia.com/en/coorporate-hermes/docs/](https://ampliia.com/en/coorporate-hermes/docs/)
+
 The installed commands are renamed so operators do not use the upstream `hermes` command name:
 
 ```bash
