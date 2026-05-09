@@ -66,6 +66,7 @@ import LogsPage from "@/pages/LogsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import OnboardingPage from "@/pages/OnboardingPage";
+import GatewayPage from "@/pages/GatewayPage";
 import DashboardAccessPage from "@/pages/DashboardAccessPage";
 import KnowledgePage from "@/pages/KnowledgePage";
 import FileAccessPage from "@/pages/FileAccessPage";
@@ -250,6 +251,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
   "/sessions": SessionsPage,
   "/onboarding": OnboardingPage,
+  "/gateway": GatewayPage,
   "/dashboard-access": DashboardAccessPage,
   "/knowledge": KnowledgePage,
   "/file-access": FileAccessPage,
@@ -285,6 +287,11 @@ const BUILTIN_NAV_REST: NavItem[] = [
     labelKey: "onboarding",
     label: "Onboarding",
     icon: Shield,
+  },
+  {
+    path: "/gateway",
+    label: "Gateway",
+    icon: Globe,
   },
   {
     path: "/dashboard-access",

@@ -478,6 +478,8 @@ export const api = {
   },
 
   // Gateway / update actions
+  startGateway: () =>
+    fetchJSON<ActionResponse>("/api/gateway/start", { method: "POST" }),
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
   updateHermes: () =>

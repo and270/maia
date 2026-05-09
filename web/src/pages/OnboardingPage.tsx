@@ -6,6 +6,7 @@ import {
   FileKey2,
   FolderLock,
   KeyRound,
+  MessageSquare,
   ScrollText,
   ShieldCheck,
   Users,
@@ -23,6 +24,13 @@ const STEPS = [
     text: "Set governance.enabled, tenant_id, role_hierarchy, default_role, and production default_file_policy.",
     to: "/config?search=governance",
     action: "Open Config",
+  },
+  {
+    icon: MessageSquare,
+    title: "Messaging gateway",
+    text: "Configure Slack, Discord, Mattermost, or Matrix credentials so users can talk to Coorporate Hermes from company channels.",
+    to: "/gateway",
+    action: "Open Gateway",
   },
   {
     icon: Users,

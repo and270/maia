@@ -2217,6 +2217,20 @@ OPTIONAL_ENV_VARS = {
         "password": False,
         "category": "messaging",
     },
+    "DISCORD_ALLOWED_ROLES": {
+        "description": "Comma-separated Discord role IDs allowed to use the bot",
+        "prompt": "Allowed Discord role IDs (comma-separated)",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
+    "DISCORD_HOME_CHANNEL": {
+        "description": "Discord channel ID for cron output, notifications, and proactive messages",
+        "prompt": "Discord home channel ID",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
     "DISCORD_REPLY_TO_MODE": {
         "description": "Discord reply threading mode: 'off' (no reply references), 'first' (reply on first message only, default), 'all' (reply on every chunk)",
         "prompt": "Discord reply mode (off/first/all)",
@@ -2242,6 +2256,20 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "messaging",
     },
+    "SLACK_ALLOWED_USERS": {
+        "description": "Comma-separated Slack member IDs allowed to use the bot",
+        "prompt": "Allowed Slack member IDs (comma-separated)",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
+    "SLACK_HOME_CHANNEL": {
+        "description": "Slack channel ID for cron output, notifications, and proactive messages",
+        "prompt": "Slack home channel ID",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
     "MATTERMOST_URL": {
         "description": "Mattermost server URL (e.g. https://mm.example.com)",
         "prompt": "Mattermost server URL",
@@ -2259,6 +2287,13 @@ OPTIONAL_ENV_VARS = {
     "MATTERMOST_ALLOWED_USERS": {
         "description": "Comma-separated Mattermost user IDs allowed to use the bot",
         "prompt": "Allowed Mattermost user IDs (comma-separated)",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
+    "MATTERMOST_HOME_CHANNEL": {
+        "description": "Mattermost channel ID for cron output, notifications, and proactive messages",
+        "prompt": "Mattermost home channel ID",
         "url": None,
         "password": False,
         "category": "messaging",
@@ -2298,6 +2333,13 @@ OPTIONAL_ENV_VARS = {
         "password": False,
         "category": "messaging",
     },
+    "MATRIX_PASSWORD": {
+        "description": "Matrix password for login when an access token is not used",
+        "prompt": "Matrix password",
+        "url": None,
+        "password": True,
+        "category": "messaging",
+    },
     "MATRIX_ALLOWED_USERS": {
         "description": "Comma-separated Matrix user IDs allowed to use the bot (@user:server format)",
         "prompt": "Allowed Matrix user IDs (comma-separated)",
@@ -2316,6 +2358,21 @@ OPTIONAL_ENV_VARS = {
     "MATRIX_FREE_RESPONSE_ROOMS": {
         "description": "Comma-separated Matrix room IDs where bot responds without @mention",
         "prompt": "Free-response room IDs (comma-separated)",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+        "advanced": True,
+    },
+    "MATRIX_HOME_ROOM": {
+        "description": "Matrix room ID for cron output, notifications, and proactive messages",
+        "prompt": "Matrix home room ID",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
+    "MATRIX_ENCRYPTION": {
+        "description": "Enable Matrix end-to-end encryption support (true/false)",
+        "prompt": "Enable Matrix E2EE",
         "url": None,
         "password": False,
         "category": "messaging",

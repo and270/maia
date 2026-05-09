@@ -1855,6 +1855,7 @@ _ACTION_LOG_DIR: Path = get_hermes_home() / "logs"
 
 # Short ``name`` (from the URL) → absolute log file path.
 _ACTION_LOG_FILES: Dict[str, str] = {
+    "gateway-start": "gateway-start.log",
     "gateway-restart": "gateway-restart.log",
     "hermes-update": "hermes-update.log",
 }
@@ -1916,7 +1917,7 @@ def _tail_lines(path: Path, n: int) -> List[str]:
 
 @app.post("/api/gateway/restart")
 async def restart_gateway():
-    """Kick off a ``hermes gateway restart`` in the background."""
+    """Kick off a ``coorporate gateway restart`` in the background."""
     try:
         proc = _spawn_hermes_action(["gateway", "restart"], "gateway-restart")
     except Exception as exc:
@@ -1926,6 +1927,21 @@ async def restart_gateway():
         "ok": True,
         "pid": proc.pid,
         "name": "gateway-restart",
+    }
+
+
+@app.post("/api/gateway/start")
+async def start_gateway():
+    """Kick off a ``coorporate gateway start`` in the background."""
+    try:
+        proc = _spawn_hermes_action(["gateway", "start"], "gateway-start")
+    except Exception as exc:
+        _log.exception("Failed to spawn gateway start")
+        raise HTTPException(status_code=500, detail=f"Failed to start gateway: {exc}")
+    return {
+        "ok": True,
+        "pid": proc.pid,
+        "name": "gateway-start",
     }
 
 
