@@ -973,7 +973,7 @@ def _hermes_ink_bundle_stale(tui_dir: Path) -> bool:
 
 
 def _ensure_tui_node() -> None:
-    """Make sure `node` + `npm` are on PATH for the TUI.
+    """Make sure `node` + `npm` are on PATH for Node-backed UI features.
 
     If either is missing and scripts/lib/node-bootstrap.sh is available, source
     it and call `ensure_node` (fnm/nvm/proto/brew/bundled cascade). After
@@ -5532,6 +5532,11 @@ def _build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
 
     if not _web_ui_build_needed(web_dir):
         return True
+
+    if not shutil.which("npm"):
+        if fatal:
+            print("Node.js/npm not found; attempting to bootstrap Node.js...")
+        _ensure_tui_node()
 
     npm = shutil.which("npm")
     if not npm:

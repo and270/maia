@@ -187,10 +187,14 @@ _nb_install_bundled_node() {
     mv "$extracted" "$HERMES_HOME/node"
     rm -rf "$tmp"
 
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$HERMES_HOME/node/bin/node" "$HOME/.local/bin/node"
-    ln -sf "$HERMES_HOME/node/bin/npm"  "$HOME/.local/bin/npm"
-    ln -sf "$HERMES_HOME/node/bin/npx"  "$HOME/.local/bin/npx"
+    local user_bin="$HOME/.local/bin"
+    if mkdir -p "$user_bin" 2>/dev/null && [ -w "$user_bin" ]; then
+        ln -sf "$HERMES_HOME/node/bin/node" "$user_bin/node"
+        ln -sf "$HERMES_HOME/node/bin/npm"  "$user_bin/npm"
+        ln -sf "$HERMES_HOME/node/bin/npx"  "$user_bin/npx"
+    else
+        _nb_warn "$user_bin is not writable; using $HERMES_HOME/node/bin for this session"
+    fi
     export PATH="$HERMES_HOME/node/bin:$PATH"
 
     _nb_have_modern_node || return 1

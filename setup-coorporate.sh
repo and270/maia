@@ -324,6 +324,43 @@ else
 fi
 
 # ============================================================================
+# Dashboard frontend
+# ============================================================================
+
+echo -e "${CYAN}→${NC} Building dashboard frontend..."
+
+if [ -f "web/package.json" ]; then
+    NODE_BOOTSTRAP="$SCRIPT_DIR/scripts/lib/node-bootstrap.sh"
+    if ! command -v npm >/dev/null 2>&1 && [ -f "$NODE_BOOTSTRAP" ]; then
+        # shellcheck source=/dev/null
+        if . "$NODE_BOOTSTRAP" && ensure_node; then
+            :
+        else
+            echo -e "${YELLOW}⚠${NC} Node.js is not available; dashboard frontend was not built"
+            echo "    Install Node.js, then run: cd web && npm install && npm run build"
+        fi
+    fi
+
+    if command -v npm >/dev/null 2>&1; then
+        (
+            cd web
+            if [ -f package-lock.json ]; then
+                npm ci --silent || npm install --silent
+            else
+                npm install --silent
+            fi
+            npm run build
+        ) && \
+            echo -e "${GREEN}✓${NC} Dashboard frontend built" || {
+            echo -e "${YELLOW}⚠${NC} Dashboard frontend build failed"
+            echo "    Run manually: cd web && npm install && npm run build"
+        }
+    fi
+else
+    echo -e "${YELLOW}⚠${NC} web/package.json not found; skipping dashboard frontend"
+fi
+
+# ============================================================================
 # Environment file
 # ============================================================================
 
