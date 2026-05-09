@@ -35,19 +35,65 @@ is_termux() {
     [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]
 }
 
+path_has_dir() {
+    echo "$PATH" | tr ':' '\n' | grep -Fxq "$1"
+}
+
+ensure_writable_dir() {
+    mkdir -p "$1" 2>/dev/null && [ -w "$1" ]
+}
+
+get_uv_install_dir() {
+    local preferred_dir="$HOME/.local/bin"
+    local fallback_dir="$HOME/.coorporate/bin"
+
+    if ensure_writable_dir "$preferred_dir"; then
+        echo "$preferred_dir"
+    else
+        mkdir -p "$fallback_dir"
+        echo "$fallback_dir"
+    fi
+}
+
 get_command_link_dir() {
     if is_termux && [ -n "${PREFIX:-}" ]; then
         echo "$PREFIX/bin"
     else
-        echo "$HOME/.local/bin"
+        local preferred_dir="$HOME/.local/bin"
+        local fallback_dir="$HOME/.coorporate/bin"
+
+        if ensure_writable_dir "$preferred_dir"; then
+            echo "$preferred_dir"
+            return
+        fi
+
+        # Prefer conventional writable bin dirs already on PATH so
+        # `coorporate setup` works immediately after this script exits.
+        for path_dir in "$HOME/bin" "$HOME/.coorporate/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+            if path_has_dir "$path_dir" && ensure_writable_dir "$path_dir"; then
+                echo "$path_dir"
+                return
+            fi
+        done
+
+        mkdir -p "$fallback_dir"
+        echo "$fallback_dir"
     fi
 }
 
 get_command_link_display_dir() {
+    local resolved_dir="${1:-}"
+
     if is_termux && [ -n "${PREFIX:-}" ]; then
         echo '$PREFIX/bin'
-    else
+    elif [ "$resolved_dir" = "$HOME/.local/bin" ]; then
         echo '~/.local/bin'
+    elif [ "$resolved_dir" = "$HOME/.coorporate/bin" ]; then
+        echo '~/.coorporate/bin'
+    elif [[ "$resolved_dir" == "$HOME/"* ]]; then
+        echo "~/${resolved_dir#$HOME/}"
+    else
+        echo "$resolved_dir"
     fi
 }
 
@@ -69,6 +115,8 @@ else
         UV_CMD="uv"
     elif [ -x "$HOME/.local/bin/uv" ]; then
         UV_CMD="$HOME/.local/bin/uv"
+    elif [ -x "$HOME/.coorporate/bin/uv" ]; then
+        UV_CMD="$HOME/.coorporate/bin/uv"
     elif [ -x "$HOME/.cargo/bin/uv" ]; then
         UV_CMD="$HOME/.cargo/bin/uv"
     fi
@@ -78,9 +126,19 @@ else
         echo -e "${GREEN}✓${NC} uv found ($UV_VERSION)"
     else
         echo -e "${CYAN}→${NC} Installing uv..."
-        if curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null; then
-            if [ -x "$HOME/.local/bin/uv" ]; then
+        UV_INSTALL_DIR="$(get_uv_install_dir)"
+        UV_INSTALL_DISPLAY_DIR="$(get_command_link_display_dir "$UV_INSTALL_DIR")"
+        if [ "$UV_INSTALL_DIR" != "$HOME/.local/bin" ]; then
+            echo -e "${YELLOW}⚠${NC} ~/.local/bin is not writable; installing uv to $UV_INSTALL_DISPLAY_DIR"
+        fi
+
+        if curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$UV_INSTALL_DIR" sh 2>/dev/null; then
+            if [ -x "$UV_INSTALL_DIR/uv" ]; then
+                UV_CMD="$UV_INSTALL_DIR/uv"
+            elif [ -x "$HOME/.local/bin/uv" ]; then
                 UV_CMD="$HOME/.local/bin/uv"
+            elif [ -x "$HOME/.coorporate/bin/uv" ]; then
+                UV_CMD="$HOME/.coorporate/bin/uv"
             elif [ -x "$HOME/.cargo/bin/uv" ]; then
                 UV_CMD="$HOME/.cargo/bin/uv"
             fi
@@ -89,7 +147,7 @@ else
                 UV_VERSION=$($UV_CMD --version 2>/dev/null)
                 echo -e "${GREEN}✓${NC} uv installed ($UV_VERSION)"
             else
-                echo -e "${RED}✗${NC} uv installed but not found. Add ~/.local/bin to PATH and retry."
+                echo -e "${RED}✗${NC} uv installed but not found. Add $UV_INSTALL_DISPLAY_DIR to PATH and retry."
                 exit 1
             fi
         else
@@ -286,7 +344,7 @@ echo -e "${CYAN}→${NC} Setting up coorporate command..."
 
 COORPORATE_BIN="$SCRIPT_DIR/venv/bin/coorporate"
 COMMAND_LINK_DIR="$(get_command_link_dir)"
-COMMAND_LINK_DISPLAY_DIR="$(get_command_link_display_dir)"
+COMMAND_LINK_DISPLAY_DIR="$(get_command_link_display_dir "$COMMAND_LINK_DIR")"
 mkdir -p "$COMMAND_LINK_DIR"
 ln -sf "$COORPORATE_BIN" "$COMMAND_LINK_DIR/coorporate"
 echo -e "${GREEN}✓${NC} Symlinked coorporate -> $COMMAND_LINK_DISPLAY_DIR/coorporate"
@@ -317,17 +375,23 @@ else
         # Touch the file just in case it doesn't exist yet but was selected
         touch "$SHELL_CONFIG" 2>/dev/null || true
 
-        if ! echo "$PATH" | tr ':' '\n' | grep -q "^$HOME/.local/bin$"; then
-            if ! grep -q '\.local/bin' "$SHELL_CONFIG" 2>/dev/null; then
+        PATH_EXPORT_DIR="$COMMAND_LINK_DIR"
+        if [[ "$COMMAND_LINK_DIR" == "$HOME/"* ]]; then
+            PATH_EXPORT_DIR="\$HOME/${COMMAND_LINK_DIR#$HOME/}"
+        fi
+
+        if ! path_has_dir "$COMMAND_LINK_DIR"; then
+            if ! grep -Fq "$COMMAND_LINK_DIR" "$SHELL_CONFIG" 2>/dev/null && \
+               ! grep -Fq "$PATH_EXPORT_DIR" "$SHELL_CONFIG" 2>/dev/null; then
                 echo "" >> "$SHELL_CONFIG"
-                echo "# Coorporate Hermes - ensure ~/.local/bin is on PATH" >> "$SHELL_CONFIG"
-                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
-                echo -e "${GREEN}✓${NC} Added ~/.local/bin to PATH in $SHELL_CONFIG"
+                echo "# Coorporate Hermes - ensure $COMMAND_LINK_DISPLAY_DIR is on PATH" >> "$SHELL_CONFIG"
+                echo "export PATH=\"$PATH_EXPORT_DIR:\$PATH\"" >> "$SHELL_CONFIG"
+                echo -e "${GREEN}✓${NC} Added $COMMAND_LINK_DISPLAY_DIR to PATH in $SHELL_CONFIG"
             else
-                echo -e "${GREEN}✓${NC} ~/.local/bin already in $SHELL_CONFIG"
+                echo -e "${GREEN}✓${NC} $COMMAND_LINK_DISPLAY_DIR already in $SHELL_CONFIG"
             fi
         else
-            echo -e "${GREEN}✓${NC} ~/.local/bin already on PATH"
+            echo -e "${GREEN}✓${NC} $COMMAND_LINK_DISPLAY_DIR already on PATH"
         fi
     fi
 fi

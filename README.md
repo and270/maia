@@ -20,6 +20,8 @@ coorporate-agent        # direct agent runner
 git clone https://github.com/and270/coorporate-hermes.git
 cd coorporate-hermes
 ./setup-coorporate.sh
+# Only needed if setup says it added the command directory to your shell config.
+source ~/.zshrc
 coorporate setup
 coorporate
 ```
