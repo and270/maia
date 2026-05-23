@@ -29,10 +29,13 @@ export function Backdrop() {
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 z-[1]"
-        style={{
-          backgroundColor: "var(--background-base)",
-          mixBlendMode: "difference",
-        }}
+        style={
+          {
+            backgroundColor: "var(--background-base)",
+            mixBlendMode:
+              "var(--component-backdrop-base-blend-mode, difference)",
+          } as unknown as React.CSSProperties
+        }
       />
 
       <div
@@ -65,12 +68,14 @@ export function Backdrop() {
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 z-[99]"
-        style={{
-          background:
-            "radial-gradient(ellipse at 0% 0%, transparent 60%, var(--warm-glow) 100%)",
-          mixBlendMode: "lighten",
-          opacity: 0.22,
-        }}
+        style={
+          {
+            background:
+              "var(--component-backdrop-warm-background, radial-gradient(ellipse at 0% 0%, transparent 60%, var(--warm-glow) 100%))",
+            mixBlendMode: "var(--component-backdrop-warm-blend-mode, lighten)",
+            opacity: "var(--component-backdrop-warm-opacity, 0.22)",
+          } as unknown as React.CSSProperties
+        }
       />
 
       {gpuTier > 0 && (

@@ -164,6 +164,17 @@ class TestReadSkillName:
         skills = _discover_bundled_skills(tmp_path)
         assert skills[0][0] == "audiocraft-audio-generation"
 
+    def test_excludes_gaming_skills_from_default_discovery(self, tmp_path):
+        skill_dir = tmp_path / "gaming" / "pokemon-player"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: pokemon-player\n---\n# Skill")
+
+        skills = _discover_bundled_skills(tmp_path)
+        assert "pokemon-player" not in {name for name, _ in skills}
+
+        all_skills = _discover_bundled_skills(tmp_path, include_excluded=True)
+        assert "pokemon-player" in {name for name, _ in all_skills}
+
 
 class TestComputeRelativeDest:
     def test_preserves_category_structure(self):
@@ -216,6 +227,44 @@ class TestSyncSkills:
         assert (skills_dir / "category" / "new-skill" / "SKILL.md").exists()
         assert (skills_dir / "old-skill" / "SKILL.md").exists()
         assert (skills_dir / "category" / "DESCRIPTION.md").exists()
+
+    def test_fresh_install_skips_gaming_skills(self, tmp_path):
+        bundled = self._setup_bundled(tmp_path)
+        game = bundled / "gaming" / "pokemon-player"
+        game.mkdir(parents=True)
+        (game / "SKILL.md").write_text("---\nname: pokemon-player\n---\n# Pokemon")
+        (bundled / "gaming" / "DESCRIPTION.md").write_text("Gaming")
+        skills_dir = tmp_path / "user_skills"
+        manifest_file = skills_dir / ".bundled_manifest"
+
+        with self._patches(bundled, skills_dir, manifest_file):
+            result = sync_skills(quiet=True)
+
+        assert "pokemon-player" not in result["copied"]
+        assert result["total_bundled"] == 2
+        assert not (skills_dir / "gaming" / "pokemon-player").exists()
+        assert not (skills_dir / "gaming" / "DESCRIPTION.md").exists()
+
+    def test_existing_unmodified_gaming_skill_is_cleaned(self, tmp_path):
+        bundled = self._setup_bundled(tmp_path)
+        game = bundled / "gaming" / "pokemon-player"
+        game.mkdir(parents=True)
+        (game / "SKILL.md").write_text("---\nname: pokemon-player\n---\n# Pokemon")
+        skills_dir = tmp_path / "user_skills"
+        manifest_file = skills_dir / ".bundled_manifest"
+        user_game = skills_dir / "gaming" / "pokemon-player"
+        user_game.mkdir(parents=True)
+        (user_game / "SKILL.md").write_text("---\nname: pokemon-player\n---\n# Pokemon")
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        manifest_file.write_text(f"pokemon-player:{_dir_hash(game)}\n")
+
+        with self._patches(bundled, skills_dir, manifest_file):
+            result = sync_skills(quiet=True)
+            manifest = _read_manifest()
+
+        assert "pokemon-player" in result["cleaned"]
+        assert "pokemon-player" not in manifest
+        assert not user_game.exists()
 
     def test_fresh_install_records_origin_hashes(self, tmp_path):
         """After fresh install, manifest should have v2 format with hashes."""

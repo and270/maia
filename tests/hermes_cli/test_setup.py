@@ -353,6 +353,32 @@ def test_select_provider_and_model_warns_if_named_custom_provider_disappears(
     assert "selected saved custom provider is no longer available" in out
 
 
+def test_select_provider_and_model_hides_onboarding_providers(
+    tmp_path, monkeypatch
+):
+    """The setup/onboarding flow can hide providers without removing them globally."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_ONBOARDING_HIDDEN_PROVIDERS", "nous")
+    _clear_provider_env(monkeypatch)
+
+    captured = []
+
+    def fake_prompt_provider_choice(choices, default=0):
+        captured.extend(choices)
+        return next(i for i, label in enumerate(choices) if label == "Leave unchanged")
+
+    monkeypatch.setattr("hermes_cli.auth.resolve_provider", lambda provider: None)
+    monkeypatch.setattr("hermes_cli.main._prompt_provider_choice", fake_prompt_provider_choice)
+
+    from hermes_cli.main import select_provider_and_model
+
+    select_provider_and_model()
+
+    assert captured
+    assert not any("Nous Portal" in label for label in captured)
+    assert any("OpenRouter" in label for label in captured)
+
+
 def test_select_provider_and_model_accepts_named_provider_from_providers_section(
     tmp_path, monkeypatch, capsys
 ):
