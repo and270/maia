@@ -82,6 +82,14 @@ body {
   mix-blend-mode: normal;
 }
 
+[data-layout-variant="standard"] header h1,
+[data-layout-variant="standard"] header .font-bold.text-midground,
+[data-layout-variant="standard"] #app-sidebar > div:first-child .font-bold.text-midground {
+  color: var(--ampliia-brand) !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+}
+
 [data-layout-variant="standard"] header,
 [data-layout-variant="standard"] #app-sidebar {
   background: rgba(251, 251, 248, 0.9) !important;
