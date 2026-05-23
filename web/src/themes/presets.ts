@@ -160,7 +160,7 @@ body {
 }
 
 [data-layout-variant="standard"] .text-warning {
-  color: #b45309 !important;
+  color: var(--ampliia-brand) !important;
 }
 
 [data-layout-variant="standard"] a[aria-current="page"]::before {
@@ -177,6 +177,17 @@ body {
 [data-layout-variant="standard"] select,
 [data-layout-variant="standard"] textarea {
   border-radius: 2px !important;
+}
+
+[data-layout-variant="standard"] button:active,
+[data-layout-variant="standard"] [role="button"]:active {
+  filter: none !important;
+}
+
+[data-layout-variant="standard"] .arc-border {
+  --arc-c0: rgba(12, 10, 146, 0.16);
+  --arc-c1: var(--ampliia-brand);
+  --arc-c2: rgba(251, 251, 248, 0.92);
 }
 
 [data-layout-variant="standard"] input,
@@ -271,7 +282,7 @@ export const defaultTheme: DashboardTheme = {
     input: "rgba(5, 5, 5, 0.22)",
     ring: "#0c0a92",
     success: "#15803d",
-    warning: "#b45309",
+    warning: "#0c0a92",
   },
   customCSS: AMPLIIA_CUSTOM_CSS,
 };
