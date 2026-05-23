@@ -44,6 +44,7 @@ const AMPLIIA_CUSTOM_CSS = `
   --ampliia-paper: #fbfbf8;
   --ampliia-paper-2: #f3f2ee;
   --ampliia-muted: #6e6a62;
+  --ampliia-muted-strong: #504c45;
   --ampliia-line: rgba(5, 5, 5, 0.12);
   --ampliia-line-strong: rgba(5, 5, 5, 0.22);
   --ampliia-brand: #0c0a92;
@@ -55,8 +56,8 @@ body {
 }
 
 [data-layout-variant="standard"] {
-  color: var(--ampliia-ink);
-  background: transparent !important;
+  color: var(--ampliia-ink) !important;
+  background: var(--ampliia-paper) !important;
   text-transform: none;
 }
 
@@ -102,9 +103,56 @@ body {
 }
 
 [data-layout-variant="standard"] a[aria-current="page"],
-[data-layout-variant="standard"] nav a:hover,
-[data-layout-variant="standard"] button:hover {
+[data-layout-variant="standard"] nav a:hover {
   color: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .opacity-60 {
+  opacity: 0.76 !important;
+}
+
+[data-layout-variant="standard"] .text-midground,
+[data-layout-variant="standard"] .text-card-foreground,
+[data-layout-variant="standard"] .text-foreground {
+  color: var(--ampliia-ink) !important;
+}
+
+[data-layout-variant="standard"] .text-muted-foreground,
+[data-layout-variant="standard"] .text-muted-foreground\\/90,
+[data-layout-variant="standard"] .text-muted-foreground\\/80,
+[data-layout-variant="standard"] .text-muted-foreground\\/70,
+[data-layout-variant="standard"] .text-muted-foreground\\/60,
+[data-layout-variant="standard"] .text-muted-foreground\\/50,
+[data-layout-variant="standard"] .text-muted-foreground\\/40,
+[data-layout-variant="standard"] .text-midground\\/85,
+[data-layout-variant="standard"] .text-midground\\/80,
+[data-layout-variant="standard"] .text-midground\\/75,
+[data-layout-variant="standard"] .text-midground\\/70,
+[data-layout-variant="standard"] .text-midground\\/65,
+[data-layout-variant="standard"] .text-midground\\/60,
+[data-layout-variant="standard"] .text-midground\\/55,
+[data-layout-variant="standard"] .text-midground\\/50,
+[data-layout-variant="standard"] .text-midground\\/45,
+[data-layout-variant="standard"] .text-midforeground\\/85,
+[data-layout-variant="standard"] .text-midforeground\\/75,
+[data-layout-variant="standard"] .text-midforeground\\/65,
+[data-layout-variant="standard"] .text-midforeground\\/55,
+[data-layout-variant="standard"] .text-midforeground\\/45 {
+  color: var(--ampliia-muted-strong) !important;
+}
+
+[data-layout-variant="standard"] .text-primary {
+  color: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .text-success,
+[data-layout-variant="standard"] .text-emerald-400,
+[data-layout-variant="standard"] .text-emerald-500 {
+  color: #15803d !important;
+}
+
+[data-layout-variant="standard"] .text-warning {
+  color: #b45309 !important;
 }
 
 [data-layout-variant="standard"] a[aria-current="page"]::before {
@@ -145,7 +193,14 @@ body {
 
 [data-layout-variant="standard"] .bg-midground,
 [data-layout-variant="standard"] .bg-foreground {
+  background-color: var(--ampliia-ink) !important;
+}
+
+[data-layout-variant="standard"] button.bg-midground:hover,
+[data-layout-variant="standard"] button.bg-foreground:hover {
   background-color: var(--ampliia-brand) !important;
+  border-color: var(--ampliia-brand) !important;
+  color: #ffffff !important;
 }
 `;
 
@@ -156,7 +211,7 @@ export const defaultTheme: DashboardTheme = {
   palette: {
     background: { hex: "#fbfbf8", alpha: 1 },
     midground: { hex: "#050505", alpha: 1 },
-    foreground: { hex: "#0c0a92", alpha: 1 },
+    foreground: { hex: "#050505", alpha: 1 },
     warmGlow: "rgba(12, 10, 146, 0.06)",
     noiseOpacity: 0,
   },
@@ -166,7 +221,7 @@ export const defaultTheme: DashboardTheme = {
     fontMono: SYSTEM_MONO,
     fontUrl:
       "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
-    letterSpacing: "-0.015em",
+    letterSpacing: "0",
   },
   layout: {
     ...DEFAULT_LAYOUT,
@@ -196,12 +251,12 @@ export const defaultTheme: DashboardTheme = {
     cardForeground: "#050505",
     popover: "rgba(251, 251, 248, 0.98)",
     popoverForeground: "#050505",
-    primary: "#050505",
+    primary: "#0c0a92",
     primaryForeground: "#ffffff",
     secondary: "rgba(255, 255, 255, 0.42)",
     secondaryForeground: "#050505",
     muted: "rgba(5, 5, 5, 0.06)",
-    mutedForeground: "#6e6a62",
+    mutedForeground: "#504c45",
     accent: "rgba(12, 10, 146, 0.075)",
     accentForeground: "#0c0a92",
     border: "rgba(5, 5, 5, 0.12)",

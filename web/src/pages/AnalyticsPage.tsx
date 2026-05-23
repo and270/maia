@@ -148,11 +148,11 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="h-2.5 w-2.5 bg-[#ffe6cb]" />
+            <div className="h-2.5 w-2.5 bg-primary" />
             {t.analytics.input}
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="h-2.5 w-2.5 bg-emerald-500" />
+            <div className="h-2.5 w-2.5 bg-success" />
             {t.analytics.output}
           </div>
         </div>
@@ -192,12 +192,12 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
                 </div>
 
                 <div
-                  className="w-full bg-[#ffe6cb]/70"
+                  className="w-full bg-primary/65"
                   style={{ height: Math.max(inputH, total > 0 ? 1 : 0) }}
                 />
 
                 <div
-                  className="w-full bg-emerald-500/70"
+                  className="w-full bg-success/65"
                   style={{
                     height: Math.max(outputH, d.output_tokens > 0 ? 1 : 0),
                   }}
@@ -261,12 +261,12 @@ function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
                       {d.sessions}
                     </td>
                   <td className="text-right py-2 px-4">
-                    <span className="text-[#ffe6cb]">
+                    <span className="text-primary">
                         {formatTokens(d.input_tokens)}
                       </span>
                   </td>
                   <td className="text-right py-2 pl-4">
-                    <span className="text-emerald-400">
+                    <span className="text-success">
                         {formatTokens(d.output_tokens)}
                       </span>
                   </td>
@@ -319,11 +319,11 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
                     {m.sessions}
                   </td>
                   <td className="text-right py-2 pl-4">
-                    <span className="text-[#ffe6cb]">
+                    <span className="text-primary">
                       {formatTokens(m.input_tokens)}
                     </span>
                     {" / "}
-                    <span className="text-emerald-400">
+                    <span className="text-success">
                       {formatTokens(m.output_tokens)}
                     </span>
                   </td>

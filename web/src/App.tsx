@@ -164,7 +164,7 @@ function DashboardAuthGate({ children }: { children: ReactNode }) {
     !Boolean(status?.modes?.channel_token);
 
   return (
-    <div className="font-mondwest flex min-h-dvh items-center justify-center bg-black px-6 text-midground antialiased">
+    <div className="font-mondwest flex min-h-dvh items-center justify-center bg-background-base px-6 text-midground antialiased">
       <Backdrop />
       <div className="relative z-10 w-full max-w-md border border-current/20 bg-background-base/95 p-6 shadow-2xl">
         <div className="mb-6 flex items-center gap-3">
@@ -198,7 +198,7 @@ function DashboardAuthGate({ children }: { children: ReactNode }) {
                   value={token}
                   onChange={(event) => setToken(event.target.value)}
                   autoFocus
-                  className="h-11 w-full border border-current/25 bg-black px-3 text-sm normal-case tracking-normal text-midground outline-none focus:border-current"
+                  className="h-11 w-full border border-current/25 bg-white/60 px-3 text-sm normal-case tracking-normal text-midground outline-none focus:border-current"
                 />
                 {status?.modes?.channel_token && (
                   <span className="block text-xs normal-case leading-5 tracking-normal text-midground/60">

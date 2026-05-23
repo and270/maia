@@ -41,8 +41,8 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  --foreground: color-mix(in srgb, #0c0a92 100%, transparent);
-  --foreground-base: #0c0a92;
+  --foreground: color-mix(in srgb, #050505 100%, transparent);
+  --foreground-base: #050505;
   --foreground-alpha: 1;
   --midground: color-mix(in srgb, #050505 100%, transparent);
   --midground-base: #050505;
@@ -64,7 +64,7 @@
   --theme-font-display: var(--theme-font-sans);
   --theme-base-size: 15px;
   --theme-line-height: 1.55;
-  --theme-letter-spacing: -0.015em;
+  --theme-letter-spacing: 0;
 
   /* Layout tokens. */
   --radius: 2px;
@@ -129,14 +129,14 @@ code { font-size: 0.875rem; }
 
   --color-card: rgba(251, 251, 248, 0.92);
   --color-card-foreground: var(--midground);
-  --color-primary: var(--midground);
-  --color-primary-foreground: var(--background-base);
-  --color-secondary: color-mix(in srgb, var(--midground-base) 6%, var(--background-base));
+  --color-primary: #0c0a92;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: color-mix(in srgb, var(--midground-base) 8%, var(--background-base));
   --color-secondary-foreground: var(--midground);
-  --color-muted: color-mix(in srgb, var(--midground-base) 6%, var(--background-base));
-  --color-muted-foreground: color-mix(in srgb, var(--midground-base) 55%, transparent);
-  --color-accent: color-mix(in srgb, var(--foreground-base) 8%, var(--background-base));
-  --color-accent-foreground: var(--foreground-base);
+  --color-muted: color-mix(in srgb, var(--midground-base) 7%, var(--background-base));
+  --color-muted-foreground: #504c45;
+  --color-accent: rgba(12, 10, 146, 0.075);
+  --color-accent-foreground: #0c0a92;
   --color-destructive: #fb2c36;
   --color-destructive-foreground: #ffffff;
   --color-success: #15803d;
