@@ -3,7 +3,8 @@
 This module keeps identity, role hierarchy, folder policies, and cron
 authorization checks in one place.  The runtime remains backward compatible:
 governance is inert until ``governance.enabled`` is true and a matching policy
-is configured.
+is configured.  Malformed governance configuration fails closed for sensitive
+authorization decisions.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+
+_CONFIG_ERROR_KEY = "__config_load_error__"
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,17 @@ def _config_path() -> Path:
     return get_hermes_home() / "config.yaml"
 
 
+def _config_error_config(message: str) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        _CONFIG_ERROR_KEY: message,
+    }
+
+
+def _governance_config_error(config: dict[str, Any]) -> str:
+    return str(config.get(_CONFIG_ERROR_KEY) or "").strip()
+
+
 def _load_config_document() -> dict[str, Any]:
     """Load config.yaml as a plain dict without importing the CLI loader."""
     path = _config_path()
@@ -68,15 +82,28 @@ def _load_config_document() -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
-    except Exception:
-        return {}
-    return cfg if isinstance(cfg, dict) else {}
+    except Exception as exc:
+        return _config_error_config(f"Could not parse {path}: {exc}")
+    if not isinstance(cfg, dict):
+        return _config_error_config(
+            f"Could not parse {path}: expected a mapping at the document root."
+        )
+    return cfg
 
 
 def load_governance_config() -> dict[str, Any]:
     """Load the ``governance`` section from config.yaml."""
 
     cfg = _load_config_document()
+    if _governance_config_error(cfg):
+        return cfg
+    if "governance" in cfg and cfg.get("governance") is not None:
+        governance = cfg.get("governance", {})
+        if not isinstance(governance, dict):
+            return _config_error_config(
+                "Could not load governance config: expected the governance "
+                "section to be a mapping."
+            )
     governance = cfg.get("governance", {})
     return governance if isinstance(governance, dict) else {}
 
@@ -188,6 +215,8 @@ def actor_has_any_role(
     if not required_roles:
         return True
     cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg):
+        return False
     roles = actor_roles(actor, cfg)
     return any(
         role_satisfies(cfg, granted, required)
@@ -273,16 +302,25 @@ def check_file_access(
     """Return ``(allowed, reason)`` for a file read/write/search operation."""
 
     cfg = load_governance_config() if config is None else config
-    if not is_enabled(cfg):
-        return True, ""
-
     who = current_actor() if actor is None else actor
     op = "write" if operation in {"write", "delete", "move", "patch"} else "read"
-    policy = _matching_folder_policy(path, cfg)
 
     def _deny(reason: str) -> tuple[bool, str]:
         _audit_file_access(who, path, op, False, reason)
         return False, reason
+
+    config_error = _governance_config_error(cfg)
+    if config_error:
+        return _deny(
+            "Access denied by governance: config.yaml could not be loaded, "
+            f"so {op} access to {path!r} is blocked until the governance "
+            f"configuration is fixed. {config_error}",
+        )
+
+    if not is_enabled(cfg):
+        return True, ""
+
+    policy = _matching_folder_policy(path, cfg)
 
     if policy is None:
         default_policy = str(cfg.get("default_file_policy", "allow")).strip().lower()
@@ -364,6 +402,15 @@ def can_authorize(
 
     cfg = load_governance_config() if config is None else config
     who = current_actor() if actor is None else actor
+    config_error = _governance_config_error(cfg)
+    if config_error:
+        return (
+            False,
+            "Cron authorization denied by governance: config.yaml could not "
+            "be loaded until the governance configuration is fixed. "
+            f"{config_error}",
+        )
+
     users = _coerce_list(authorization.get("users") or authorization.get("user"))
     if users and _actor_matches_any(who, users):
         return True, ""
@@ -503,6 +550,12 @@ def render_self_configuration_context(
     ]
     tenant = str(cfg.get("tenant_id") or "default")
     governance_enabled = is_enabled(cfg)
+    config_error = _governance_config_error(cfg)
+    governance_status = (
+        "configuration error"
+        if config_error
+        else ("enabled" if governance_enabled else "disabled")
+    )
 
     auth = _dashboard_auth_config(full)
     dashboard_auth_enabled = bool(auth.get("enabled"))
@@ -546,7 +599,7 @@ def render_self_configuration_context(
             "Server-side policy checks remain authoritative."
         ),
         "",
-        f"- Governance: {'enabled' if governance_enabled else 'disabled'}",
+        f"- Governance: {governance_status}",
         f"- Tenant: {tenant}",
         f"- Actor: {actor_display(who)}",
         f"- Roles: {', '.join(roles) if roles else 'none'}",
@@ -613,7 +666,23 @@ def render_self_configuration_context(
         "### Self-Configuration Rule For This Actor",
     ]
 
-    if not governance_enabled:
+    if config_error:
+        lines.extend(
+            [
+                (
+                    "- Governance configuration could not be loaded, so "
+                    "server-side file and cron authorization checks fail "
+                    "closed until the config is fixed."
+                ),
+                f"- Config error: {config_error}",
+                (
+                    "- Treat all broader access, self-configuration, and "
+                    "shared automation actions as blocked until an authorized "
+                    "administrator repairs config.yaml."
+                ),
+            ]
+        )
+    elif not governance_enabled:
         lines.extend(
             [
                 (

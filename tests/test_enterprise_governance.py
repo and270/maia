@@ -23,7 +23,7 @@ governance:
     "slack:U_VIEWER":
       roles: [viewer]
   folder_policies:
-    - path: "{finance_dir}"
+    - path: '{finance_dir}'
       read_roles: [manager]
       write_roles: [admin]
 """,
@@ -69,7 +69,7 @@ governance:
   default_role: viewer
   default_file_policy: deny
   folder_policies:
-    - path: "{allowed_dir}"
+    - path: '{allowed_dir}'
       read_roles: [viewer]
 """,
     )
@@ -92,6 +92,30 @@ governance:
     assert "no folder policy allows read" in reason
 
 
+def test_malformed_governance_config_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        'governance:\n  enabled: true\n  folder_policies:\n    - path: "C:\\secrets"\n',
+    )
+
+    from agent.governance import Actor, check_file_access, load_governance_config
+
+    cfg = load_governance_config()
+    assert cfg["enabled"] is True
+    assert "__config_load_error__" in cfg
+
+    allowed, reason = check_file_access(
+        str(tmp_path / "anything.txt"),
+        "read",
+        actor=Actor(platform="slack", user_id="U_MANAGER"),
+    )
+
+    assert allowed is False
+    assert "config.yaml could not be loaded" in reason
+    assert "blocked until the governance configuration is fixed" in reason
+
+
 def test_folder_policy_designated_users_and_explicit_denies(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     legal_dir = tmp_path / "legal"
@@ -109,7 +133,7 @@ governance:
     "slack:U_BLOCKED":
       roles: [admin]
   folder_policies:
-    - path: "{legal_dir}"
+    - path: '{legal_dir}'
       read_roles: [manager]
       read_users: ["slack:U_VIEWER"]
       deny_users: ["slack:U_BLOCKED"]
@@ -158,7 +182,7 @@ governance:
       roles: [operator]
       teams: [finance]
   folder_policies:
-    - path: "{marketing_dir}"
+    - path: '{marketing_dir}'
       read_teams: [marketing]
       write_users: ["slack:U_LEAD"]
       deny_users: ["slack:U_BLOCKED"]
@@ -225,7 +249,7 @@ governance:
     "local":
       roles: [viewer]
   folder_policies:
-    - path: "{workspace}"
+    - path: '{workspace}'
       read_roles: [manager]
 """,
     )
@@ -316,6 +340,24 @@ governance:
     assert stored["authorization"]["status"] == "pending"
 
 
+def test_cron_authorization_fails_closed_when_config_is_malformed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_SESSION_PLATFORM", "slack")
+    monkeypatch.setenv("HERMES_SESSION_USER_ID", "U_MANAGER")
+    _write_config(
+        tmp_path,
+        'governance:\n  enabled: true\n  folder_policies:\n    - path: "C:\\secrets"\n',
+    )
+
+    from agent.governance import can_authorize
+
+    allowed, reason = can_authorize({"required": True, "roles": ["manager"]})
+
+    assert allowed is False
+    assert "Cron authorization denied by governance" in reason
+    assert "config.yaml could not be loaded" in reason
+
+
 def test_self_configuration_context_is_actor_and_role_aware(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     marketing_dir = tmp_path / "marketing"
@@ -346,7 +388,7 @@ governance:
       teams: [marketing]
   team_file_roots:
     marketing:
-      path: "{marketing_dir}"
+      path: '{marketing_dir}'
       manager_roles: [manager]
   cron:
     default_authorizer_roles: [admin]
@@ -368,5 +410,5 @@ governance:
         "Administer config, secrets, models, gateway settings, dashboard auth, "
         "user authorization, plugins, global folder policies, and roles: no"
     ) in text
-    assert f"'marketing': '{marketing_dir}'" in text
+    assert str({"marketing": str(marketing_dir)}) in text
     assert "Management-scope actions are limited" in text
