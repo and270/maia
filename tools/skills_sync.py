@@ -37,6 +37,16 @@ HERMES_HOME = get_hermes_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 
+# These repo-shipped skills remain in source control, but they are not part of
+# the default bundled skill set copied into user/profile skill directories.
+_EXCLUDED_BUNDLED_SKILL_NAMES = frozenset(
+    {
+        "minecraft-modpack-server",
+        "pokemon-player",
+    }
+)
+_EXCLUDED_BUNDLED_TOP_LEVEL_DIRS = frozenset({"gaming"})
+
 
 def _get_bundled_dir() -> Path:
     """Locate the bundled skills/ directory.
@@ -131,7 +141,21 @@ def _read_skill_name(skill_md: Path, fallback: str) -> str:
     return fallback
 
 
-def _discover_bundled_skills(bundled_dir: Path) -> List[Tuple[str, Path]]:
+def _is_excluded_bundled_skill(skill_name: str, skill_dir: Path, bundled_dir: Path) -> bool:
+    if skill_name in _EXCLUDED_BUNDLED_SKILL_NAMES:
+        return True
+    try:
+        rel = skill_dir.relative_to(bundled_dir)
+    except ValueError:
+        return False
+    return bool(rel.parts and rel.parts[0] in _EXCLUDED_BUNDLED_TOP_LEVEL_DIRS)
+
+
+def _discover_bundled_skills(
+    bundled_dir: Path,
+    *,
+    include_excluded: bool = False,
+) -> List[Tuple[str, Path]]:
     """
     Find all SKILL.md files in the bundled directory.
     Returns list of (skill_name, skill_directory_path) tuples.
@@ -146,6 +170,8 @@ def _discover_bundled_skills(bundled_dir: Path) -> List[Tuple[str, Path]]:
             continue
         skill_dir = skill_md.parent
         skill_name = _read_skill_name(skill_md, skill_dir.name)
+        if not include_excluded and _is_excluded_bundled_skill(skill_name, skill_dir, bundled_dir):
+            continue
         skills.append((skill_name, skill_dir))
 
     return skills
@@ -191,13 +217,43 @@ def sync_skills(quiet: bool = False) -> dict:
 
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest()
-    bundled_skills = _discover_bundled_skills(bundled_dir)
+    all_bundled_skills = _discover_bundled_skills(bundled_dir, include_excluded=True)
+    excluded_bundled_skills = [
+        (name, skill_dir)
+        for name, skill_dir in all_bundled_skills
+        if _is_excluded_bundled_skill(name, skill_dir, bundled_dir)
+    ]
+    bundled_skills = [
+        (name, skill_dir)
+        for name, skill_dir in all_bundled_skills
+        if not _is_excluded_bundled_skill(name, skill_dir, bundled_dir)
+    ]
     bundled_names = {name for name, _ in bundled_skills}
 
     copied = []
     updated = []
     user_modified = []
+    cleaned_excluded = []
     skipped = 0
+
+    for skill_name, skill_src in excluded_bundled_skills:
+        if skill_name not in manifest:
+            continue
+        dest = _compute_relative_dest(skill_src, bundled_dir)
+        origin_hash = manifest.get(skill_name, "")
+        bundled_hash = _dir_hash(skill_src)
+        try:
+            if dest.exists():
+                user_hash = _dir_hash(dest)
+                if (origin_hash and user_hash == origin_hash) or user_hash == bundled_hash:
+                    shutil.rmtree(dest)
+                else:
+                    user_modified.append(skill_name)
+            del manifest[skill_name]
+            cleaned_excluded.append(skill_name)
+        except (OSError, IOError) as e:
+            if not quiet:
+                print(f"  ! Failed to remove excluded bundled skill {skill_name}: {e}")
 
     for skill_name, skill_src in bundled_skills:
         dest = _compute_relative_dest(skill_src, bundled_dir)
@@ -291,13 +347,19 @@ def sync_skills(quiet: bool = False) -> dict:
             skipped += 1
 
     # Clean stale manifest entries (skills removed from bundled dir)
-    cleaned = sorted(set(manifest.keys()) - bundled_names)
-    for name in cleaned:
+    cleaned_stale = sorted(set(manifest.keys()) - bundled_names)
+    cleaned = sorted(set(cleaned_excluded) | set(cleaned_stale))
+    for name in cleaned_stale:
         del manifest[name]
 
     # Also copy DESCRIPTION.md files for categories (if not already present)
     for desc_md in bundled_dir.rglob("DESCRIPTION.md"):
-        rel = desc_md.relative_to(bundled_dir)
+        try:
+            rel = desc_md.relative_to(bundled_dir)
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] in _EXCLUDED_BUNDLED_TOP_LEVEL_DIRS:
+            continue
         dest_desc = SKILLS_DIR / rel
         if not dest_desc.exists():
             try:

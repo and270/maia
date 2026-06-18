@@ -38,19 +38,253 @@ const DEFAULT_LAYOUT: ThemeLayout = {
 // Themes
 // ---------------------------------------------------------------------------
 
+const AMPLIIA_CUSTOM_CSS = `
+:root {
+  --ampliia-ink: #050505;
+  --ampliia-paper: #fbfbf8;
+  --ampliia-paper-2: #f3f2ee;
+  --ampliia-muted: #6e6a62;
+  --ampliia-muted-strong: #504c45;
+  --ampliia-line: rgba(5, 5, 5, 0.12);
+  --ampliia-line-strong: rgba(5, 5, 5, 0.22);
+  --ampliia-brand: #0c0a92;
+  --ampliia-brand-soft: rgba(12, 10, 146, 0.075);
+}
+
+body {
+  background: var(--ampliia-paper);
+}
+
+[data-layout-variant="standard"] {
+  color: var(--ampliia-ink) !important;
+  background: var(--ampliia-paper) !important;
+  text-transform: none;
+}
+
+[data-layout-variant="standard"].uppercase {
+  text-transform: none !important;
+}
+
+[data-layout-variant="standard"] .font-mondwest,
+[data-layout-variant="standard"] .font-expanded,
+[data-layout-variant="standard"] .font-compressed {
+  font-family: var(--theme-font-sans) !important;
+  letter-spacing: 0 !important;
+}
+
+[data-layout-variant="standard"] .font-courier,
+[data-layout-variant="standard"] .font-mono,
+[data-layout-variant="standard"] .font-mono-ui {
+  font-family: var(--theme-font-mono) !important;
+}
+
+[data-layout-variant="standard"] .blend-lighter {
+  mix-blend-mode: normal;
+}
+
+[data-layout-variant="standard"] header h1,
+[data-layout-variant="standard"] header .font-bold.text-midground,
+[data-layout-variant="standard"] #app-sidebar > div:first-child .font-bold.text-midground {
+  color: var(--ampliia-brand) !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+}
+
+[data-layout-variant="standard"] header,
+[data-layout-variant="standard"] #app-sidebar {
+  background: rgba(251, 251, 248, 0.9) !important;
+  border-color: var(--ampliia-line) !important;
+  backdrop-filter: blur(18px);
+}
+
+[data-layout-variant="standard"] #app-sidebar {
+  box-shadow: none;
+}
+
+[data-layout-variant="standard"] #app-sidebar > div:first-child {
+  min-height: 76px;
+  padding: 0 18px;
+}
+
+[data-layout-variant="standard"] #app-sidebar nav {
+  border-top-color: var(--ampliia-line);
+}
+
+[data-layout-variant="standard"] a[aria-current="page"],
+[data-layout-variant="standard"] nav a:hover {
+  color: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .opacity-60 {
+  opacity: 0.76 !important;
+}
+
+[data-layout-variant="standard"] .text-midground,
+[data-layout-variant="standard"] .text-card-foreground,
+[data-layout-variant="standard"] .text-foreground {
+  color: var(--ampliia-ink) !important;
+}
+
+[data-layout-variant="standard"] .text-muted-foreground,
+[data-layout-variant="standard"] .text-muted-foreground\\/90,
+[data-layout-variant="standard"] .text-muted-foreground\\/80,
+[data-layout-variant="standard"] .text-muted-foreground\\/70,
+[data-layout-variant="standard"] .text-muted-foreground\\/60,
+[data-layout-variant="standard"] .text-muted-foreground\\/50,
+[data-layout-variant="standard"] .text-muted-foreground\\/40,
+[data-layout-variant="standard"] .text-midground\\/85,
+[data-layout-variant="standard"] .text-midground\\/80,
+[data-layout-variant="standard"] .text-midground\\/75,
+[data-layout-variant="standard"] .text-midground\\/70,
+[data-layout-variant="standard"] .text-midground\\/65,
+[data-layout-variant="standard"] .text-midground\\/60,
+[data-layout-variant="standard"] .text-midground\\/55,
+[data-layout-variant="standard"] .text-midground\\/50,
+[data-layout-variant="standard"] .text-midground\\/45,
+[data-layout-variant="standard"] .text-midforeground\\/85,
+[data-layout-variant="standard"] .text-midforeground\\/75,
+[data-layout-variant="standard"] .text-midforeground\\/65,
+[data-layout-variant="standard"] .text-midforeground\\/55,
+[data-layout-variant="standard"] .text-midforeground\\/45 {
+  color: var(--ampliia-muted-strong) !important;
+}
+
+[data-layout-variant="standard"] .text-primary {
+  color: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .text-success,
+[data-layout-variant="standard"] .text-emerald-400,
+[data-layout-variant="standard"] .text-emerald-500 {
+  color: #15803d !important;
+}
+
+[data-layout-variant="standard"] .text-warning {
+  color: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] a[aria-current="page"]::before {
+  background: var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .border-current\\/20,
+[data-layout-variant="standard"] .border-current\\/10 {
+  border-color: var(--ampliia-line) !important;
+}
+
+[data-layout-variant="standard"] button,
+[data-layout-variant="standard"] input,
+[data-layout-variant="standard"] select,
+[data-layout-variant="standard"] textarea {
+  border-radius: 2px !important;
+}
+
+[data-layout-variant="standard"] button:active,
+[data-layout-variant="standard"] [role="button"]:active {
+  filter: none !important;
+}
+
+[data-layout-variant="standard"] .arc-border {
+  --arc-c0: rgba(12, 10, 146, 0.16);
+  --arc-c1: var(--ampliia-brand);
+  --arc-c2: rgba(251, 251, 248, 0.92);
+}
+
+[data-layout-variant="standard"] input,
+[data-layout-variant="standard"] select,
+[data-layout-variant="standard"] textarea {
+  background: rgba(255, 255, 255, 0.58) !important;
+  border-color: var(--ampliia-line-strong) !important;
+  color: var(--ampliia-ink) !important;
+}
+
+[data-layout-variant="standard"] input:focus,
+[data-layout-variant="standard"] select:focus,
+[data-layout-variant="standard"] textarea:focus {
+  border-color: var(--ampliia-brand) !important;
+  box-shadow: inset 0 -2px 0 var(--ampliia-brand) !important;
+}
+
+[data-layout-variant="standard"] .shadow-2xl,
+[data-layout-variant="standard"] [class*="shadow-"] {
+  box-shadow: none !important;
+}
+
+[data-layout-variant="standard"] .bg-midground,
+[data-layout-variant="standard"] .bg-foreground {
+  background-color: var(--ampliia-ink) !important;
+}
+
+[data-layout-variant="standard"] button.bg-midground:hover,
+[data-layout-variant="standard"] button.bg-foreground:hover {
+  background-color: var(--ampliia-brand) !important;
+  border-color: var(--ampliia-brand) !important;
+  color: #ffffff !important;
+}
+`;
+
 export const defaultTheme: DashboardTheme = {
   name: "default",
-  label: "Hermes Teal",
-  description: "Classic dark teal — the canonical Hermes look",
+  label: "Ampliia",
+  description: "Light paper, grid lines, black text, and Ampliia blue",
   palette: {
-    background: { hex: "#041c1c", alpha: 1 },
-    midground: { hex: "#ffe6cb", alpha: 1 },
-    foreground: { hex: "#ffffff", alpha: 0 },
-    warmGlow: "rgba(255, 189, 56, 0.35)",
-    noiseOpacity: 1,
+    background: { hex: "#fbfbf8", alpha: 1 },
+    midground: { hex: "#050505", alpha: 1 },
+    foreground: { hex: "#050505", alpha: 1 },
+    warmGlow: "rgba(12, 10, 146, 0.06)",
+    noiseOpacity: 0,
   },
-  typography: DEFAULT_TYPOGRAPHY,
-  layout: DEFAULT_LAYOUT,
+  typography: {
+    ...DEFAULT_TYPOGRAPHY,
+    fontSans: `"Inter", ${SYSTEM_SANS}`,
+    fontMono: SYSTEM_MONO,
+    fontUrl:
+      "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
+    letterSpacing: "0",
+  },
+  layout: {
+    ...DEFAULT_LAYOUT,
+    radius: "2px",
+  },
+  assets: {
+    bg:
+      "linear-gradient(90deg, rgba(5,5,5,.035) 1px, transparent 1px), linear-gradient(180deg, rgba(5,5,5,.028) 1px, transparent 1px), radial-gradient(circle at 70% 8%, rgba(12,10,146,.06), transparent 34rem)",
+  },
+  componentStyles: {
+    backdrop: {
+      baseBlendMode: "normal",
+      fillerBlendMode: "normal",
+      fillerOpacity: "1",
+      backgroundSize: "72px 72px, 72px 72px, auto",
+      backgroundPosition: "0 0, 0 0, center",
+      warmOpacity: "0",
+    },
+    card: {
+      border: "1px solid rgba(5, 5, 5, 0.12)",
+      background: "rgba(251, 251, 248, 0.92)",
+      boxShadow: "none",
+    },
+  },
+  colorOverrides: {
+    card: "rgba(251, 251, 248, 0.92)",
+    cardForeground: "#050505",
+    popover: "rgba(251, 251, 248, 0.98)",
+    popoverForeground: "#050505",
+    primary: "#0c0a92",
+    primaryForeground: "#ffffff",
+    secondary: "rgba(255, 255, 255, 0.42)",
+    secondaryForeground: "#050505",
+    muted: "rgba(5, 5, 5, 0.06)",
+    mutedForeground: "#504c45",
+    accent: "rgba(12, 10, 146, 0.075)",
+    accentForeground: "#0c0a92",
+    border: "rgba(5, 5, 5, 0.12)",
+    input: "rgba(5, 5, 5, 0.22)",
+    ring: "#0c0a92",
+    success: "#15803d",
+    warning: "#0c0a92",
+  },
+  customCSS: AMPLIIA_CUSTOM_CSS,
 };
 
 export const midnightTheme: DashboardTheme = {
@@ -190,18 +424,22 @@ export const roseTheme: DashboardTheme = {
  */
 export const defaultLargeTheme: DashboardTheme = {
   name: "default-large",
-  label: "Hermes Teal (Large)",
-  description: "Hermes Teal with bigger fonts and roomier spacing",
+  label: "Ampliia (Large)",
+  description: "Ampliia with bigger fonts and roomier spacing",
   palette: defaultTheme.palette,
   typography: {
-    ...DEFAULT_TYPOGRAPHY,
+    ...defaultTheme.typography,
     baseSize: "18px",
     lineHeight: "1.65",
   },
   layout: {
-    ...DEFAULT_LAYOUT,
+    ...defaultTheme.layout,
     density: "spacious",
   },
+  assets: defaultTheme.assets,
+  componentStyles: defaultTheme.componentStyles,
+  colorOverrides: defaultTheme.colorOverrides,
+  customCSS: defaultTheme.customCSS,
 };
 
 export const BUILTIN_THEMES: Record<string, DashboardTheme> = {

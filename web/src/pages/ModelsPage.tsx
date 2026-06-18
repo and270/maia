@@ -91,10 +91,10 @@ function TokenBar({
   if (total === 0) return null;
 
   const segments = [
-    { value: cacheRead, color: "bg-blue-400/60", label: "Cache Read" },
-    { value: reasoning, color: "bg-purple-400/60", label: "Reasoning" },
-    { value: input, color: "bg-[#ffe6cb]/70", label: "Input" },
-    { value: output, color: "bg-emerald-500/70", label: "Output" },
+    { value: cacheRead, color: "bg-sky-700/65", label: "Cache Read" },
+    { value: reasoning, color: "bg-violet-800/65", label: "Reasoning" },
+    { value: input, color: "bg-primary/65", label: "Input" },
+    { value: output, color: "bg-success/65", label: "Output" },
   ].filter((s) => s.value > 0);
 
   return (

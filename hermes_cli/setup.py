@@ -796,6 +796,14 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     # Delegate to the shared hermes model flow — handles provider picker,
     # credential prompting, model selection, and config persistence.
     from hermes_cli.main import select_provider_and_model
+    previous_hidden_providers = os.environ.get("HERMES_ONBOARDING_HIDDEN_PROVIDERS")
+    hidden = {
+        item.strip()
+        for item in (previous_hidden_providers or "").split(",")
+        if item.strip()
+    }
+    hidden.add("nous")
+    os.environ["HERMES_ONBOARDING_HIDDEN_PROVIDERS"] = ",".join(sorted(hidden))
     try:
         select_provider_and_model()
     except (SystemExit, KeyboardInterrupt):
@@ -805,6 +813,11 @@ def setup_model_provider(config: dict, *, quick: bool = False):
         logger.debug("select_provider_and_model error during setup: %s", exc)
         print_warning(f"Provider setup encountered an error: {exc}")
         print_info("You can try again later with: hermes model")
+    finally:
+        if previous_hidden_providers is None:
+            os.environ.pop("HERMES_ONBOARDING_HIDDEN_PROVIDERS", None)
+        else:
+            os.environ["HERMES_ONBOARDING_HIDDEN_PROVIDERS"] = previous_hidden_providers
 
     # Re-sync the wizard's config dict from what cmd_model saved to disk.
     # This is critical: cmd_model writes to disk via its own load/save cycle,

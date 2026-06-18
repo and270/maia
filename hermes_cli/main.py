@@ -1777,8 +1777,19 @@ def select_provider_and_model(args=None):
     print(f"  Active provider:  {active_label}")
     print()
 
-    # Step 1: Provider selection — flat list from CANONICAL_PROVIDERS
-    all_providers = [(p.slug, p.tui_desc) for p in CANONICAL_PROVIDERS]
+    # Step 1: Provider selection — flat list from CANONICAL_PROVIDERS.
+    # The setup/onboarding wizard can hide providers from this shared picker
+    # without removing them from `coorporate model` or runtime resolution.
+    hidden_providers = {
+        item.strip()
+        for item in os.getenv("HERMES_ONBOARDING_HIDDEN_PROVIDERS", "").split(",")
+        if item.strip()
+    }
+    all_providers = [
+        (p.slug, p.tui_desc)
+        for p in CANONICAL_PROVIDERS
+        if p.slug not in hidden_providers
+    ]
 
     def _named_custom_provider_map(cfg) -> dict[str, dict[str, str]]:
         from hermes_cli.config import read_raw_config
