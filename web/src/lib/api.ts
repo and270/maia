@@ -86,6 +86,18 @@ export type DashboardAccessResponse = {
   revoked_users: DashboardAccessRevocation[];
 };
 
+export type DiscordGatewayAccessUser = {
+  user_id: string;
+  name?: string;
+  roles?: string[];
+  teams?: string[];
+};
+
+export type DiscordGatewayAccessUsersResponse = {
+  ok?: boolean;
+  users: DiscordGatewayAccessUser[];
+};
+
 export type FolderPolicy = {
   path: string;
   recursive?: boolean;
@@ -248,6 +260,14 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+  getDiscordGatewayAccessUsers: () =>
+    fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users"),
+  saveDiscordGatewayAccessUsers: (body: { users: DiscordGatewayAccessUser[] }) =>
+    fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
   getSessions: (limit = 20, offset = 0) =>
     fetchJSON<PaginatedSessions>(`/api/sessions?limit=${limit}&offset=${offset}`),

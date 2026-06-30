@@ -7,9 +7,11 @@ description: "Identity, roles, dashboard access, folder policies, gateway isolat
 
 Coorporate Hermes adds a governance layer for private one-tenant deployments. The policy lives in `<HERMES_HOME>/config.yaml` (`~/.hermes/config.yaml` by default). Normal administration happens through the protected dashboard; direct YAML edits are for server operators, reviewed deployment automation, backup restore, or break-glass recovery.
 
+Most employees do not need the dashboard. They interact with Coorporate Hermes through a messaging gateway such as Discord, Slack, Mattermost, Matrix, WhatsApp, or Telegram. The dashboard is the admin surface for configuring the deployment, approving dashboard access, assigning governance roles, reviewing logs, and managing policies; protect it like any other admin console.
+
 ## Identity and Roles
 
-Gateway users are identified by stable `platform:user_id` keys:
+Gateway users are identified by stable `platform:user_id` keys. Gateway allowlists such as `DISCORD_ALLOWED_USERS` decide who may talk to the bot; `governance.users` decides the Coorporate Hermes roles, teams, and policy behavior attached to that identity. Adding a Discord ID to the gateway allowlist does not automatically make that person a dashboard admin.
 
 ```yaml
 governance:

@@ -29,7 +29,7 @@ If you want a normal bot-help channel where people can talk to Coorporate Hermes
 
 Coorporate Hermes on Discord is not a webhook that replies statelessly. It runs through the full messaging gateway, which means each incoming message goes through:
 
-1. authorization (`DISCORD_ALLOWED_USERS`)
+1. authorization (`DISCORD_ALLOWED_USERS` and/or `DISCORD_ALLOWED_ROLES` for gateway access)
 2. mention / free-response checks
 3. session lookup
 4. session transcript loading
@@ -250,6 +250,8 @@ DISCORD_ALLOWED_USERS=284102345871466496
 # DISCORD_ALLOWED_USERS=284102345871466496,198765432109876543
 ```
 
+`DISCORD_ALLOWED_USERS` is only the Discord gateway allowlist. For human-readable names, teams, and Coorporate Hermes roles, use the dashboard's structured Discord users editor or add matching `governance.users` records such as `discord:284102345871466496`. Dashboard access still uses Dashboard Access approvals and one-time tokens; ordinary gateway users can use the bot without receiving dashboard access.
+
 Then start the gateway:
 
 ```bash
@@ -271,8 +273,8 @@ Discord behavior is controlled through two files: **`~/.hermes/.env`** for crede
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DISCORD_BOT_TOKEN` | **Yes** | — | Bot token from the [Discord Developer Portal](https://discord.com/developers/applications). |
-| `DISCORD_ALLOWED_USERS` | **Yes** | — | Comma-separated Discord user IDs allowed to interact with the bot. Without this **or** `DISCORD_ALLOWED_ROLES`, the gateway denies all users. |
-| `DISCORD_ALLOWED_ROLES` | No | — | Comma-separated Discord role IDs. Any member with one of these roles is authorized — OR semantics with `DISCORD_ALLOWED_USERS`. Auto-enables the **Server Members Intent** on connect. Useful when moderation teams churn: new mods get access as soon as the role is granted, no config push needed. |
+| `DISCORD_ALLOWED_USERS` | **Yes** | — | Comma-separated Discord user IDs allowed to interact with the Discord gateway. Without this **or** `DISCORD_ALLOWED_ROLES`, the gateway denies all users. This does not grant dashboard admin access; map names/teams/governance roles separately. |
+| `DISCORD_ALLOWED_ROLES` | No | — | Comma-separated Discord server role IDs. Any member with one of these roles is authorized at the gateway — OR semantics with `DISCORD_ALLOWED_USERS`. These are Discord roles, not Coorporate Hermes governance roles. Auto-enables the **Server Members Intent** on connect. Useful when moderation teams churn: new mods get access as soon as the role is granted, no config push needed. |
 | `DISCORD_HOME_CHANNEL` | No | — | Channel ID where the bot sends proactive messages (cron output, reminders, notifications). |
 | `DISCORD_HOME_CHANNEL_NAME` | No | `"Home"` | Display name for the home channel in logs and status output. |
 | `DISCORD_COMMAND_SYNC_POLICY` | No | `"safe"` | Controls native slash-command startup sync. `"safe"` diffs existing global commands and only updates what changed, recreating commands when Discord metadata changes cannot be applied via patch. `"bulk"` preserves the old `tree.sync()` behavior. `"off"` skips startup sync entirely. |
@@ -605,12 +607,12 @@ If you intentionally want a shared room conversation, leave it off — just expe
 ## Security
 
 :::warning
-Always set `DISCORD_ALLOWED_USERS` (or `DISCORD_ALLOWED_ROLES`) to restrict who can interact with the bot. Without either, the gateway denies all users by default as a safety measure. Only authorize people you trust — authorized users have full access to the agent's capabilities, including tool use and system access.
+Always set `DISCORD_ALLOWED_USERS` (or `DISCORD_ALLOWED_ROLES`) to restrict who can interact with the bot through the gateway. Without either, the gateway denies all users by default as a safety measure. Only authorize people you trust — authorized gateway users can exercise the agent's capabilities inside their configured policies, including tool use and system access. Dashboard access is a separate admin-console flow and should stay limited to admins, auditors, managers, or delegated team leads.
 :::
 
 ### Role-Based Access Control
 
-For servers where access is managed by roles instead of individual user lists (moderator teams, support staff, internal tooling), use `DISCORD_ALLOWED_ROLES` — a comma-separated list of role IDs. Any member with one of those roles is authorized.
+For servers where access is managed by Discord server roles instead of individual user lists (moderator teams, support staff, internal tooling), use `DISCORD_ALLOWED_ROLES` — a comma-separated list of Discord role IDs. Any member with one of those roles is authorized at the gateway. These are Discord roles, not Coorporate Hermes governance roles in `governance.users`.
 
 ```bash
 # ~/.hermes/.env — works alongside or instead of DISCORD_ALLOWED_USERS

@@ -218,6 +218,92 @@ class TestWebServerEndpoints:
         # Should contain known env var names
         assert any(k.endswith("_API_KEY") or k.endswith("_TOKEN") for k in data.keys())
 
+    def test_discord_gateway_access_users_syncs_env_and_governance(self):
+        from hermes_cli.config import load_config, load_env
+
+        resp = self.client.put(
+            "/api/gateway/discord/access-users",
+            json={
+                "users": [
+                    {
+                        "user_id": "discord:284102345871466496",
+                        "name": "Ana Admin",
+                        "roles": ["admin"],
+                        "teams": ["leadership"],
+                    },
+                    {
+                        "user_id": "<@198765432109876543>",
+                        "name": "Bruno Operator",
+                        "roles": ["operator"],
+                        "teams": [],
+                    },
+                    {
+                        "user_id": "not-a-discord-id-123",
+                        "name": "Malformed Ignored",
+                        "roles": ["admin"],
+                    },
+                ]
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert [user["user_id"] for user in data["users"]] == [
+            "284102345871466496",
+            "198765432109876543",
+        ]
+        assert load_env()["DISCORD_ALLOWED_USERS"] == "284102345871466496,198765432109876543"
+
+        governance_users = load_config()["governance"]["users"]
+        assert governance_users["discord:284102345871466496"] == {
+            "name": "Ana Admin",
+            "roles": ["admin"],
+            "teams": ["leadership"],
+        }
+        assert governance_users["discord:198765432109876543"]["roles"] == ["operator"]
+
+    def test_discord_gateway_access_users_lists_allowed_users_only(self):
+        from hermes_cli.config import load_env, save_config, save_env_value
+
+        save_env_value("DISCORD_ALLOWED_USERS", "111111111111111111")
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "discord:111111111111111111": {
+                            "name": "Allowed User",
+                            "roles": ["operator"],
+                        },
+                        "discord:222222222222222222": {
+                            "name": "Dashboard Only",
+                            "roles": ["manager"],
+                        },
+                    }
+                }
+            }
+        )
+
+        resp = self.client.get("/api/gateway/discord/access-users")
+        assert resp.status_code == 200
+        assert [user["user_id"] for user in resp.json()["users"]] == ["111111111111111111"]
+
+        save_resp = self.client.put(
+            "/api/gateway/discord/access-users",
+            json={"users": [{"user_id": "333333333333333333", "name": "New User", "roles": []}]},
+        )
+
+        assert save_resp.status_code == 200
+        assert load_env()["DISCORD_ALLOWED_USERS"] == "333333333333333333"
+        assert save_resp.json()["users"] == [
+            {
+                "user_id": "333333333333333333",
+                "name": "New User",
+                "roles": ["operator"],
+                "teams": [],
+            }
+        ]
+
     def test_reveal_env_var(self, tmp_path):
         """POST /api/env/reveal should return the real unredacted value."""
         from hermes_cli.config import save_env_value

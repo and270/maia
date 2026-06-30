@@ -56,7 +56,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 except ImportError:
     raise SystemExit(
         "Web UI requires fastapi and uvicorn.\n"
@@ -1298,6 +1298,17 @@ class EnvVarReveal(BaseModel):
     key: str
 
 
+class DiscordGatewayAccessUser(BaseModel):
+    user_id: str
+    name: str = ""
+    roles: Optional[List[str]] = None
+    teams: Optional[List[str]] = None
+
+
+class DiscordGatewayAccessUsersUpdate(BaseModel):
+    users: List[DiscordGatewayAccessUser] = Field(default_factory=list)
+
+
 class ModelAssignment(BaseModel):
     """Payload for POST /api/model/set — assign a provider/model to a slot.
 
@@ -1336,6 +1347,95 @@ class FolderPoliciesUpdate(BaseModel):
     default_file_policy: Optional[str] = None
     folder_policies: List[dict] = []
     team_file_roots: Optional[dict] = None
+
+
+def _normalize_discord_user_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower().startswith("discord:"):
+        text = text.split(":", 1)[1].strip()
+    mention = re.fullmatch(r"<@!?(\d+)>", text)
+    if mention:
+        return mention.group(1)
+    return text if re.fullmatch(r"\d+", text) else ""
+
+
+def _load_discord_gateway_access_users() -> List[Dict[str, Any]]:
+    env_on_disk = load_env()
+    raw_allowed = str(env_on_disk.get("DISCORD_ALLOWED_USERS") or "")
+    ordered_ids: List[str] = []
+    seen: set[str] = set()
+    for part in raw_allowed.split(","):
+        user_id = _normalize_discord_user_id(part)
+        if user_id and user_id not in seen:
+            ordered_ids.append(user_id)
+            seen.add(user_id)
+
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    users = governance.get("users", {}) if isinstance(governance, dict) else {}
+    users = users if isinstance(users, dict) else {}
+
+    result: List[Dict[str, Any]] = []
+    for user_id in ordered_ids:
+        record = users.get(f"discord:{user_id}") or users.get(user_id) or {}
+        if not isinstance(record, dict):
+            record = {"roles": _coerce_role_list(record)}
+        result.append(
+            {
+                "user_id": user_id,
+                "name": str(record.get("name") or ""),
+                "roles": _coerce_role_list(record.get("roles")),
+                "teams": _coerce_role_list(record.get("teams") or record.get("team")),
+            }
+        )
+    return result
+
+
+def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessUser]) -> List[Dict[str, Any]]:
+    cfg = load_config()
+    if not isinstance(cfg, dict):
+        cfg = {}
+    governance = cfg.get("governance", {})
+    if not isinstance(governance, dict):
+        governance = {}
+    users = governance.get("users", {})
+    if not isinstance(users, dict):
+        users = {}
+
+    allowed_ids: List[str] = []
+    seen: set[str] = set()
+    for item in users_payload:
+        user_id = _normalize_discord_user_id(item.user_id)
+        if not user_id:
+            continue
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        allowed_ids.append(user_id)
+
+        key = f"discord:{user_id}"
+        existing = users.get(key)
+        record = dict(existing) if isinstance(existing, dict) else {}
+        name = str(item.name or "").strip()
+        if name:
+            record["name"] = name
+        elif not record.get("name"):
+            record["name"] = key
+
+        roles = _coerce_role_list(item.roles) or _coerce_role_list(record.get("roles")) or ["operator"]
+        teams = _coerce_role_list(item.teams)
+        record["roles"] = roles
+        if teams:
+            record["teams"] = teams
+        elif "teams" in record:
+            record.pop("teams", None)
+        users[key] = record
+
+    save_env_value("DISCORD_ALLOWED_USERS", ",".join(allowed_ids))
+    governance["users"] = users
+    cfg["governance"] = governance
+    save_config(cfg)
+    return _load_discord_gateway_access_users()
 
 
 def _save_governance_user_from_dashboard_access(
@@ -2553,6 +2653,26 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
         "folder_policies": governance.get("folder_policies", []),
         "default_file_policy": governance.get("default_file_policy", "allow"),
     }
+
+
+@app.get("/api/gateway/discord/access-users")
+async def get_discord_gateway_access_users():
+    return {"users": _load_discord_gateway_access_users()}
+
+
+@app.put("/api/gateway/discord/access-users")
+async def set_discord_gateway_access_users(body: DiscordGatewayAccessUsersUpdate, request: Request):
+    users = _save_discord_gateway_access_users(body.users)
+    _audit_dashboard_event(
+        "gateway.discord_access_users",
+        request=request,
+        actor=_request_dashboard_actor(request),
+        action="save",
+        resource="discord_gateway_access",
+        outcome="success",
+        metadata={"user_count": len(users)},
+    )
+    return {"ok": True, "users": users}
 
 
 @app.get("/api/env")

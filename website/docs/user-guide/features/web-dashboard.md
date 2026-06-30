@@ -39,6 +39,8 @@ coorporate dashboard --no-open
 
 ## Protected Intranet or Public Serving
 
+The dashboard is an administrative surface, not the normal employee interface. Most users should talk to Coorporate Hermes through a configured gateway; expose the dashboard only to admins, auditors, managers, or delegated team leads who need web administration.
+
 The dashboard can read and change `.env`, `config.yaml`, server folder policies, cron jobs, knowledge approvals, plugins, and model settings. Coorporate Hermes refuses to bind the dashboard to a non-loopback interface unless protected dashboard auth is configured, unless the operator explicitly uses `--insecure`.
 
 Token-based protected mode:
@@ -81,7 +83,7 @@ dashboard:
       approval_required: true
 ```
 
-Setup flow: the user runs `/dashboard` in a private/direct channel. Coorporate Hermes creates a pending request in **Dashboard Access** with the authenticated actor key, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+15551234567`. A system admin approves the request in the dashboard, assigns roles and teams, and can later revoke or restore access. After approval, the user runs `/dashboard` again to receive a one-time token for the normal login form.
+Setup flow: the user runs `/dashboard` in a private/direct channel. Coorporate Hermes creates a pending request in **Dashboard Access** with the authenticated actor key, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+155****4567`. A system admin approves the request in the dashboard, assigns roles and teams, and can later revoke or restore access. After approval, the user runs `/dashboard` again to receive a one-time token for the normal login form. This flow is for people who need dashboard access; ordinary gateway users can keep using the bot without a dashboard token.
 
 Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or a reverse proxy. It provides trusted-header integration for companies that already operate that access layer. Configure `dashboard.auth.trusted_user_header`, bind Coorporate Hermes to `127.0.0.1` behind the TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
 

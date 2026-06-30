@@ -2211,14 +2211,14 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "DISCORD_ALLOWED_USERS": {
-        "description": "Comma-separated Discord user IDs allowed to use the bot",
+        "description": "Comma-separated Discord user IDs allowed to use the bot. This is gateway access only; governance.users controls roles, teams, and dashboard permissions.",
         "prompt": "Allowed Discord user IDs (comma-separated)",
         "url": None,
         "password": False,
         "category": "messaging",
     },
     "DISCORD_ALLOWED_ROLES": {
-        "description": "Comma-separated Discord role IDs allowed to use the bot",
+        "description": "Comma-separated Discord role IDs allowed to use the bot. Role allowlists authorize Discord users at the gateway; Coorporate Hermes governance roles are configured separately.",
         "prompt": "Allowed Discord role IDs (comma-separated)",
         "url": None,
         "password": False,
