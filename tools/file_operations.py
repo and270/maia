@@ -38,7 +38,7 @@ from agent.file_safety import (
     build_write_denied_paths,
     build_write_denied_prefixes,
     get_read_block_error,
-    get_safe_write_root as _shared_get_safe_write_root,
+    get_safe_write_roots as _shared_get_safe_write_roots,
     is_write_denied as _shared_is_write_denied,
 )
 
@@ -75,15 +75,16 @@ def _strip_terminal_fence_leaks(text: str) -> str:
     return "".join(cleaned_lines)
 
 
-def _get_safe_write_root() -> Optional[str]:
-    """Return the resolved HERMES_WRITE_SAFE_ROOT path, or None if unset.
+def _get_safe_write_roots() -> set:
+    """Return the resolved HERMES_WRITE_SAFE_ROOT paths, empty set if unset.
 
-    When set, all write_file/patch operations are constrained to this
-    directory tree.  Writes outside it are denied even if the target is
-    not on the static deny list.  Opt-in hardening for gateway/messaging
-    deployments that should only touch a workspace checkout.
+    Multiple roots may be configured, separated by ``os.pathsep``. When set,
+    all write_file/patch operations are constrained to these directory
+    trees.  Writes outside them are denied even if the target is not on the
+    static deny list.  Opt-in hardening for gateway/messaging deployments
+    that should only touch workspace checkouts.
     """
-    return _shared_get_safe_write_root()
+    return _shared_get_safe_write_roots()
 
 
 def _is_write_denied(path: str) -> bool:

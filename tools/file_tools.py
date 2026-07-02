@@ -958,6 +958,55 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         return tool_error(str(e))
 
 
+def _search_result_read_block_error(path: str, task_id: str = "default") -> str | None:
+    """Return the read-safety error for a search result path.
+
+    Search backends may return paths relative to the task cwd, while
+    ``get_read_block_error`` expects an already-resolved path when the task cwd
+    can differ from the Python process cwd. Mirror ``read_file_tool``'s path
+    resolution before applying the shared read guard.
+    """
+    try:
+        resolved = _resolve_path_for_task(path, task_id)
+    except (OSError, ValueError, RuntimeError):
+        return get_read_block_error(path)
+    return get_read_block_error(str(resolved))
+
+
+def _filter_read_blocked_search_results(result, task_id: str = "default") -> int:
+    """Remove credential/cache/env paths from a SearchResult in-place."""
+    omitted = 0
+
+    if hasattr(result, "matches") and result.matches:
+        allowed_matches = []
+        for match in result.matches:
+            if _search_result_read_block_error(match.path, task_id):
+                omitted += 1
+                continue
+            allowed_matches.append(match)
+        result.matches = allowed_matches
+
+    if hasattr(result, "files") and result.files:
+        allowed_files = []
+        for file_path in result.files:
+            if _search_result_read_block_error(file_path, task_id):
+                omitted += 1
+                continue
+            allowed_files.append(file_path)
+        result.files = allowed_files
+
+    if hasattr(result, "counts") and result.counts:
+        allowed_counts = {}
+        for file_path, count in result.counts.items():
+            if _search_result_read_block_error(file_path, task_id):
+                omitted += 1
+                continue
+            allowed_counts[file_path] = count
+        result.counts = allowed_counts
+
+    return omitted
+
+
 def search_tool(pattern: str, target: str = "content", path: str = ".",
                 file_glob: str = None, limit: int = 50, offset: int = 0,
                 output_mode: str = "content", context: int = 0,
@@ -971,6 +1020,9 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
         governance_error = file_access_error(_resolved_path, "read")
         if governance_error:
             return tool_error(governance_error)
+        block_error = get_read_block_error(_resolved_path)
+        if block_error:
+            return json.dumps({"error": block_error}, ensure_ascii=False)
         offset, limit = normalize_search_pagination(offset, limit)
 
         # Track searches to detect *consecutive* repeated search loops.
@@ -1012,11 +1064,18 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             pattern=pattern, path=path, target=target, file_glob=file_glob,
             limit=limit, offset=offset, output_mode=output_mode, context=context
         )
+        omitted = _filter_read_blocked_search_results(result, task_id)
         if hasattr(result, 'matches'):
             for m in result.matches:
                 if hasattr(m, 'content') and m.content:
                     m.content = redact_sensitive_text(m.content, code_file=True)
         result_dict = result.to_dict()
+
+        if omitted:
+            result_dict["_omitted"] = (
+                f"{omitted} result(s) omitted because they target credential, "
+                "token, cache, or secret-bearing environment files."
+            )
 
         if count >= 3:
             result_dict["_warning"] = (
