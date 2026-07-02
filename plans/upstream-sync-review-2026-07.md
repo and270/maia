@@ -14,6 +14,20 @@ of the dashboard we forked. The strategy is selective porting, security first.
 
 ---
 
+## Progress (branch `feature/upstream-security-ports`, 2026-07-02)
+
+- [x] Approval hardening + threat-pattern engine (`tools/approval.py`, `tools/threat_patterns.py`) — wholesale adoption, 347 tests pass
+- [x] `/resume` + listing IDOR fix — adapted to Maia's `gateway/run.py` handler, admin `--all` override wired to `agent.governance` roles, 7 regression tests
+- [x] CVE floors: aiohttp 3.14.1 (RCE), starlette ≥1.0.1, cryptography ≥46.0.7 — uv.lock regenerated
+- [x] File-safety hardening (`agent/file_safety.py`) — credential read-deny, multi-root, mirror classifiers, search-result filtering; governance hooks re-injected; **deliberately kept** shell-profile + control-file write blocks that upstream relaxed (81e42335a)
+- [ ] threat_patterns consumers: upstream wires scanning into `agent/prompt_builder.py`, `tools/memory_tool.py`, `tools/cronjob_tools.py` (all fork-modified) — engine is ported, integration pending
+- [ ] file_tools cross-profile/sandbox-mirror soft-guard wiring (`_check_cross_profile_path`, `cross_profile=True` override) — classifiers ported, wiring pending
+- [ ] Credential/env isolation for spawned processes (`agent/auxiliary_client.py` — fork-modified)
+- [ ] Cron fail-closed validator + base_url exfil block (`cron/scheduler.py` — fork-modified)
+- [ ] Browser SSRF guards (`tools/browser_tool.py` — fork-modified)
+- [ ] Plugin tool-override consent (`hermes_cli/tools_config.py` — fork-modified)
+- [ ] ACP editor-edit approval + provenance (`acp_adapter/` — fork-modified)
+
 ## Tier 1 — Security fixes (port first, mostly cherry-pickable)
 
 These close real vulnerabilities directly relevant to a multi-user corporate deployment:
