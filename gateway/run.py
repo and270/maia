@@ -10735,6 +10735,117 @@ class GatewayRunner:
             else:
                 return f"📌 Session: `{session_id}`\nNo title set. Usage: `/title My Session Name`"
 
+    def _same_origin_chat(self, current: SessionSource, origin: Optional[SessionSource]) -> bool:
+        """True when *origin* shares *current*'s platform, chat, thread and —
+        whenever the session key for this source is per-user — participant.
+
+        Ported from upstream's /resume IDOR fix (hermes-agent c4f278c02).
+        Group and thread sessions that ``build_session_key`` isolates per
+        participant must also be scoped by participant here — otherwise a
+        co-member could resume another member's per-user group session. Only
+        an explicitly shared group/thread lets co-members share, mirroring the
+        key contract via ``is_shared_multi_user_session``.
+        """
+        if origin is None or current is None:
+            return False
+        if origin.platform != current.platform:
+            return False
+        if origin.chat_id != current.chat_id:
+            return False
+        # thread_id is part of the session key whenever present, so a session
+        # in one thread is a DIFFERENT session from another thread of the same
+        # parent chat — require thread equality before any sharing logic.
+        if str(getattr(current, "thread_id", "") or "") != str(
+            getattr(origin, "thread_id", "") or ""
+        ):
+            return False
+        chat_type = (getattr(current, "chat_type", "") or "").lower()
+        # DM-like chats are always per-user.
+        if chat_type in {"dm", "direct", "private", ""}:
+            if origin.user_id and current.user_id:
+                return origin.user_id == current.user_id
+            return True
+        # Non-DM: scope by participant whenever the session key for this
+        # source is per-user; is_shared_multi_user_session mirrors
+        # build_session_key's isolation rules exactly.
+        shared = is_shared_multi_user_session(
+            current,
+            group_sessions_per_user=getattr(self.config, "group_sessions_per_user", True),
+            thread_sessions_per_user=getattr(self.config, "thread_sessions_per_user", False),
+        )
+        if shared:
+            return True
+        # Per-user key: compare the participant id the key is actually built
+        # from (user_id_alt or user_id — Signal/Feishu key on user_id_alt).
+        cur_pid = current.user_id_alt or current.user_id
+        org_pid = origin.user_id_alt or origin.user_id
+        if cur_pid and org_pid:
+            return cur_pid == org_pid
+        # Per-user key but a participant id is missing on one side: cannot
+        # prove the same owner — fail closed.
+        return False
+
+    def _resume_caller_is_admin(self, source: SessionSource) -> bool:
+        """Whether *source* is a configured governance admin allowed to make a
+        cross-origin /resume (`--all`).
+
+        Cross-origin data access requires a real admin role under
+        ``governance.users``; ``actor_has_any_role`` fails closed when
+        governance is unconfigured or malformed.
+        """
+        try:
+            from agent.governance import Actor, actor_has_any_role
+
+            actor = Actor(
+                platform=source.platform.value if source.platform else "local",
+                user_id=str(getattr(source, "user_id", "") or ""),
+                user_name=str(getattr(source, "user_name", "") or ""),
+            )
+            return bool(actor.user_id) and actor_has_any_role(["admin"], actor=actor)
+        except Exception:
+            return False
+
+    def _resume_target_allowed(
+        self, source: SessionSource, target_id: str, allow_override: bool = False
+    ) -> bool:
+        """Whether *source* may resume the persisted session *target_id*.
+
+        A session id/title is a routing handle, not authority: without this
+        guard any authorized caller could bind their gateway session to
+        another user's persisted transcript and read it (IDOR). Uses the live
+        origin when the target is active; otherwise falls back to the DB
+        row's source + user_id. An identity-bearing caller is allowed only
+        when the row PROVES the same owner; a row lacking ownership data
+        fails closed. An explicit admin ``--all`` override bypasses scoping.
+        """
+        if allow_override and self._resume_caller_is_admin(source):
+            return True
+        try:
+            origin = self.session_store.origin_for_session_id(target_id)
+        except Exception:
+            origin = None
+        if isinstance(origin, SessionSource):
+            return self._same_origin_chat(source, origin)
+        # Inactive/persisted-only: best-effort scope by DB row source + user.
+        try:
+            row = self._session_db.get_session(target_id) or {}
+        except Exception:
+            return False
+        caller_src = source.platform.value if source.platform else None
+        row_src = row.get("source")
+        if row_src and caller_src and str(row_src) != str(caller_src):
+            return False  # different platform / source
+        caller_uid = str(getattr(source, "user_id", "") or "")
+        row_uid = str(row.get("user_id") or "")
+        if caller_uid:
+            # Identity-bearing caller: allow only when the row proves the
+            # same owner. Legacy NULL-owner rows are intentionally not
+            # resumable this way; use a live session or an admin override.
+            return bool(row_uid) and row_uid == caller_uid
+        # No caller identity (single-user / no-identity context): no
+        # cross-user boundary to enforce beyond the same-platform check.
+        return True
+
     async def _handle_resume_command(self, event: MessageEvent) -> str:
         """Handle /resume command — switch to a previously-named session."""
         if not self._session_db:
@@ -10744,14 +10855,30 @@ class GatewayRunner:
         session_key = self._session_key_for_source(source)
         name = event.get_command_args().strip()
 
+        # Explicit admin override: `/resume --all` lists every origin's
+        # sessions; `/resume --all <name>` resumes across origins. Honored
+        # only for a configured governance admin.
+        allow_all = False
+        if name == "--all" or name.startswith("--all "):
+            allow_all = self._resume_caller_is_admin(source)
+            name = name[len("--all"):].strip()
+
         if not name:
-            # List recent titled sessions for this user/platform
+            # List recent titled sessions scoped to this caller's origin so
+            # other users' session titles/previews are not enumerable.
             try:
                 user_source = source.platform.value if source.platform else None
                 sessions = self._session_db.list_sessions_rich(
-                    source=user_source, limit=10
+                    source=user_source, limit=50
                 )
-                titled = [s for s in sessions if s.get("title")]
+                titled = [
+                    s for s in sessions
+                    if s.get("title")
+                    and (
+                        allow_all
+                        or self._resume_target_allowed(source, str(s.get("id") or ""))
+                    )
+                ]
                 if not titled:
                     return (
                         "No named sessions found.\n"
@@ -10783,6 +10910,12 @@ class GatewayRunner:
             target_id = self._session_db.resolve_resume_session_id(target_id)
         except Exception as e:
             logger.debug("Failed to resolve resume continuation for %s: %s", target_id, e)
+
+        if not self._resume_target_allowed(source, target_id, allow_override=allow_all):
+            return (
+                f"⚠️ /resume blocked: '**{name}**' belongs to a different user or chat. "
+                "You can only resume sessions from this chat."
+            )
 
         # Check if already on that session
         current_entry = self.session_store.get_or_create_session(source)

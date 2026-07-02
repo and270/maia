@@ -1194,6 +1194,23 @@ class SessionStore:
 
         return new_entry
 
+    def origin_for_session_id(self, session_id: str) -> Optional[SessionSource]:
+        """Return the live origin of the entry currently bound to *session_id*.
+
+        Used by the /resume ownership guard: when the target session is still
+        active somewhere, its origin identifies the platform/chat/user it
+        belongs to. Returns None when no live entry points at the id (the
+        caller then falls back to the persisted DB row).
+        """
+        if not session_id:
+            return None
+        with self._lock:
+            self._ensure_loaded_locked()
+            for entry in self._entries.values():
+                if entry.session_id == session_id and isinstance(entry.origin, SessionSource):
+                    return entry.origin
+        return None
+
     def switch_session(self, session_key: str, target_session_id: str) -> Optional[SessionEntry]:
         """Switch a session key to point at an existing session ID.
 

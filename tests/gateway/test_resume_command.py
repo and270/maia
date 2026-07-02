@@ -77,8 +77,8 @@ class TestHandleResumeCommand:
         """With no argument, lists recently titled sessions."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("sess_001", "telegram")
-        db.create_session("sess_002", "telegram")
+        db.create_session("sess_001", "telegram", user_id="12345")
+        db.create_session("sess_002", "telegram", user_id="12345")
         db.set_session_title("sess_001", "Research")
         db.set_session_title("sess_002", "Coding")
 
@@ -95,7 +95,7 @@ class TestHandleResumeCommand:
         """With no arg and no titled sessions, shows instructions."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("sess_001", "telegram")  # No title
+        db.create_session("sess_001", "telegram", user_id="12345")  # No title
 
         event = _make_event(text="/resume")
         runner = _make_runner(session_db=db, event=event)
@@ -109,9 +109,9 @@ class TestHandleResumeCommand:
         """Resolves a title and switches to that session."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("old_session_abc", "telegram")
+        db.create_session("old_session_abc", "telegram", user_id="12345")
         db.set_session_title("old_session_abc", "My Project")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume My Project")
         runner = _make_runner(session_db=db, current_session_id="current_session_001",
@@ -131,7 +131,7 @@ class TestHandleResumeCommand:
         """Returns error for unknown session name."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume Nonexistent Session")
         runner = _make_runner(session_db=db, event=event)
@@ -144,7 +144,7 @@ class TestHandleResumeCommand:
         """Returns friendly message when already on the requested session."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
         db.set_session_title("current_session_001", "Active Project")
 
         event = _make_event(text="/resume Active Project")
@@ -159,11 +159,11 @@ class TestHandleResumeCommand:
         """Asking for 'My Project' when 'My Project #2' exists gets the latest."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("sess_v1", "telegram")
+        db.create_session("sess_v1", "telegram", user_id="12345")
         db.set_session_title("sess_v1", "My Project")
-        db.create_session("sess_v2", "telegram")
+        db.create_session("sess_v2", "telegram", user_id="12345")
         db.set_session_title("sess_v2", "My Project #2")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume My Project")
         runner = _make_runner(session_db=db, current_session_id="current_session_001",
@@ -182,12 +182,12 @@ class TestHandleResumeCommand:
         from hermes_state import SessionDB
 
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("compressed_root", "telegram")
+        db.create_session("compressed_root", "telegram", user_id="12345")
         db.set_session_title("compressed_root", "Compressed Work")
         db.end_session("compressed_root", "compression")
-        db.create_session("compressed_child", "telegram", parent_session_id="compressed_root")
+        db.create_session("compressed_child", "telegram", user_id="12345", parent_session_id="compressed_root")
         db.append_message("compressed_child", "user", "hello from continuation")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume Compressed Work")
         runner = _make_runner(
@@ -215,9 +215,9 @@ class TestHandleResumeCommand:
         """Switching sessions clears any cached running agent."""
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("old_session", "telegram")
+        db.create_session("old_session", "telegram", user_id="12345")
         db.set_session_title("old_session", "Old Work")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume Old Work")
         runner = _make_runner(session_db=db, current_session_id="current_session_001",
@@ -241,9 +241,9 @@ class TestHandleResumeCommand:
         import threading
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
-        db.create_session("old_session", "telegram")
+        db.create_session("old_session", "telegram", user_id="12345")
         db.set_session_title("old_session", "Old Work")
-        db.create_session("current_session_001", "telegram")
+        db.create_session("current_session_001", "telegram", user_id="12345")
 
         event = _make_event(text="/resume Old Work")
         runner = _make_runner(session_db=db, current_session_id="current_session_001",
@@ -256,4 +256,135 @@ class TestHandleResumeCommand:
         await runner._handle_resume_command(event)
 
         assert real_key not in runner._agent_cache
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# /resume ownership guard (IDOR) — ported from upstream c4f278c02
+# ---------------------------------------------------------------------------
+
+
+class TestResumeOwnershipGuard:
+    """A session id/title is a routing handle, not authority: /resume and the
+    titled-session listing must be scoped to the caller's own origin."""
+
+    @pytest.mark.asyncio
+    async def test_resume_other_users_session_blocked(self, tmp_path):
+        """A caller cannot resume a persisted session owned by another user."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("victim_sess", "telegram", user_id="99999")
+        db.set_session_title("victim_sess", "Victim Project")
+
+        event = _make_event(text="/resume Victim Project", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+        assert "blocked" in result
+        assert not runner.session_store.switch_session.called
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_resume_unowned_row_fails_closed(self, tmp_path):
+        """An identity-bearing caller cannot bind to a NULL-owner row."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("legacy_sess", "telegram")  # no user_id recorded
+        db.set_session_title("legacy_sess", "Legacy")
+
+        event = _make_event(text="/resume Legacy", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+        assert "blocked" in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_resume_cross_platform_blocked(self, tmp_path):
+        """A caller on one platform cannot resume another platform's session."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("slack_sess", "slack", user_id="12345")
+        db.set_session_title("slack_sess", "Slack Work")
+
+        event = _make_event(text="/resume Slack Work", user_id="12345",
+                            platform=Platform.TELEGRAM)
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+        assert "blocked" in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_listing_hides_other_users_sessions(self, tmp_path):
+        """The no-arg listing must not enumerate other users' titles/previews."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("mine", "telegram", user_id="12345")
+        db.set_session_title("mine", "My Research")
+        db.create_session("theirs", "telegram", user_id="99999")
+        db.set_session_title("theirs", "Secret Plans")
+
+        event = _make_event(text="/resume", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+        assert "My Research" in result
+        assert "Secret Plans" not in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_live_origin_other_dm_blocked(self, tmp_path):
+        """When the target is live in another user's DM, resume is blocked
+        even if the DB row would be ambiguous."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("live_sess", "telegram", user_id="12345")
+        db.set_session_title("live_sess", "Hijack Me")
+
+        event = _make_event(text="/resume Hijack Me", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        runner.config = MagicMock(group_sessions_per_user=True,
+                                  thread_sessions_per_user=False)
+        other_origin = SessionSource(
+            platform=Platform.TELEGRAM, user_id="99999", chat_id="55555",
+            user_name="other", chat_type="dm",
+        )
+        runner.session_store.origin_for_session_id = lambda sid: other_origin
+        result = await runner._handle_resume_command(event)
+        assert "blocked" in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_admin_all_override(self, tmp_path, monkeypatch):
+        """A configured governance admin may cross origins with --all."""
+        from hermes_state import SessionDB
+        import agent.governance as governance
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("victim_sess", "telegram", user_id="99999")
+        db.set_session_title("victim_sess", "Victim Project")
+
+        monkeypatch.setattr(governance, "load_governance_config", lambda: {
+            "enabled": True,
+            "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+            "users": {"telegram:12345": {"roles": ["admin"]}},
+        })
+
+        event = _make_event(text="/resume --all Victim Project", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        runner._evict_cached_agent = MagicMock()
+        runner._release_running_agent_state = MagicMock()
+        runner._clear_session_boundary_security_state = MagicMock()
+        result = await runner._handle_resume_command(event)
+        assert "blocked" not in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_non_admin_all_flag_still_blocked(self, tmp_path):
+        """--all from a non-admin caller must not bypass the guard."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("victim_sess", "telegram", user_id="99999")
+        db.set_session_title("victim_sess", "Victim Project")
+
+        event = _make_event(text="/resume --all Victim Project", user_id="12345")
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+        assert "blocked" in result
         db.close()
