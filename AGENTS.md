@@ -1,6 +1,6 @@
-# Hermes Agent - Development Guide
+# Maia - Development Guide
 
-Instructions for AI coding assistants and developers working on the hermes-agent codebase.
+Instructions for AI coding assistants and developers working on the Maia codebase (a corporate distribution based on the upstream hermes-agent codebase).
 
 ## Development Environment
 
