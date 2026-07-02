@@ -30,7 +30,7 @@ declare global {
 }
 let _sessionToken: string | null = null;
 const SESSION_HEADER = "X-Hermes-Session-Token";
-const SESSION_STORAGE_KEY = "coorporateHermes.dashboardSessionToken";
+const SESSION_STORAGE_KEY = "maiaHermes.dashboardSessionToken";
 
 export type DashboardAuthStatus = {
   auth_required: boolean;
@@ -157,7 +157,7 @@ export function setDashboardSessionToken(token: string): void {
   } catch {
     // sessionStorage can be disabled by policy; in-memory state still works.
   }
-  window.dispatchEvent(new CustomEvent("coorporate-hermes-dashboard-authenticated"));
+  window.dispatchEvent(new CustomEvent("maia-dashboard-authenticated"));
 }
 
 function setSessionHeader(headers: Headers, token: string): void {

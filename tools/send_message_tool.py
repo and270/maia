@@ -1609,10 +1609,10 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
     try:
         from gateway.platforms.feishu import FeishuAdapter, FEISHU_AVAILABLE
         if not FEISHU_AVAILABLE:
-            return {"error": "Feishu dependencies not installed. Run: pip install 'coorporate-hermes[feishu]'"}
+            return {"error": "Feishu dependencies not installed. Run: pip install 'maia[feishu]'"}
         from gateway.platforms.feishu import FEISHU_DOMAIN, LARK_DOMAIN
     except ImportError:
-        return {"error": "Feishu dependencies not installed. Run: pip install 'coorporate-hermes[feishu]'"}
+        return {"error": "Feishu dependencies not installed. Run: pip install 'maia[feishu]'"}
 
     media_files = media_files or []
 

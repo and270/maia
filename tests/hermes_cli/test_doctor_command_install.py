@@ -1,4 +1,4 @@
-"""Tests for the Command Installation check in coorporate doctor."""
+"""Tests for the Command Installation check in maia doctor."""
 
 import os
 import sys
@@ -23,7 +23,7 @@ def _setup_doctor_env(monkeypatch, tmp_path, venv_name="venv"):
     # Create a fake venv entry point
     venv_bin_dir = project / venv_name / "bin"
     venv_bin_dir.mkdir(parents=True, exist_ok=True)
-    hermes_bin = venv_bin_dir / "coorporate"
+    hermes_bin = venv_bin_dir / "maia"
     hermes_bin.write_text("#!/usr/bin/env python\n# entry point\n")
     hermes_bin.chmod(0o755)
 
@@ -77,7 +77,7 @@ class TestDoctorCommandInstallation:
         # Create the command link dir with correct symlink
         cmd_link_dir = tmp_path / ".local" / "bin"
         cmd_link_dir.mkdir(parents=True)
-        cmd_link = cmd_link_dir / "coorporate"
+        cmd_link = cmd_link_dir / "maia"
         cmd_link.symlink_to(hermes_bin)
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -98,7 +98,7 @@ class TestDoctorCommandInstallation:
         assert "Command Installation" in out
         assert "Venv entry point exists" in out
         assert "not found" in out
-        assert "coorporate doctor --fix" in out
+        assert "maia doctor --fix" in out
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Symlink check is Unix-only")
     def test_fix_creates_missing_symlink(self, monkeypatch, tmp_path):
@@ -111,7 +111,7 @@ class TestDoctorCommandInstallation:
         assert "Created symlink" in out
 
         # Verify the symlink was actually created
-        cmd_link = tmp_path / ".local" / "bin" / "coorporate"
+        cmd_link = tmp_path / ".local" / "bin" / "maia"
         assert cmd_link.is_symlink()
         assert cmd_link.resolve() == hermes_bin.resolve()
 
@@ -122,7 +122,7 @@ class TestDoctorCommandInstallation:
         # Create a symlink pointing to the wrong target
         cmd_link_dir = tmp_path / ".local" / "bin"
         cmd_link_dir.mkdir(parents=True)
-        cmd_link = cmd_link_dir / "coorporate"
+        cmd_link = cmd_link_dir / "maia"
         wrong_target = tmp_path / "wrong_hermes"
         wrong_target.write_text("#!/usr/bin/env python\n")
         cmd_link.symlink_to(wrong_target)
@@ -140,7 +140,7 @@ class TestDoctorCommandInstallation:
         # Create a symlink pointing to wrong target
         cmd_link_dir = tmp_path / ".local" / "bin"
         cmd_link_dir.mkdir(parents=True)
-        cmd_link = cmd_link_dir / "coorporate"
+        cmd_link = cmd_link_dir / "maia"
         wrong_target = tmp_path / "wrong_hermes"
         wrong_target.write_text("#!/usr/bin/env python\n")
         cmd_link.symlink_to(wrong_target)
@@ -196,26 +196,26 @@ class TestDoctorCommandInstallation:
         home, project, _ = _setup_doctor_env(monkeypatch, tmp_path, venv_name=".venv")
 
         # Create the command link with correct symlink
-        hermes_bin = project / ".venv" / "bin" / "coorporate"
+        hermes_bin = project / ".venv" / "bin" / "maia"
         cmd_link_dir = tmp_path / ".local" / "bin"
         cmd_link_dir.mkdir(parents=True)
-        cmd_link = cmd_link_dir / "coorporate"
+        cmd_link = cmd_link_dir / "maia"
         cmd_link.symlink_to(hermes_bin)
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
         out = _run_doctor(fix=False)
         assert "Venv entry point exists" in out
-        assert ".venv/bin/coorporate" in out
+        assert ".venv/bin/maia" in out
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Symlink check is Unix-only")
     def test_non_symlink_regular_file_shows_ok(self, monkeypatch, tmp_path):
-        """If ~/.local/bin/coorporate is a regular file (not symlink), accept it."""
+        """If ~/.local/bin/maia is a regular file (not symlink), accept it."""
         home, project, hermes_bin = _setup_doctor_env(monkeypatch, tmp_path)
 
         cmd_link_dir = tmp_path / ".local" / "bin"
         cmd_link_dir.mkdir(parents=True)
-        cmd_link = cmd_link_dir / "coorporate"
+        cmd_link = cmd_link_dir / "maia"
         cmd_link.write_text("#!/bin/sh\nexec python -m hermes_cli.main \"$@\"\n")
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)

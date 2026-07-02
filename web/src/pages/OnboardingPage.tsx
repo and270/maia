@@ -28,7 +28,7 @@ const STEPS = [
   {
     icon: MessageSquare,
     title: "Messaging gateway",
-    text: "Configure Slack, Discord, Mattermost, or Matrix credentials so users can talk to Coorporate Hermes from company channels.",
+    text: "Configure Slack, Discord, Mattermost, or Matrix credentials so users can talk to Maia from company channels.",
     to: "/gateway",
     action: "Open Gateway",
   },
@@ -104,7 +104,7 @@ export default function OnboardingPage() {
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <Badge tone="outline">AmpliIA</Badge>
-          <Badge tone="secondary">Coorporate Hermes</Badge>
+          <Badge tone="secondary">Maia</Badge>
         </div>
         <H2 variant="sm" className="flex items-center gap-2 text-muted-foreground">
           <ShieldCheck className="h-4 w-4" />
@@ -168,7 +168,7 @@ export default function OnboardingPage() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-sm border border-border bg-black/30 p-3 font-mono-ui text-xs normal-case text-foreground">
-            coorporate import ~/Downloads/hermes-export.tar.gz --from-hermes-export
+            maia import ~/Downloads/hermes-export.tar.gz --from-hermes-export
           </pre>
         </CardContent>
       </Card>

@@ -1,4 +1,4 @@
-# Coorporate Hermes CLI Configuration
+# Maia CLI Configuration
 # Copy this file to cli-config.yaml and customize as needed.
 # This file configures the CLI behavior. Environment variables in .env take precedence.
 
@@ -13,10 +13,10 @@ model:
   # Inference provider selection:
   #   "auto"         - Auto-detect from credentials (default)
   #   "openrouter"   - OpenRouter (requires: OPENROUTER_API_KEY or OPENAI_API_KEY)
-  #   "nous"         - Nous Portal OAuth (requires: coorporate login)
+  #   "nous"         - Nous Portal OAuth (requires: maia login)
   #   "nous-api"     - Nous Portal API key (requires: NOUS_API_KEY)
   #   "anthropic"    - Direct Anthropic API (requires: ANTHROPIC_API_KEY)
-  #   "openai-codex" - OpenAI Codex (requires: coorporate auth)
+  #   "openai-codex" - OpenAI Codex (requires: maia auth)
   #   "copilot"      - GitHub Copilot / GitHub Models (requires: GITHUB_TOKEN)
   #   "gemini"      - Use Google AI Studio direct (requires: GOOGLE_API_KEY or GEMINI_API_KEY)
   #   "zai"         - Use z.ai / ZhipuAI GLM models (requires: GLM_API_KEY)
@@ -154,7 +154,7 @@ model:
 # Commands run directly on your machine in the current directory
 # -----------------------------------------------------------------------------
 # Working directory behavior:
-#   - CLI (`coorporate` command): Uses "." (current directory where you run coorporate)
+#   - CLI (`maia` command): Uses "." (current directory where you run maia)
 #   - Messaging (Telegram/Discord): Uses MESSAGING_CWD from .env (default: home)
 terminal:
   backend: "local"
@@ -198,7 +198,7 @@ terminal:
 #   # chosen docker_image expects to start as root.
 #   docker_run_as_host_user: true
 #   # Optional: explicitly forward selected env vars into Docker.
-#   # These values come from your current shell first, then ~/.hermes/.env.
+#   # These values come from your current shell first, then ~/.maia/.env.
 #   # Warning: anything forwarded here is visible to commands run in the container.
 #   docker_forward_env:
 #     - "GITHUB_TOKEN"
@@ -393,10 +393,10 @@ prompt_caching:
 # Provider options:
 #   "auto"       - Best available: OpenRouter → Nous Portal → main endpoint (default)
 #   "openrouter" - Force OpenRouter (requires OPENROUTER_API_KEY)
-#   "nous"       - Force Nous Portal (requires: coorporate login)
+#   "nous"       - Force Nous Portal (requires: maia login)
 #   "gemini"      - Force Google AI Studio direct (requires: GOOGLE_API_KEY or GEMINI_API_KEY)
 #   "ollama-cloud" - Ollama Cloud (requires: OLLAMA_API_KEY)
-#   "codex"       - Force Codex OAuth (requires: coorporate model → Codex).
+#   "codex"       - Force Codex OAuth (requires: maia model → Codex).
 #                  Uses gpt-5.3-codex which supports vision.
 #   "main"       - Use your custom endpoint (OPENAI_BASE_URL + OPENAI_API_KEY).
 #                  Works with OpenAI API, local models, or any OpenAI-compatible
@@ -520,9 +520,9 @@ skills:
   creation_nudge_interval: 15
 
   # External skill directories — share skills across tools/agents without
-  # copying them into ~/.hermes/skills/.  Each path is expanded (~ and ${VAR})
+  # copying them into ~/.maia/skills/.  Each path is expanded (~ and ${VAR})
   # and resolved to an absolute path.  External dirs are read-only: skill
-  # creation always writes to ~/.hermes/skills/.  Local skills take precedence
+  # creation always writes to ~/.maia/skills/.  Local skills take precedence
   # when names collide.
   # external_dirs:
   #   - ~/.agents/skills
@@ -589,7 +589,7 @@ agent:
 # Toolsets
 # =============================================================================
 # Control which tools the agent has access to.
-# Use `coorporate tools` to interactively enable/disable tools per platform.
+# Use `maia tools` to interactively enable/disable tools per platform.
 
 # =============================================================================
 # Platform Toolsets (per-platform tool configuration)
@@ -662,8 +662,8 @@ platform_toolsets:
 # ─────────────────────────────────────────────────────────────────────────────
 # Available toolsets (use these names in platform_toolsets or the toolsets list)
 #
-# Run `coorporate chat --list-toolsets` to see all toolsets and their tools.
-# Run `coorporate chat --list-tools` to see every individual tool with descriptions.
+# Run `maia chat --list-toolsets` to see all toolsets and their tools.
+# Run `maia chat --list-tools` to see every individual tool with descriptions.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # INDIVIDUAL TOOLSETS (compose your own):
@@ -719,9 +719,9 @@ platform_toolsets:
 
 # NOTE: The top-level "toolsets" key is deprecated and ignored.
 # Tool configuration is managed per-platform via platform_toolsets above.
-# Use `coorporate tools` to configure interactively, or edit platform_toolsets directly.
+# Use `maia tools` to configure interactively, or edit platform_toolsets directly.
 #
-# CLI override: coorporate chat --toolsets terminal,web,file
+# CLI override: maia chat --toolsets terminal,web,file
 
 # =============================================================================
 # MCP (Model Context Protocol) Servers
@@ -855,7 +855,7 @@ delegation:
 #
 # Requires: pip install honcho-ai
 # Config: ~/.honcho/config.json (shared with Claude Code, Cursor, etc.)
-# API key: HONCHO_API_KEY in ~/.hermes/.env or ~/.honcho/config.json
+# API key: HONCHO_API_KEY in ~/.maia/.env or ~/.honcho/config.json
 #
 # Hermes-specific overrides (optional — most config comes from ~/.honcho/config.json):
 # honcho: {}
@@ -959,7 +959,7 @@ display:
   #   sisyphus       — Earthy stone-and-moss theme
   #   charizard      — Fiery orange dragon theme
   #
-  # Custom skins: drop a YAML file in ~/.hermes/skins/<name>.yaml
+  # Custom skins: drop a YAML file in ~/.maia/skins/<name>.yaml
   # Schema (all fields optional, missing values inherit from default):
   #
   #   name: my-theme
@@ -1031,7 +1031,7 @@ display:
 # dashboard:
 #   auth:
 #     enabled: true
-#     token_env: COORPORATE_DASHBOARD_TOKEN
+#     token_env: MAIA_DASHBOARD_TOKEN
 #     local_token_roles: [admin]
 #     read_roles: [auditor, manager, admin]
 #     manage_roles: [manager, admin]
@@ -1039,7 +1039,7 @@ display:
 #     channel_tokens:
 #       enabled: true
 #       ttl_minutes: 10
-#       dashboard_url: "https://hermes.company.example"
+#       dashboard_url: "https://maia.company.example"
 #       require_dm: true
 #       approval_required: true
 
@@ -1050,7 +1050,7 @@ display:
 # human-in-the-loop cron authorization nodes. Production deployments should set
 # default_file_policy: deny and explicitly list allowed company folders.
 # Normal file access administration is done from Dashboard -> File Access; this
-# YAML is the backing shape saved in <HERMES_HOME>/config.yaml.
+# YAML is the backing shape saved in <MAIA_HOME>/config.yaml.
 #
 # governance:
 #   enabled: true
@@ -1119,8 +1119,8 @@ display:
 # observability:
 #   enabled: true
 #   audit_log_enabled: true
-#   # Empty uses <HERMES_HOME>/logs/audit.jsonl. Relative paths resolve under
-#   # HERMES_HOME; absolute paths can point at a mounted logging volume.
+#   # Empty uses <MAIA_HOME>/logs/audit.jsonl. Relative paths resolve under
+#   # MAIA_HOME; absolute paths can point at a mounted logging volume.
 #   audit_log_path: ""
 #   redact_sensitive_values: true
 #   # Optional SIEM collector endpoint. Events are posted as JSON and still
@@ -1143,7 +1143,7 @@ display:
 #   on_session_finalize, on_session_reset, subagent_stop
 #
 # First-use consent: each (event, command) pair prompts once on a TTY, then
-# is persisted to ~/.hermes/shell-hooks-allowlist.json.  Non-interactive
+# is persisted to ~/.maia/shell-hooks-allowlist.json.  Non-interactive
 # runs (gateway, cron) need --accept-hooks, HERMES_ACCEPT_HOOKS=1, or the
 # hooks_auto_accept key below.
 #
@@ -1153,14 +1153,14 @@ display:
 # hooks:
 #   pre_tool_call:
 #     - matcher: "terminal"
-#       command: "~/.hermes/agent-hooks/block-rm-rf.sh"
+#       command: "~/.maia/agent-hooks/block-rm-rf.sh"
 #       timeout: 10
 #   post_tool_call:
 #     - matcher: "write_file|patch"
-#       command: "~/.hermes/agent-hooks/auto-format.sh"
+#       command: "~/.maia/agent-hooks/auto-format.sh"
 #   pre_llm_call:
-#     - command: "~/.hermes/agent-hooks/inject-cwd-context.sh"
+#     - command: "~/.maia/agent-hooks/inject-cwd-context.sh"
 #   subagent_stop:
-#     - command: "~/.hermes/agent-hooks/log-orchestration.sh"
+#     - command: "~/.maia/agent-hooks/log-orchestration.sh"
 #
 # hooks_auto_accept: false

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 3
 title: "Android / Termux"
-description: "Run Coorporate Hermes directly on an Android phone with Termux"
+description: "Run Maia directly on an Android phone with Termux"
 ---
 
 # Hermes on Android with Termux
 
-This is the tested path for running Coorporate Hermes directly on an Android phone through [Termux](https://termux.dev/).
+This is the tested path for running Maia directly on an Android phone through [Termux](https://termux.dev/).
 
 It gives you a working local CLI on the phone, plus the core extras that are currently known to install cleanly on Android.
 
@@ -46,9 +46,9 @@ That does not stop Hermes from working well as a phone-native CLI agent — it j
 Hermes now ships a Termux-aware installer path:
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 ```
 
 On Termux, the installer automatically:
@@ -82,7 +82,7 @@ Why these packages?
 ### 2. Clone Hermes
 
 ```bash
-git clone --recurse-submodules https://github.com/and270/coorporate-hermes.git
+git clone --recurse-submodules https://github.com/and270/maia.git
 cd hermes-agent
 ```
 
@@ -146,7 +146,7 @@ hermes
 hermes model
 ```
 
-Or set keys directly in `~/.hermes/.env`.
+Or set keys directly in `~/.maia/.env`.
 
 ### Re-run the full interactive setup wizard later
 

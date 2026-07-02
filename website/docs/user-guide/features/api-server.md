@@ -14,7 +14,7 @@ Your agent handles requests with its full toolset (terminal, file operations, we
 
 ### 1. Enable the API server
 
-Add to `~/.hermes/.env`:
+Add to `~/.maia/.env`:
 
 ```bash
 API_SERVER_ENABLED=true
@@ -201,7 +201,7 @@ Returns a machine-readable description of the API server's stable surface for ex
 ```json
 {
   "object": "hermes.api_server.capabilities",
-  "platform": "coorporate-hermes",
+  "platform": "maia",
   "model": "hermes-agent",
   "auth": {"type": "bearer", "required": true},
   "features": {

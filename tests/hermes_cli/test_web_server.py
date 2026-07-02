@@ -693,7 +693,7 @@ governance:
 """,
             encoding="utf-8",
         )
-        monkeypatch.setenv("COORPORATE_USER_ID", "admin-user")
+        monkeypatch.setenv("MAIA_USER_ID", "admin-user")
 
         cron_dir = hermes_home / "cron"
         monkeypatch.setattr(jobs_mod, "CRON_DIR", cron_dir)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate llms.txt and llms-full.txt for the Coorporate Hermes docs site.
+"""Generate llms.txt and llms-full.txt for the Maia docs site.
 
 Outputs:
   website/static/llms.txt        — short curated index of the docs, one link per page,
@@ -197,7 +197,7 @@ def resolve_desc(slug: str, provided: str | None) -> str:
 def emit_llms_index() -> str:
     """Build the short llms.txt index."""
     lines: list[str] = []
-    lines.append("# Coorporate Hermes")
+    lines.append("# Maia")
     lines.append("")
     lines.append(
         "> A private one-tenant corporate AI assistant by AmpliIA. A terminal-native "
@@ -210,8 +210,8 @@ def emit_llms_index() -> str:
     )
     lines.append("")
     lines.append(
-        "Install from the Coorporate Hermes repository, then run `./setup-coorporate.sh` "
-        "and `coorporate setup`."
+        "Install from the Maia repository, then run `./setup-maia.sh` "
+        "and `maia setup`."
     )
     lines.append("")
     lines.append("Website: https://ampliia.com/en/")
@@ -240,9 +240,9 @@ def emit_llms_full() -> str:
     """
     seen: set[Path] = set()
     chunks: list[str] = [
-        "# Coorporate Hermes — Full Documentation\n",
+        "# Maia — Full Documentation\n",
         (
-            "This file is the entire Coorporate Hermes documentation concatenated for LLM "
+            "This file is the entire Maia documentation concatenated for LLM "
             "context ingestion. Section order reflects docs-site navigation: Getting "
             "Started, Using Hermes, Features, Messaging, Integrations, Guides, "
             "Developer Guide, Reference, then everything else.\n"

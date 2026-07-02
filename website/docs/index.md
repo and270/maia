@@ -1,22 +1,22 @@
 ---
 slug: /
 sidebar_position: 0
-title: "Coorporate Hermes Documentation"
+title: "Maia Documentation"
 description: "AmpliIA's private one-tenant corporate assistant distribution with governance, knowledge approvals, guarded migration, cron approvals, and observability."
 hide_table_of_contents: true
 displayed_sidebar: docs
 ---
 
-# Coorporate Hermes
+# Maia
 
-Coorporate Hermes is an AmpliIA distribution for private one-tenant company deployments. It keeps the upstream Hermes Agent foundation and adds role-aware governance, governed corporate/team/user knowledge layers, guarded folder access, migration from upstream Hermes exports, human approval checkpoints for cron, and corporate audit logging.
+Maia is an AmpliIA distribution for private one-tenant company deployments. It keeps the upstream Hermes Agent foundation and adds role-aware governance, governed corporate/team/user knowledge layers, guarded folder access, migration from upstream Hermes exports, human approval checkpoints for cron, and corporate audit logging.
 
 <div style={{display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap'}}>
   <a href="/docs/enterprise/admin-onboarding" style={{display: 'inline-block', padding: '0.6rem 1.2rem', backgroundColor: '#FFD700', color: '#07070d', borderRadius: '8px', fontWeight: 600, textDecoration: 'none'}}>Admin Onboarding →</a>
   <a href="https://ampliia.com/en/" style={{display: 'inline-block', padding: '0.6rem 1.2rem', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '8px', textDecoration: 'none'}}>AmpliIA</a>
 </div>
 
-## What is Coorporate Hermes?
+## What is Maia?
 
 It is a private corporate assistant for a single organization. Administrators map gateway users to roles, define folder policies, require approvals for sensitive scheduled workflows, and review audit events before connecting external observability systems.
 
@@ -59,7 +59,7 @@ It is a private corporate assistant for a single organization. Administrators ma
 - **A closed learning loop** — Agent-curated memory with periodic nudges, autonomous skill creation, skill self-improvement during use, FTS5 cross-session recall with LLM summarization, and [Honcho](https://github.com/plastic-labs/honcho) dialectic user modeling
 - **Runs anywhere, not just your laptop** — 6 terminal backends: local, Docker, SSH, Daytona, Singularity, Modal. Daytona and Modal offer serverless persistence — your environment hibernates when idle, costing nearly nothing
 - **Lives where you do** — CLI, Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Mattermost, Email, SMS, DingTalk, Feishu, WeCom, BlueBubbles, Home Assistant, Microsoft Teams — 15+ platforms from one gateway
-- **AmpliIA distribution** — Coorporate Hermes is maintained by [AmpliIA](https://ampliia.com/en/) and preserves upstream Nous Research MIT attribution for Hermes Agent-derived components
+- **AmpliIA distribution** — Maia is maintained by [AmpliIA](https://ampliia.com/en/) and preserves upstream Nous Research MIT attribution for Hermes Agent-derived components
 - **Scheduled automations** — Built-in cron with delivery to any platform
 - **Delegates & parallelizes** — Spawn isolated subagents for parallel workstreams. Programmatic Tool Calling via `execute_code` collapses multi-step pipelines into single inference calls
 - **Open standard skills** — Compatible with [agentskills.io](https://agentskills.io). Skills are portable, shareable, and community-contributed via the Skills Hub

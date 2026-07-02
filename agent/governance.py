@@ -1,4 +1,4 @@
-"""Enterprise governance helpers for Coorporate Hermes.
+"""Enterprise governance helpers for Maia.
 
 This module keeps identity, role hierarchy, folder policies, and cron
 authorization checks in one place.  The runtime remains backward compatible:
@@ -128,10 +128,10 @@ def current_actor() -> Actor:
         user_name = ""
 
     # Explicit local/automation override for tests and service accounts.
-    user_override = os.getenv("COORPORATE_USER_ID", "").strip()
+    user_override = os.getenv("MAIA_USER_ID", "").strip()
     if user_override:
         user_id = user_override
-        platform = os.getenv("COORPORATE_USER_PLATFORM", platform or "local")
+        platform = os.getenv("MAIA_USER_PLATFORM", platform or "local")
 
     return Actor(platform=platform or "local", user_id=user_id, user_name=user_name)
 
@@ -591,7 +591,7 @@ def render_self_configuration_context(
     default_file_policy = str(cfg.get("default_file_policy", "allow") or "allow")
 
     lines = [
-        "## Live Coorporate Hermes Governance Context",
+        "## Live Maia Governance Context",
         "",
         (
             "This block is generated when the skill loads. Use it to choose "

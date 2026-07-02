@@ -6,7 +6,7 @@ sounddevice or system audio players.
 
 Dependencies (optional):
     pip install sounddevice numpy
-    or: pip install coorporate-hermes[voice]
+    or: pip install maia[voice]
 """
 
 import logging

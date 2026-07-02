@@ -1,31 +1,31 @@
 ---
 sidebar_position: 2
 title: "Installation"
-description: "Install Coorporate Hermes on Linux, macOS, WSL2, or Android via Termux"
+description: "Install Maia on Linux, macOS, WSL2, or Android via Termux"
 ---
 
 # Installation
 
-Get Coorporate Hermes up and running in under two minutes with the one-line installer.
+Get Maia up and running in under two minutes with the one-line installer.
 
 ## Quick Install
 
 ### Linux / macOS / WSL2
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 ```
 
 ### Android / Termux
 
-Coorporate Hermes ships a Termux-aware installer path too:
+Maia ships a Termux-aware installer path too:
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 ```
 
 The installer detects Termux automatically and switches to a tested Android flow:
@@ -38,7 +38,7 @@ The installer detects Termux automatically and switches to a tested Android flow
 If you want the fully explicit path, follow the dedicated [Termux guide](./termux.md).
 
 :::warning Windows
-Native Windows is **not supported**. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Coorporate Hermes from there. The install command above works inside WSL2.
+Native Windows is **not supported**. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Maia from there. The install command above works inside WSL2.
 :::
 
 ### What the Installer Does
@@ -51,10 +51,10 @@ Where the installer puts things depends on whether you're installing as a normal
 
 | Installer | Code lives at | `hermes` binary | Data directory |
 |---|---|---|---|
-| Per-user (normal) | `~/.hermes/hermes-agent/` | `~/.local/bin/hermes` (symlink) | `~/.hermes/` |
-| Root-mode (`sudo curl … \| sudo bash`) | `/usr/local/lib/hermes-agent/` | `/usr/local/bin/hermes` | `/root/.hermes/` (or `$HERMES_HOME`) |
+| Per-user (normal) | `~/.maia/hermes-agent/` | `~/.local/bin/hermes` (symlink) | `~/.maia/` |
+| Root-mode (`sudo curl … \| sudo bash`) | `/usr/local/lib/hermes-agent/` | `/usr/local/bin/hermes` | `/root/.hermes/` (or `$MAIA_HOME`) |
 
-The root-mode **FHS layout** (`/usr/local/lib/…`, `/usr/local/bin/hermes`) matches where other system-wide developer tools land on Linux. It's useful for shared-machine deployments where one system install should serve every user. Per-user config (auth, skills, sessions) still lives under each user's `~/.hermes/` or explicit `HERMES_HOME`.
+The root-mode **FHS layout** (`/usr/local/lib/…`, `/usr/local/bin/hermes`) matches where other system-wide developer tools land on Linux. It's useful for shared-machine deployments where one system install should serve every user. Per-user config (auth, skills, sessions) still lives under each user's `~/.maia/` or explicit `MAIA_HOME`.
 
 ### After Installation
 

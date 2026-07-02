@@ -1,4 +1,4 @@
-# Hermes Agent v0.2.0 (v2026.3.12)
+# Maia v0.2.0 (v2026.3.12)
 
 **Release Date:** March 12, 2026
 
@@ -157,7 +157,7 @@
 - Show update-available notice in CLI banner
 - Multiple named custom providers
 - Shell config detection improvement for PATH setup ([#317](https://github.com/NousResearch/hermes-agent/pull/317)) — @mehmetkr-31
-- Consistent HERMES_HOME and .env path resolution ([#51](https://github.com/NousResearch/hermes-agent/pull/51), [#48](https://github.com/NousResearch/hermes-agent/pull/48)) — @deankerr
+- Consistent MAIA_HOME and .env path resolution ([#51](https://github.com/NousResearch/hermes-agent/pull/51), [#48](https://github.com/NousResearch/hermes-agent/pull/48)) — @deankerr
 - Docker backend fix on macOS + subagent auth for Nous Portal ([#46](https://github.com/NousResearch/hermes-agent/pull/46)) — @rsavitt
 
 ---
@@ -299,7 +299,7 @@
 - Fix false positives in recursive delete detection ([#68](https://github.com/NousResearch/hermes-agent/pull/68)) — @cutepawss
 - Fix Ruff lint warnings across codebase ([#608](https://github.com/NousResearch/hermes-agent/pull/608)) — @JackTheGit
 - Fix Anthropic native base URL fail-fast ([#173](https://github.com/NousResearch/hermes-agent/pull/173)) — @adavyas
-- Fix install.sh creating ~/.hermes before moving Node.js directory ([#53](https://github.com/NousResearch/hermes-agent/pull/53)) — @JoshuaMart
+- Fix install.sh creating ~/.maia before moving Node.js directory ([#53](https://github.com/NousResearch/hermes-agent/pull/53)) — @JoshuaMart
 - Fix SystemExit traceback during atexit cleanup on Ctrl+C ([#55](https://github.com/NousResearch/hermes-agent/pull/55)) — @bierlingm
 - Restore missing MIT license file ([#620](https://github.com/NousResearch/hermes-agent/pull/620)) — @stablegenius49
 

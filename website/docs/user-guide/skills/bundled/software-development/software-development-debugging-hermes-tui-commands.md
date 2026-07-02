@@ -15,9 +15,9 @@ Debug Hermes TUI slash commands: Python, gateway, Ink UI.
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/software-development/debugging-hermes-tui-commands` |
+| Path | `skills/software-development/debugging-maia-tui-commands` |
 | Version | `1.0.0` |
-| Author | Coorporate Hermes |
+| Author | Maia |
 | License | MIT |
 | Tags | `debugging`, `hermes-agent`, `tui`, `slash-commands`, `typescript`, `python` |
 | Related skills | [`python-debugpy`](/docs/user-guide/skills/bundled/software-development/software-development-python-debugpy), [`node-inspect-debugger`](/docs/user-guide/skills/bundled/software-development/software-development-node-inspect-debugger), [`systematic-debugging`](/docs/user-guide/skills/bundled/software-development/software-development-systematic-debugging) |
@@ -165,7 +165,7 @@ After fixing:
 
 4. Execute the command and confirm:
    - Expected behavior fires
-   - Any persisted config updates correctly (`read_file ~/.hermes/config.yaml`)
+   - Any persisted config updates correctly (`read_file ~/.maia/config.yaml`)
    - Live UI state reflects the change immediately (not just after restart)
 
 5. If the command is also gateway-available, test it from at least one messaging platform (or run the gateway tests: `scripts/run_tests.sh tests/gateway/`).

@@ -1,11 +1,11 @@
 ---
 title: "Cron Authorization Panel"
-description: "Create scheduled jobs with role or user approval checkpoints in Coorporate Hermes."
+description: "Create scheduled jobs with role or user approval checkpoints in Maia."
 ---
 
 # Cron Authorization Panel
 
-Coorporate Hermes cron jobs can require human approval before each due run.
+Maia cron jobs can require human approval before each due run.
 
 In the dashboard Cron page:
 

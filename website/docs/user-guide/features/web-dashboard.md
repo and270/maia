@@ -6,12 +6,12 @@ description: "Browser-based dashboard for managing configuration, API keys, sess
 
 # Web Dashboard
 
-The web dashboard is a browser-based UI for managing your Coorporate Hermes installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
+The web dashboard is a browser-based UI for managing your Maia installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
 
 ## Quick Start
 
 ```bash
-coorporate dashboard
+maia dashboard
 ```
 
 This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine and binds to localhost by default.
@@ -24,24 +24,24 @@ This starts a local web server and opens `http://127.0.0.1:9119` in your browser
 | `--host` | `127.0.0.1` | Bind address |
 | `--no-open` | — | Don't auto-open the browser |
 | `--insecure` | off | Allow non-localhost binding without `dashboard.auth` (**DANGEROUS** — exposes API keys, config, and server file controls) |
-| `--tui` | off | Expose the in-browser Chat tab (embedded `coorporate --tui` via PTY/WebSocket). Alternatively set `HERMES_DASHBOARD_TUI=1`. |
+| `--tui` | off | Expose the in-browser Chat tab (embedded `maia --tui` via PTY/WebSocket). Alternatively set `HERMES_DASHBOARD_TUI=1`. |
 
 ```bash
 # Custom port
-coorporate dashboard --port 8080
+maia dashboard --port 8080
 
 # Bind to all interfaces only after dashboard.auth is configured
-coorporate dashboard --host 0.0.0.0
+maia dashboard --host 0.0.0.0
 
 # Start without opening browser
-coorporate dashboard --no-open
+maia dashboard --no-open
 ```
 
 ## Protected Intranet or Public Serving
 
-The dashboard is an administrative surface, not the normal employee interface. Most users should talk to Coorporate Hermes through a configured gateway; expose the dashboard only to admins, auditors, managers, or delegated team leads who need web administration.
+The dashboard is an administrative surface, not the normal employee interface. Most users should talk to Maia through a configured gateway; expose the dashboard only to admins, auditors, managers, or delegated team leads who need web administration.
 
-The dashboard can read and change `.env`, `config.yaml`, server folder policies, cron jobs, knowledge approvals, plugins, and model settings. Coorporate Hermes refuses to bind the dashboard to a non-loopback interface unless protected dashboard auth is configured, unless the operator explicitly uses `--insecure`.
+The dashboard can read and change `.env`, `config.yaml`, server folder policies, cron jobs, knowledge approvals, plugins, and model settings. Maia refuses to bind the dashboard to a non-loopback interface unless protected dashboard auth is configured, unless the operator explicitly uses `--insecure`.
 
 Token-based protected mode:
 
@@ -49,7 +49,7 @@ Token-based protected mode:
 dashboard:
   auth:
     enabled: true
-    token_env: COORPORATE_DASHBOARD_TOKEN
+    token_env: MAIA_DASHBOARD_TOKEN
     local_token_roles: [admin]
     read_roles: [auditor, manager, admin]
     manage_roles: [manager, admin]
@@ -57,8 +57,8 @@ dashboard:
 ```
 
 ```bash
-export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
-coorporate dashboard --host 0.0.0.0 --no-open
+export MAIA_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+maia dashboard --host 0.0.0.0 --no-open
 ```
 
 Role gates:
@@ -78,14 +78,14 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 ```
 
-Setup flow: the user runs `/dashboard` in a private/direct channel. Coorporate Hermes creates a pending request in **Dashboard Access** with the authenticated actor key, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+155****4567`. A system admin approves the request in the dashboard, assigns roles and teams, and can later revoke or restore access. After approval, the user runs `/dashboard` again to receive a one-time token for the normal login form. This flow is for people who need dashboard access; ordinary gateway users can keep using the bot without a dashboard token.
+Setup flow: the user runs `/dashboard` in a private/direct channel. Maia creates a pending request in **Dashboard Access** with the authenticated actor key, such as `discord:99887766`, `telegram:987654321`, or `whatsapp:+155****4567`. A system admin approves the request in the dashboard, assigns roles and teams, and can later revoke or restore access. After approval, the user runs `/dashboard` again to receive a one-time token for the normal login form. This flow is for people who need dashboard access; ordinary gateway users can keep using the bot without a dashboard token.
 
-Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or a reverse proxy. It provides trusted-header integration for companies that already operate that access layer. Configure `dashboard.auth.trusted_user_header`, bind Coorporate Hermes to `127.0.0.1` behind the TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
+Maia does not provide SSO, VPN, zero-trust networking, or a reverse proxy. It provides trusted-header integration for companies that already operate that access layer. Configure `dashboard.auth.trusted_user_header`, bind Maia to `127.0.0.1` behind the TLS reverse proxy that strips spoofed client headers, then map identities in `governance.users` with keys such as `sso:alice@example.com`. Use `allow_trusted_headers_on_public_bind: true` only when the proxy is the only network path to the dashboard.
 
 Mutating dashboard API calls, login/logout, and denied role checks are written to the audit log when observability audit logging is enabled.
 
@@ -94,12 +94,12 @@ Mutating dashboard API calls, login/logout, and denied role checks are written t
 The default `hermes-agent` install does not ship the HTTP stack or PTY helper — those are optional extras. The **web dashboard** needs FastAPI and Uvicorn (`web` extra). The **Chat** tab also needs `ptyprocess` to spawn the embedded TUI behind a pseudo-terminal (`pty` extra on POSIX). Install both with:
 
 ```bash
-pip install 'coorporate-hermes[web,pty]'
+pip install 'maia[web,pty]'
 ```
 
-The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install coorporate-hermes[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
+The `web` extra pulls in FastAPI/Uvicorn; `pty` pulls in `ptyprocess` (POSIX) or `pywinpty` (native Windows — note that the embedded TUI itself still requires WSL). `pip install maia[all]` includes both extras and is the easiest path if you also want messaging/voice/etc.
 
-When you run `coorporate dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
+When you run `maia dashboard` without the dependencies, it will tell you what to install. If the frontend hasn't been built yet and `npm` is available, it builds automatically on first launch.
 
 ## Pages
 
@@ -121,7 +121,7 @@ The **Chat** tab embeds the full Hermes TUI (the same interface you get from `he
 **How it works:**
 
 - `/api/pty` opens a WebSocket authenticated with the dashboard's session token
-- The server spawns `coorporate --tui` behind a POSIX pseudo-terminal
+- The server spawns `maia --tui` behind a POSIX pseudo-terminal
 - Keystrokes travel to the PTY; ANSI output streams back to the browser
 - xterm.js's WebGL renderer paints each cell to an integer-pixel grid; mouse tracking (SGR 1006), wide characters (Unicode 11), and box-drawing glyphs all render natively
 - Resizing the browser window resizes the TUI via the `@xterm/addon-fit` addon
@@ -131,7 +131,7 @@ The **Chat** tab embeds the full Hermes TUI (the same interface you get from `he
 **Prerequisites:**
 
 - Node.js (same requirement as `hermes --tui`; the TUI bundle is built on first launch)
-- `ptyprocess` — installed by the `pty` extra (`pip install 'coorporate-hermes[web,pty]'`, or `[all]` covers both)
+- `ptyprocess` — installed by the `pty` extra (`pip install 'maia[web,pty]'`, or `[all]` covers both)
 - POSIX kernel (Linux, macOS, or WSL). Native Windows Python is not supported — use WSL.
 
 Close the browser tab and the PTY is reaped cleanly on the server. Re-opening spawns a fresh session.
@@ -221,7 +221,7 @@ Create and manage scheduled cron jobs that run agent prompts on a recurring sche
 
 ### File Access
 
-Manage the server-side folder policies that bound what Coorporate Hermes can read, search, write, patch, or delete. The page saves to `<HERMES_HOME>/config.yaml` under `governance`; the dashboard is the normal way to edit it.
+Manage the server-side folder policies that bound what Maia can read, search, write, patch, or delete. The page saves to `<MAIA_HOME>/config.yaml` under `governance`; the dashboard is the normal way to edit it.
 
 There is one File Access page. The logged-in dashboard actor determines what it shows:
 
@@ -255,7 +255,7 @@ Team leader workflow:
 
 Team leaders cannot change the global default, edit another team's root, grant role-wide access such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
-Example backing YAML in `<HERMES_HOME>/config.yaml`:
+Example backing YAML in `<MAIA_HOME>/config.yaml`:
 
 ```yaml
 governance:
@@ -320,7 +320,7 @@ Decision rules:
 
 ### Skills
 
-Browse, search, and toggle skills and toolsets. Skills are loaded from `~/.hermes/skills/` and grouped by category.
+Browse, search, and toggle skills and toolsets. Skills are loaded from `~/.maia/skills/` and grouped by category.
 
 - **Search** — filter skills and toolsets by name, description, or category
 - **Category filter** — click category pills to narrow the list (e.g. MLOps, MCP, Red Teaming, AI)
@@ -340,7 +340,7 @@ You → /reload
   Reloaded .env (3 var(s) updated)
 ```
 
-This re-reads `~/.hermes/.env` into the running process's environment. Useful when you've added a new provider key via the dashboard and want to use it immediately.
+This re-reads `~/.maia/.env` into the running process's environment. Useful when you've added a new provider key via the dashboard and want to use it immediately.
 
 ## REST API
 
@@ -458,7 +458,7 @@ If you're contributing to the web dashboard frontend:
 
 ```bash
 # Terminal 1: start the backend API
-coorporate dashboard --no-open
+maia dashboard --no-open
 
 # Terminal 2: start the Vite dev server with HMR
 cd web/
@@ -472,7 +472,7 @@ The frontend is built with React 19, TypeScript, Tailwind CSS v4, and shadcn/ui-
 
 ## Automatic Build on Update
 
-When you run `coorporate update`, the web frontend is automatically rebuilt if `npm` is available. This keeps the dashboard in sync with code updates. If `npm` isn't installed, the update skips the frontend build and `coorporate dashboard` will build it on first launch.
+When you run `maia update`, the web frontend is automatically rebuilt if `npm` is available. This keeps the dashboard in sync with code updates. If `npm` isn't installed, the update skips the frontend build and `maia dashboard` will build it on first launch.
 
 ## Themes & plugins
 

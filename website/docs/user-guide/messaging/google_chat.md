@@ -1,12 +1,12 @@
 ---
 sidebar_position: 12
 title: "Google Chat"
-description: "Set up Coorporate Hermes as a Google Chat bot using Cloud Pub/Sub"
+description: "Set up Maia as a Google Chat bot using Cloud Pub/Sub"
 ---
 
 # Google Chat Setup
 
-Connect Coorporate Hermes to Google Chat as a bot. The integration uses Cloud Pub/Sub
+Connect Maia to Google Chat as a bot. The integration uses Cloud Pub/Sub
 pull subscriptions for inbound events and the Chat REST API for outbound messages.
 Equivalent ergonomics to Slack Socket Mode or Telegram long-polling: your Hermes
 process does not need a public URL, a tunnel, or a TLS certificate. It connects,
@@ -64,7 +64,7 @@ Both are free for the volumes a personal bot generates.
 
 After creation, open the SA, go to **Keys → Add Key → Create new key → JSON** and
 download the file. Save it somewhere only Hermes can read (e.g.,
-`~/.hermes/google-chat-sa.json`, `chmod 600`).
+`~/.maia/google-chat-sa.json`, `chmod 600`).
 
 :::caution There is NO "Chat Bot Caller" role
 A common mistake is to search for a Chat-specific IAM role and grant it at the
@@ -144,7 +144,7 @@ self-message filtering.
 
 ## Step 9: Configure Hermes
 
-Add the Google Chat section to `~/.hermes/.env`:
+Add the Google Chat section to `~/.maia/.env`:
 
 ```bash
 # Required
@@ -167,7 +167,7 @@ back to `GOOGLE_APPLICATION_CREDENTIALS` — use whichever convention you prefer
 Install Hermes with the optional dependencies:
 
 ```bash
-pip install 'coorporate-hermes[google_chat]'
+pip install 'maia[google_chat]'
 ```
 
 Start the gateway:
@@ -241,7 +241,7 @@ python -m gateway.platforms.google_chat_user_oauth \
     --client-secret /path/to/client_secret.json
 ```
 
-That writes `~/.hermes/google_chat_user_client_secret.json`. This is shared
+That writes `~/.maia/google_chat_user_client_secret.json`. This is shared
 infrastructure — it identifies the OAuth *app*, not any individual user. One
 file per host is enough no matter how many users authorize later.
 
@@ -259,7 +259,7 @@ Each user runs the flow once, in their own DM with the bot:
    into chat as `/setup-files <PASTED_URL>`. The bot exchanges it for a
    refresh token.
 
-The token lands at `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`.
+The token lands at `~/.maia/google_chat_user_tokens/<sanitized_email>.json`.
 Subsequent file requests in that user's DM use *their* token, so the bot
 uploads as them and the message lands in their space.
 
@@ -276,7 +276,7 @@ on purpose.
 ### Multi-user behavior
 
 When the asker has no per-user token yet, the bot falls back to a legacy
-single-user token at `~/.hermes/google_chat_user_token.json` (if present from
+single-user token at `~/.maia/google_chat_user_token.json` (if present from
 a pre-multi-user install). When neither is available, the bot posts a clear
 text notice telling the asker to run `/setup-files`.
 
@@ -365,6 +365,6 @@ The auth code is single-use and short-lived (typically a few minutes). Send
 - **User OAuth scope**: the per-user attachment flow requests *only*
   `chat.messages.create` — the minimum that covers `media.upload` plus the
   follow-up `messages.create`. Tokens are persisted as plain JSON at
-  `~/.hermes/google_chat_user_tokens/<sanitized_email>.json` (filesystem
+  `~/.maia/google_chat_user_tokens/<sanitized_email>.json` (filesystem
   permissions are the protection — same model as the SA key file). Each
   token is owned by exactly one user; revoke is scoped to that user.

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-_DOCS_BASE = "https://github.com/and270/coorporate-hermes/tree/main/website/docs"
+_DOCS_BASE = "https://github.com/and270/maia/tree/main/website/docs"
 
 
 def _model_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -185,12 +185,12 @@ def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     print_info("The interactive wizard cannot be used here.")
     print()
     print_info("Configure Hermes using environment variables or config commands:")
-    print_info("  coorporate config set model.provider custom")
-    print_info("  coorporate config set model.base_url http://localhost:8080/v1")
-    print_info("  coorporate config set model.default your-model-name")
+    print_info("  maia config set model.provider custom")
+    print_info("  maia config set model.base_url http://localhost:8080/v1")
+    print_info("  maia config set model.default your-model-name")
     print()
     print_info("Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.")
-    print_info("Run 'coorporate setup' in an interactive terminal to use the full wizard.")
+    print_info("Run 'maia setup' in an interactive terminal to use the full wizard.")
     print()
 
 
@@ -354,7 +354,7 @@ def _prompt_api_key(var: dict):
         save_env_value(var["name"], value)
         print_success("  ✓ Saved")
     else:
-        print_warning("  Skipped (configure later with 'coorporate setup')")
+        print_warning("  Skipped (configure later with 'maia setup')")
 
 
 def _print_setup_summary(config: dict, hermes_home):
@@ -377,7 +377,7 @@ def _print_setup_summary(config: dict, hermes_home):
     if _vision_backends:
         tool_status.append(("Vision (image analysis)", True, None))
     else:
-        tool_status.append(("Vision (image analysis)", False, "run 'coorporate setup' to configure"))
+        tool_status.append(("Vision (image analysis)", False, "run 'maia setup' to configure"))
 
     # Mixture of Agents — requires OpenRouter specifically (calls multiple models)
     if get_env_value("OPENROUTER_API_KEY"):
@@ -479,7 +479,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if neutts_ok:
             tool_status.append(("Text-to-Speech (NeuTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'coorporate setup tts'"))
+            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'maia setup tts'"))
     elif tts_provider == "kittentts":
         try:
             import importlib.util
@@ -489,7 +489,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if kittentts_ok:
             tool_status.append(("Text-to-Speech (KittenTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'coorporate setup tts'"))
+            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'maia setup tts'"))
     else:
         tool_status.append(("Text-to-Speech (Edge TTS)", True, None))
 
@@ -499,7 +499,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if subscription_features.modal.direct_override:
             tool_status.append(("Modal Execution (direct Modal)", True, None))
         else:
-            tool_status.append(("Modal Execution", False, "run 'coorporate setup terminal'"))
+            tool_status.append(("Modal Execution", False, "run 'maia setup terminal'"))
     elif managed_nous_tools_enabled() and subscription_features.nous_auth_present:
         tool_status.append(("Modal Execution (optional via Nous subscription)", True, None))
 
@@ -559,7 +559,7 @@ def _print_setup_summary(config: dict, hermes_home):
     disabled_tools = [(name, var) for name, avail, var in tool_status if not avail]
     if disabled_tools:
         print_warning(
-            "Some tools are disabled. Run 'coorporate setup tools' to configure them,"
+            "Some tools are disabled. Run 'maia setup tools' to configure them,"
         )
         from hermes_constants import display_hermes_home as _dhh
         print_warning(f"or edit {_dhh()}/.env directly to add the missing API keys.")
@@ -599,17 +599,17 @@ def _print_setup_summary(config: dict, hermes_home):
     print()
     print(color("📝 To edit your configuration:", Colors.CYAN, Colors.BOLD))
     print()
-    print(f"   {color('coorporate setup', Colors.GREEN)}          Re-run the full wizard")
-    print(f"   {color('coorporate setup model', Colors.GREEN)}    Change model/provider")
-    print(f"   {color('coorporate setup terminal', Colors.GREEN)} Change terminal backend")
-    print(f"   {color('coorporate setup gateway', Colors.GREEN)}  Configure messaging")
-    print(f"   {color('coorporate setup tools', Colors.GREEN)}    Configure tool providers")
+    print(f"   {color('maia setup', Colors.GREEN)}          Re-run the full wizard")
+    print(f"   {color('maia setup model', Colors.GREEN)}    Change model/provider")
+    print(f"   {color('maia setup terminal', Colors.GREEN)} Change terminal backend")
+    print(f"   {color('maia setup gateway', Colors.GREEN)}  Configure messaging")
+    print(f"   {color('maia setup tools', Colors.GREEN)}    Configure tool providers")
     print()
     print(f"   {color('hermes config', Colors.GREEN)}         View current settings")
     print(
         f"   {color('hermes config edit', Colors.GREEN)}    Open config in your editor"
     )
-    print(f"   {color('coorporate config set <key> <value>', Colors.GREEN)}")
+    print(f"   {color('maia config set <key> <value>', Colors.GREEN)}")
     print("                          Set a specific value")
     print()
     print("   Or edit the files directly:")
@@ -622,7 +622,7 @@ def _print_setup_summary(config: dict, hermes_home):
     print(color("🚀 Ready to go!", Colors.CYAN, Colors.BOLD))
     print()
     print(f"   {color('hermes', Colors.GREEN)}              Start chatting")
-    print(f"   {color('coorporate gateway', Colors.GREEN)}      Start messaging gateway")
+    print(f"   {color('maia gateway', Colors.GREEN)}      Start messaging gateway")
     print(f"   {color('hermes doctor', Colors.GREEN)}       Check for issues")
     print()
 
@@ -998,7 +998,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
             else:
                 print_info("Skipped — vision won't be available")
         else:
-            print_info("Skipped — add later with 'coorporate setup' or configure AUXILIARY_VISION_* settings")
+            print_info("Skipped — add later with 'maia setup' or configure AUXILIARY_VISION_* settings")
 
 
     # Tool Gateway prompt is already shown by _model_flow_nous() above.
@@ -1212,7 +1212,7 @@ def _setup_tts_provider(config: dict):
                 from hermes_constants import display_hermes_home as _dhh
                 print_warning(
                     "No xAI API key provided for TTS. Configure XAI_API_KEY via "
-                    f"coorporate setup model or {_dhh()}/.env to use xAI TTS. "
+                    f"maia setup model or {_dhh()}/.env to use xAI TTS. "
                     "Falling back to Edge TTS."
                 )
                 selected = "edge"
@@ -1576,7 +1576,7 @@ def setup_terminal_backend(config: dict):
     elif selected_backend == "vercel_sandbox":
         print_success("Terminal backend: Vercel Sandbox")
         print_info("Cloud microVM sandboxes with snapshot-backed filesystem persistence.")
-        print_info("Requires the optional SDK: pip install 'coorporate-hermes[vercel]'")
+        print_info("Requires the optional SDK: pip install 'maia[vercel]'")
 
         try:
             __import__("vercel")
@@ -1600,7 +1600,7 @@ def setup_terminal_backend(config: dict):
             if result.returncode == 0:
                 print_success("vercel SDK installed")
             else:
-                print_warning("Install failed — run manually: pip install 'coorporate-hermes[vercel]'")
+                print_warning("Install failed — run manually: pip install 'maia[vercel]'")
                 if result.stderr:
                     print_info(f"  Error: {result.stderr.strip().splitlines()[-1]}")
 
@@ -1697,7 +1697,7 @@ def _apply_default_agent_settings(config: dict):
     print_info("  Tool progress: all")
     print_info("  Compression threshold: 0.50")
     print_info("  Session reset: inactivity (1440 min) + daily (4:00)")
-    print_info("  Run `coorporate setup agent` later to customize.")
+    print_info("  Run `maia setup agent` later to customize.")
 
 
 def setup_agent_settings(config: dict):
@@ -2041,7 +2041,7 @@ def _setup_slack():
     print_info("   3. Install to Workspace: Settings → Install App")
     print_info("   4. After installing, invite the bot to channels: /invite @YourBot")
     print()
-    print_info("   Full guide: https://github.com/and270/coorporate-hermes/tree/main/website/docs/user-guide/messaging/slack/")
+    print_info("   Full guide: https://github.com/and270/maia/tree/main/website/docs/user-guide/messaging/slack/")
     print()
 
     # Generate and write manifest up-front so the user can paste it into
@@ -2342,7 +2342,7 @@ def _setup_webhooks():
     print_warning("   internet. For security, run the gateway in a sandboxed environment")
     print_warning("   (Docker, VM, etc.) to limit blast radius from prompt injection.")
     print()
-    print_info("   Full guide: https://github.com/and270/coorporate-hermes/tree/main/website/docs/user-guide/messaging/webhooks/")
+    print_info("   Full guide: https://github.com/and270/maia/tree/main/website/docs/user-guide/messaging/webhooks/")
     print()
 
     port = prompt("Webhook port (default 8644)")
@@ -2369,7 +2369,7 @@ def _setup_webhooks():
     print_info("      http://your-server:8644/webhooks/<route-name>")
     print()
     print_info("   Route configuration guide:")
-    print_info("   https://github.com/and270/coorporate-hermes/tree/main/website/docs/user-guide/messaging/webhooks/#configuring-routes")
+    print_info("   https://github.com/and270/maia/tree/main/website/docs/user-guide/messaging/webhooks/#configuring-routes")
     print()
     print_info("   Open config in your editor:  hermes config edit")
     print_info("   Open config in your editor:  hermes config edit")
@@ -2388,7 +2388,7 @@ def setup_gateway(config: dict):
 
     print_header("Messaging Platforms")
     print_info(
-        "Connect to corporate messaging platforms to chat with Coorporate Hermes from anywhere."
+        "Connect to corporate messaging platforms to chat with Maia from anywhere."
     )
     print_info("Recommended for teams: Slack, Discord, Mattermost, or Matrix.")
     print_info("Toggle with Space, confirm with Enter.")
@@ -2408,7 +2408,7 @@ def setup_gateway(config: dict):
     selected = prompt_checklist("Select platforms to configure:", items, pre_selected)
 
     if not selected:
-        print_info("No platforms selected. Run 'coorporate setup gateway' later to configure.")
+        print_info("No platforms selected. Run 'maia setup gateway' later to configure.")
         return
 
     selected_platforms = [platforms[idx] for idx in selected]
@@ -2468,7 +2468,7 @@ def setup_gateway(config: dict):
             print_info("   Set one later with /set-home in your chat, or:")
             for plat in missing_home:
                 print_info(
-                    f"     coorporate config set {plat.upper()}_HOME_CHANNEL <channel_id>"
+                    f"     maia config set {plat.upper()}_HOME_CHANNEL <channel_id>"
                 )
 
         # Offer to install the gateway as a system service
@@ -2583,30 +2583,30 @@ def setup_gateway(config: dict):
                             print_error(f"  Start failed: {e}")
                 except Exception as e:
                     print_error(f"  Install failed: {e}")
-                    print_info("  You can try manually: coorporate gateway install")
+                    print_info("  You can try manually: maia gateway install")
             else:
-                print_info("  You can install later: coorporate gateway install")
+                print_info("  You can install later: maia gateway install")
                 if supports_systemd:
-                    print_info("  Or as a boot-time service: sudo coorporate gateway install --system")
-                print_info("  Or run in foreground:  coorporate gateway")
+                    print_info("  Or as a boot-time service: sudo maia gateway install --system")
+                print_info("  Or run in foreground:  maia gateway")
         else:
             from hermes_constants import is_container
             if is_container():
                 print_info("Start the gateway to bring your bots online:")
-                print_info("   coorporate gateway run      # Run as container main process")
+                print_info("   maia gateway run      # Run as container main process")
                 print_info("")
                 print_info("For automatic restarts, use a Docker restart policy:")
                 print_info("   docker run --restart unless-stopped ...")
                 print_info("   docker restart <container>  # Manual restart")
             else:
                 print_info("Start the gateway to bring your bots online:")
-                print_info("   coorporate gateway          # Run in foreground")
+                print_info("   maia gateway          # Run in foreground")
 
         print_info("━" * 50)
     else:
         print_warning("No gateway platform was configured.")
         print_info(
-            "Run `coorporate setup gateway` and complete Slack, Discord, "
+            "Run `maia setup gateway` and complete Slack, Discord, "
             "Mattermost, Matrix, or another gateway before inviting users."
         )
 
@@ -3047,13 +3047,13 @@ def run_setup_wizard(args):
     """Run the interactive setup wizard.
 
     Supports full, quick, and section-specific setup:
-      coorporate setup           — full or quick (auto-detected)
-      coorporate setup model     — just model/provider
-      coorporate setup tts       — just text-to-speech
-      coorporate setup terminal  — just terminal backend
-      coorporate setup gateway   — just messaging platforms
-      coorporate setup tools     — just tool configuration
-      coorporate setup agent     — just agent settings
+      maia setup           — full or quick (auto-detected)
+      maia setup model     — just model/provider
+      maia setup tts       — just text-to-speech
+      maia setup terminal  — just terminal backend
+      maia setup gateway   — just messaging platforms
+      maia setup tools     — just tool configuration
+      maia setup agent     — just agent settings
     """
     from hermes_cli.config import is_managed, managed_error
     if is_managed():
@@ -3190,7 +3190,7 @@ def run_setup_wizard(args):
         print_info("Running the full wizard — each prompt shows your current value.")
         print_info("Press Enter to keep it, or type a new value to change it.")
         print_info("")
-        print_info("Tip: jump straight to a section with 'coorporate setup model|terminal|")
+        print_info("Tip: jump straight to a section with 'maia setup model|terminal|")
         print_info("     gateway|tools|agent', or fill only missing items with --quick.")
         # Fall through to the "Full Setup — run all sections" block below.
         # --reconfigure is now the default on existing installs; the flag
@@ -3297,7 +3297,7 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
         "Connect a corporate messaging platform? (Slack, Discord, Mattermost, etc.)",
         [
             "Set up messaging now (recommended)",
-            "Skip — set up later with 'coorporate setup gateway'",
+            "Skip — set up later with 'maia setup gateway'",
         ],
         0,
     )
@@ -3309,9 +3309,9 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     print()
     print_success("Setup complete! You're ready to go.")
     print()
-    print_info("  Configure all settings:    coorporate setup")
+    print_info("  Configure all settings:    maia setup")
     if gateway_choice != 0:
-        print_info("  Connect Slack/Discord:     coorporate setup gateway")
+        print_info("  Connect Slack/Discord:     maia setup gateway")
     print()
 
     _print_setup_summary(config, hermes_home)
@@ -3350,7 +3350,7 @@ def _run_quick_setup(config: dict, hermes_home):
     if not has_anything_missing:
         print_success("Everything is configured! Nothing to do.")
         print()
-        print_info("Run 'coorporate setup' and choose 'Full Setup' to reconfigure,")
+        print_info("Run 'maia setup' and choose 'Full Setup' to reconfigure,")
         print_info("or pick a specific section from the menu.")
         return
 
@@ -3413,7 +3413,7 @@ def _run_quick_setup(config: dict, hermes_home):
         print()
         print_header("Messaging Platforms")
         print_info("Connect Hermes to messaging apps to chat from anywhere.")
-        print_info("You can configure these later with 'coorporate setup gateway'.")
+        print_info("You can configure these later with 'maia setup gateway'.")
 
         # Group by platform (preserving order)
         platform_order = []

@@ -1,6 +1,6 @@
 ---
 title: "Migration From Hermes"
-description: "Safely migrate upstream Hermes export archives into Coorporate Hermes without bypassing corporate guardrails."
+description: "Safely migrate upstream Hermes export archives into Maia without bypassing corporate guardrails."
 ---
 
 # Migration From Upstream Hermes
@@ -8,13 +8,13 @@ description: "Safely migrate upstream Hermes export archives into Coorporate Her
 Use guarded migration mode for upstream Hermes `.tar`, `.tar.gz`, `.tgz`, or `.zip` exports:
 
 ```bash
-coorporate import ~/Downloads/hermes-export.tar.gz --from-hermes-export
+maia import ~/Downloads/hermes-export.tar.gz --from-hermes-export
 ```
 
-The command preserves the active Coorporate Hermes configuration and stages imported content under:
+The command preserves the active Maia configuration and stages imported content under:
 
 ```text
-<HERMES_HOME>/migration/hermes-import-*/
+<MAIA_HOME>/migration/hermes-import-*/
 ```
 
 ## Imported Safely

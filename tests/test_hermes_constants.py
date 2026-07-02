@@ -16,25 +16,72 @@ from hermes_constants import (
 
 
 class TestGetDefaultHermesRoot:
-    """Tests for get_default_hermes_root() — Docker/custom deployment awareness."""
+    """Tests for get_default_hermes_root() — Maia/Hermes compatibility."""
 
-    def test_no_hermes_home_returns_native(self, tmp_path, monkeypatch):
-        """When HERMES_HOME is not set, returns ~/.hermes."""
+    @staticmethod
+    def _clear_home_env(monkeypatch):
+        monkeypatch.delenv("MAIA_HOME", raising=False)
         monkeypatch.delenv("HERMES_HOME", raising=False)
+
+    def test_no_home_env_returns_native_maia(self, tmp_path, monkeypatch):
+        """Fresh installs without MAIA_HOME/HERMES_HOME default to ~/.maia."""
+        self._clear_home_env(monkeypatch)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        assert get_default_hermes_root() == tmp_path / ".hermes"
+        assert get_default_hermes_root() == tmp_path / ".maia"
 
-    def test_hermes_home_is_native(self, tmp_path, monkeypatch):
-        """When HERMES_HOME = ~/.hermes, returns ~/.hermes."""
+    def test_existing_legacy_home_is_preserved(self, tmp_path, monkeypatch):
+        """Existing ~/.hermes installs keep using ~/.hermes until migrated."""
+        self._clear_home_env(monkeypatch)
+        legacy = tmp_path / ".hermes"
+        legacy.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        assert get_default_hermes_root() == legacy
+
+    def test_maia_home_is_native(self, tmp_path, monkeypatch):
+        """When MAIA_HOME = ~/.maia, returns ~/.maia."""
+        self._clear_home_env(monkeypatch)
+        native = tmp_path / ".maia"
+        native.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("MAIA_HOME", str(native))
+        assert get_default_hermes_root() == native
+
+    def test_legacy_hermes_home_is_native(self, tmp_path, monkeypatch):
+        """When only HERMES_HOME = ~/.hermes, returns ~/.hermes."""
+        self._clear_home_env(monkeypatch)
         native = tmp_path / ".hermes"
         native.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("HERMES_HOME", str(native))
         assert get_default_hermes_root() == native
 
-    def test_hermes_home_is_profile(self, tmp_path, monkeypatch):
+    def test_maia_home_wins_over_legacy_hermes_home(self, tmp_path, monkeypatch):
+        """MAIA_HOME is primary when both MAIA_HOME and HERMES_HOME are set."""
+        self._clear_home_env(monkeypatch)
+        maia = tmp_path / ".maia"
+        legacy = tmp_path / ".hermes"
+        maia.mkdir()
+        legacy.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("MAIA_HOME", str(maia))
+        monkeypatch.setenv("HERMES_HOME", str(legacy))
+        assert get_default_hermes_root() == maia
+
+    def test_maia_home_is_profile(self, tmp_path, monkeypatch):
+        """When MAIA_HOME is a profile under ~/.maia, returns ~/.maia."""
+        self._clear_home_env(monkeypatch)
+        native = tmp_path / ".maia"
+        profile = native / "profiles" / "coder"
+        profile.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("MAIA_HOME", str(profile))
+        assert get_default_hermes_root() == native
+
+    def test_legacy_hermes_home_is_profile(self, tmp_path, monkeypatch):
         """When HERMES_HOME is a profile under ~/.hermes, returns ~/.hermes."""
+        self._clear_home_env(monkeypatch)
         native = tmp_path / ".hermes"
         profile = native / "profiles" / "coder"
         profile.mkdir(parents=True)
@@ -42,30 +89,42 @@ class TestGetDefaultHermesRoot:
         monkeypatch.setenv("HERMES_HOME", str(profile))
         assert get_default_hermes_root() == native
 
-    def test_hermes_home_is_docker(self, tmp_path, monkeypatch):
-        """When HERMES_HOME points outside ~/.hermes (Docker), returns HERMES_HOME."""
+    def test_maia_home_is_docker(self, tmp_path, monkeypatch):
+        """When MAIA_HOME points outside ~/.maia (Docker), returns MAIA_HOME."""
+        self._clear_home_env(monkeypatch)
+        docker_home = tmp_path / "opt" / "data"
+        docker_home.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("MAIA_HOME", str(docker_home))
+        assert get_default_hermes_root() == docker_home
+
+    def test_legacy_hermes_home_is_docker(self, tmp_path, monkeypatch):
+        """When only HERMES_HOME points outside ~/.maia, returns HERMES_HOME."""
+        self._clear_home_env(monkeypatch)
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("HERMES_HOME", str(docker_home))
         assert get_default_hermes_root() == docker_home
 
-    def test_hermes_home_is_custom_path(self, tmp_path, monkeypatch):
-        """Any HERMES_HOME outside ~/.hermes is treated as the root."""
-        custom = tmp_path / "my-hermes-data"
+    def test_maia_home_is_custom_path(self, tmp_path, monkeypatch):
+        """Any MAIA_HOME outside ~/.maia is treated as the root."""
+        self._clear_home_env(monkeypatch)
+        custom = tmp_path / "my-maia-data"
         custom.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("HERMES_HOME", str(custom))
+        monkeypatch.setenv("MAIA_HOME", str(custom))
         assert get_default_hermes_root() == custom
 
     def test_docker_profile_active(self, tmp_path, monkeypatch):
-        """When a Docker profile is active (HERMES_HOME=<root>/profiles/<name>),
+        """When a Docker profile is active (MAIA_HOME=<root>/profiles/<name>),
         returns the Docker root, not the profile dir."""
+        self._clear_home_env(monkeypatch)
         docker_root = tmp_path / "opt" / "data"
         profile = docker_root / "profiles" / "coder"
         profile.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("HERMES_HOME", str(profile))
+        monkeypatch.setenv("MAIA_HOME", str(profile))
         assert get_default_hermes_root() == docker_root
 
 

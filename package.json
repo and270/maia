@@ -1,5 +1,5 @@
 {
-  "name": "coorporate-hermes",
+  "name": "maia",
   "version": "1.0.0",
   "description": "Private one-tenant corporate AI assistant with governed gateways, RBAC folder access, and human-in-the-loop scheduled workflows.",
   "private": true,
@@ -8,13 +8,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/and270/coorporate-hermes.git"
+    "url": "git+https://github.com/and270/maia.git"
   },
   "license": "UNLICENSED",
   "bugs": {
-    "url": "https://github.com/and270/coorporate-hermes/issues"
+    "url": "https://github.com/and270/maia/issues"
   },
-  "homepage": "https://github.com/and270/coorporate-hermes#readme",
+  "homepage": "https://github.com/and270/maia#readme",
   "dependencies": {
     "@askjo/camofox-browser": "^1.5.2",
     "agent-browser": "^0.26.0"

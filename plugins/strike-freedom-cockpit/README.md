@@ -20,15 +20,15 @@ Two pieces:
 1. **Theme** — copy the theme YAML into your Hermes home:
 
    ```
-   cp theme/strike-freedom.yaml ~/.hermes/dashboard-themes/
+   cp theme/strike-freedom.yaml ~/.maia/dashboard-themes/
    ```
 
 2. **Plugin** — the `dashboard/` directory gets auto-discovered because
    it lives under `plugins/` in the repo. On a user install, copy the
-   whole plugin directory into `~/.hermes/plugins/`:
+   whole plugin directory into `~/.maia/plugins/`:
 
    ```
-   cp -r . ~/.hermes/plugins/strike-freedom-cockpit
+   cp -r . ~/.maia/plugins/strike-freedom-cockpit
    ```
 
 3. Restart the web UI (or `GET /api/dashboard/plugins/rescan`), open it,

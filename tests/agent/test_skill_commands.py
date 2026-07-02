@@ -680,12 +680,12 @@ class TestTemplateVarSubstitution:
         # Template token must survive when substitution is disabled.
         assert "${HERMES_SKILL_DIR}/scripts/foo.js" in msg
 
-    def test_substitutes_coorporate_governance_context(self, tmp_path, monkeypatch):
+    def test_substitutes_maia_governance_context(self, tmp_path, monkeypatch):
         from agent.skill_preprocessing import substitute_template_vars
 
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        monkeypatch.setenv("COORPORATE_USER_PLATFORM", "slack")
-        monkeypatch.setenv("COORPORATE_USER_ID", "U_OPERATOR")
+        monkeypatch.setenv("MAIA_USER_PLATFORM", "slack")
+        monkeypatch.setenv("MAIA_USER_ID", "U_OPERATOR")
         (tmp_path / "config.yaml").write_text(
             """
 dashboard:
@@ -706,13 +706,13 @@ governance:
         )
 
         msg = substitute_template_vars(
-            "${COORPORATE_GOVERNANCE_CONTEXT}",
+            "${MAIA_GOVERNANCE_CONTEXT}",
             skill_dir=None,
             session_id=None,
         )
 
         assert msg is not None
-        assert "${COORPORATE_GOVERNANCE_CONTEXT}" not in msg
+        assert "${MAIA_GOVERNANCE_CONTEXT}" not in msg
         assert "Actor: slack:U_OPERATOR" in msg
         assert "Roles: operator" in msg
         assert "Teams: support" in msg

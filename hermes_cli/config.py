@@ -115,7 +115,7 @@ _MANAGED_SYSTEM_NAMES = {
 
 def get_managed_system() -> Optional[str]:
     """Return the package manager owning this install, if any."""
-    raw = os.getenv("HERMES_MANAGED", "").strip()
+    raw = (os.getenv("MAIA_MANAGED") or os.getenv("HERMES_MANAGED", "")).strip()
     if raw:
         normalized = raw.lower()
         if normalized in _MANAGED_TRUE_VALUES:
@@ -142,7 +142,7 @@ def get_managed_update_command() -> Optional[str]:
     """Return the preferred upgrade command for a managed install."""
     managed_system = get_managed_system()
     if managed_system == "Homebrew":
-        return "brew upgrade coorporate-hermes"
+        return "brew upgrade maia"
     if managed_system == "NixOS":
         return "sudo nixos-rebuild switch"
     return None
@@ -150,35 +150,35 @@ def get_managed_update_command() -> Optional[str]:
 
 def recommended_update_command() -> str:
     """Return the best update command for the current installation."""
-    return get_managed_update_command() or "coorporate update"
+    return get_managed_update_command() or "maia update"
 
 
-def format_managed_message(action: str = "modify this Hermes installation") -> str:
+def format_managed_message(action: str = "modify this Maia installation") -> str:
     """Build a user-facing error for managed installs."""
     managed_system = get_managed_system() or "a package manager"
-    raw = os.getenv("HERMES_MANAGED", "").strip().lower()
+    raw = (os.getenv("MAIA_MANAGED") or os.getenv("HERMES_MANAGED", "")).strip().lower()
 
     if managed_system == "NixOS":
         env_hint = "true" if raw in _MANAGED_TRUE_VALUES else raw or "true"
         return (
-            f"Cannot {action}: this Hermes installation is managed by NixOS "
-            f"(HERMES_MANAGED={env_hint}).\n"
-            "Edit services.coorporate-hermes.settings in your configuration.nix and run:\n"
+            f"Cannot {action}: this Maia installation is managed by NixOS "
+            f"(MAIA_MANAGED={env_hint}).\n"
+            "Edit services.maia.settings in your configuration.nix and run:\n"
             "  sudo nixos-rebuild switch"
         )
 
     if managed_system == "Homebrew":
         env_hint = raw or "homebrew"
         return (
-            f"Cannot {action}: this Hermes installation is managed by Homebrew "
-            f"(HERMES_MANAGED={env_hint}).\n"
+            f"Cannot {action}: this Maia installation is managed by Homebrew "
+            f"(MAIA_MANAGED={env_hint}).\n"
             "Use:\n"
-            "  brew upgrade coorporate-hermes"
+            "  brew upgrade maia"
         )
 
     return (
-        f"Cannot {action}: this Hermes installation is managed by {managed_system}.\n"
-        "Use your package manager to upgrade or reinstall Hermes."
+        f"Cannot {action}: this Maia installation is managed by {managed_system}.\n"
+        "Use your package manager to upgrade or reinstall Maia."
     )
 
 def managed_error(action: str = "modify configuration"):
@@ -223,9 +223,9 @@ def get_container_exec_info() -> Optional[dict]:
     # All other exceptions (PermissionError, malformed data, etc.) propagate
 
     backend = info.get("backend", "docker")
-    container_name = info.get("container_name", "hermes-agent")
-    exec_user = info.get("exec_user", "hermes")
-    hermes_bin = info.get("hermes_bin", "/data/current-package/bin/hermes")
+    container_name = info.get("container_name", "maia")
+    exec_user = info.get("exec_user", "maia")
+    hermes_bin = info.get("hermes_bin") or info.get("maia_bin", "/data/current-package/bin/maia")
 
     return {
         "backend": backend,
@@ -860,7 +860,7 @@ DEFAULT_CONFIG = {
             "enabled": False,
             # Local token mode reads the shared admin token from this env var.
             # Prefer an env var or secret manager over storing secrets in config.yaml.
-            "token_env": "COORPORATE_DASHBOARD_TOKEN",
+            "token_env": "MAIA_DASHBOARD_TOKEN",
             # Optional sha256:<hex> hash of the dashboard token for deployments
             # that cannot inject env vars. The plaintext token is never stored.
             "token_hash": "",
@@ -1416,7 +1416,7 @@ DEFAULT_CONFIG = {
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
         "enabled": True,
-        "url": "https://raw.githubusercontent.com/and270/coorporate-hermes/main/website/static/api/model-catalog.json",
+        "url": "https://raw.githubusercontent.com/and270/maia/main/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.
@@ -2218,7 +2218,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "DISCORD_ALLOWED_ROLES": {
-        "description": "Comma-separated Discord role IDs allowed to use the bot. Role allowlists authorize Discord users at the gateway; Coorporate Hermes governance roles are configured separately.",
+        "description": "Comma-separated Discord role IDs allowed to use the bot. Role allowlists authorize Discord users at the gateway; Maia governance roles are configured separately.",
         "prompt": "Allowed Discord role IDs (comma-separated)",
         "url": None,
         "password": False,

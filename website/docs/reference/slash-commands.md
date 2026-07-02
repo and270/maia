@@ -105,7 +105,7 @@ Type `/` in the CLI to open the autocomplete menu. Built-in commands are case-in
 
 ### Quick Commands
 
-User-defined quick commands map a short slash command to either a shell command or another slash command. Configure them in `~/.hermes/config.yaml`:
+User-defined quick commands map a short slash command to either a shell command or another slash command. Configure them in `~/.maia/config.yaml`:
 
 ```yaml
 quick_commands:
@@ -130,7 +130,7 @@ Define your own short names for models you use often, then reach them with `/mod
 
 Two config formats are supported:
 
-**Full form** — pin an exact model, provider, and optionally a base URL. Put this in `~/.hermes/config.yaml`:
+**Full form** — pin an exact model, provider, and optionally a base URL. Put this in `~/.maia/config.yaml`:
 
 ```yaml
 model_aliases:
@@ -205,7 +205,7 @@ The messaging gateway supports the following built-in commands inside Telegram, 
 | `/dashboard` | Request dashboard access or, after approval, a short-lived one-time dashboard login token. Requires `dashboard.auth.channel_tokens.enabled`; private/direct chat is required by default. |
 | `/approve [session\|always]` | Approve and execute a pending dangerous command. `session` approves for this session only; `always` adds to permanent allowlist. |
 | `/deny` | Reject a pending dangerous command. |
-| `/update` | Update Coorporate Hermes to the latest version. |
+| `/update` | Update Maia to the latest version. |
 | `/restart` | Gracefully restart the gateway after draining active runs. When the gateway comes back online, it sends a confirmation to the requester's chat/thread. |
 | `/debug` | Upload debug report (system info + logs) and get shareable links. |
 | `/help` | Show messaging help. |

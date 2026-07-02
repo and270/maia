@@ -1,12 +1,12 @@
 ---
 sidebar_position: 15
 title: "Azure AI Foundry"
-description: "Use Coorporate Hermes with Azure AI Foundry — OpenAI-style and Anthropic-style endpoints, auto-detection of transport and deployed models"
+description: "Use Maia with Azure AI Foundry — OpenAI-style and Anthropic-style endpoints, auto-detection of transport and deployed models"
 ---
 
 # Azure AI Foundry
 
-Coorporate Hermes supports Azure AI Foundry (and Azure OpenAI) as a first-class provider. A single Azure resource can host models with two different wire formats:
+Maia supports Azure AI Foundry (and Azure OpenAI) as a first-class provider. A single Azure resource can host models with two different wire formats:
 
 - **OpenAI-style** — `POST /v1/chat/completions` on endpoints like `https://<resource>.openai.azure.com/openai/v1`. Used for GPT-4.x, GPT-5.x, Llama, Mistral, and most open-weight models.
 - **Anthropic-style** — `POST /v1/messages` on endpoints like `https://<resource>.services.ai.azure.com/anthropic`. Used when Azure Foundry serves Claude models via the Anthropic Messages API format.
@@ -52,7 +52,7 @@ model:
   context_length: 400000             # auto-detected
 ```
 
-And in `~/.hermes/.env`:
+And in `~/.maia/.env`:
 
 ```
 AZURE_FOUNDRY_API_KEY=<your-azure-key>
@@ -106,7 +106,7 @@ model:
   default: claude-sonnet-4-6
 ```
 
-With `AZURE_ANTHROPIC_KEY` set in `~/.hermes/.env`. Hermes detects `azure.com` in the base URL and short-circuits around the Claude Code OAuth token chain so the Azure key is used directly with `x-api-key` auth.
+With `AZURE_ANTHROPIC_KEY` set in `~/.maia/.env`. Hermes detects `azure.com` in the base URL and short-circuits around the Claude Code OAuth token chain so the Azure key is used directly with `x-api-key` auth.
 
 `key_env` is the canonical snake_case field name; `api_key_env` (and the camelCase `keyEnv` / `apiKeyEnv`) are accepted as aliases. If both `key_env` and `AZURE_ANTHROPIC_KEY`/`ANTHROPIC_API_KEY` are set, the `key_env`-named env var wins.
 

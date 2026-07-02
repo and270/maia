@@ -1,6 +1,6 @@
 # Cron Authorization Panel
 
-Coorporate Hermes cron jobs can require a human authorization checkpoint before each due run. This is designed for scheduled work that touches governed folders, sends messages externally, or produces outputs that require a manager or admin review.
+Maia cron jobs can require a human authorization checkpoint before each due run. This is designed for scheduled work that touches governed folders, sends messages externally, or produces outputs that require a manager or admin review.
 
 ## Create an Authorized Job
 
@@ -58,7 +58,7 @@ Authorization is granted when either condition is true:
 - the actor matches one of the configured `authorization.users`;
 - the actor has one of the configured `authorization.roles`, including role hierarchy inheritance.
 
-If a job omits roles and users, Coorporate Hermes falls back to:
+If a job omits roles and users, Maia falls back to:
 
 ```yaml
 governance:
@@ -75,7 +75,7 @@ Recurring jobs reset approval status after each successful run. The next due run
 Authorization requests, approvals, and denials are written to:
 
 ```text
-<HERMES_HOME>/logs/audit.jsonl
+<MAIA_HOME>/logs/audit.jsonl
 ```
 
-Use `coorporate logs audit` or the dashboard Logs page to review them.
+Use `maia logs audit` or the dashboard Logs page to review them.

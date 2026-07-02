@@ -65,7 +65,7 @@ def _get_sessions_dir() -> Path:
         from hermes_constants import get_hermes_home
         return get_hermes_home() / "sessions"
     except ImportError:
-        return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "sessions"
+        return Path(os.environ.get("MAIA_HOME") or os.environ.get("HERMES_HOME") or Path.home() / ".maia") / "sessions"
 
 
 def _get_session_db():
@@ -102,7 +102,7 @@ def _load_channel_directory() -> dict:
         directory_file = get_hermes_home() / "channel_directory.json"
     except ImportError:
         directory_file = Path(
-            os.environ.get("HERMES_HOME", Path.home() / ".hermes")
+            os.environ.get("MAIA_HOME") or os.environ.get("HERMES_HOME") or Path.home() / ".maia"
         ) / "channel_directory.json"
 
     if not directory_file.exists():

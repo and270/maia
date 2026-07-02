@@ -5,7 +5,7 @@ const sidebars: SidebarsConfig = {
     'user-stories',
     {
       type: 'category',
-      label: 'Coorporate Hermes',
+      label: 'Maia',
       collapsed: false,
       items: [
         'enterprise/admin-onboarding',

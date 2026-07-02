@@ -140,7 +140,7 @@ stdenv.mkDerivation {
     cp -r ${hermesWeb} $out/share/hermes-agent/web_dist
 
     mkdir -p $out/ui-tui
-    cp -r ${hermesTui}/lib/hermes-tui/* $out/ui-tui/
+    cp -r ${hermesTui}/lib/maia-tui/* $out/ui-tui/
 
     ${lib.concatMapStringsSep "\n"
       (name: ''

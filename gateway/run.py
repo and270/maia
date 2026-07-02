@@ -4466,7 +4466,7 @@ class GatewayRunner:
         elif platform == Platform.SLACK:
             from gateway.platforms.slack import SlackAdapter, check_slack_requirements
             if not check_slack_requirements():
-                logger.warning("Slack: slack-bolt not installed. Run: pip install 'coorporate-hermes[slack]'")
+                logger.warning("Slack: slack-bolt not installed. Run: pip install 'maia[slack]'")
                 return None
             return SlackAdapter(config)
 
@@ -4847,7 +4847,7 @@ class GatewayRunner:
 
         This only activates when governance or protected dashboard auth is
         enabled. Personal/single-user Hermes deployments keep the historical
-        behavior, while Coorporate Hermes deployments prevent allowed gateway
+        behavior, while Maia deployments prevent allowed gateway
         users from bypassing admin role gates with slash commands.
         """
 
@@ -4889,7 +4889,7 @@ class GatewayRunner:
 
         return (
             f"Denied: `/{canonical}` would {action}. "
-            "That is restricted to dashboard admin roles in this Coorporate Hermes deployment.\n"
+            "That is restricted to dashboard admin roles in this Maia deployment.\n"
             f"- Actor: `{actor_key}`\n"
             f"- Current roles: `{', '.join(roles) if roles else 'none'}`\n"
             f"- Required admin roles: `{', '.join(admin_roles)}`"
@@ -7534,7 +7534,7 @@ class GatewayRunner:
         identity = f"{platform}:{user_id}" if user_id else f"{platform}:<missing-user-id>"
 
         lines = [
-            "Identity used by Coorporate Hermes:",
+            "Identity used by Maia:",
             f"- User key: `{identity}`",
         ]
         if user_name:
@@ -7738,7 +7738,7 @@ class GatewayRunner:
         dashboard_url = (
             str(channel_cfg.get("dashboard_url") or "").strip()
             or str(dashboard.get("public_url") or "").strip()
-            or os.getenv("COORPORATE_DASHBOARD_URL", "").strip()
+            or os.getenv("MAIA_DASHBOARD_URL", "").strip()
             or "http://127.0.0.1:9119"
         )
         message = (

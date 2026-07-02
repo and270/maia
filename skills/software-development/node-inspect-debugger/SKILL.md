@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [debugging, nodejs, node-inspect, cdp, breakpoints, ui-tui]
-    related_skills: [systematic-debugging, python-debugpy, debugging-hermes-tui-commands]
+    related_skills: [systematic-debugging, python-debugpy, debugging-maia-tui-commands]
 ---
 
 # Node.js Inspect Debugger

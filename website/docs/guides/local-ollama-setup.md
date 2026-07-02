@@ -1,7 +1,7 @@
 ---
 sidebar_position: 9
 title: "Run Hermes Locally with Ollama — Zero API Cost"
-description: "Step-by-step guide to running Coorporate Hermes entirely on your own machine with Ollama and open-weight models like Gemma 4, no cloud API keys or paid subscriptions needed"
+description: "Step-by-step guide to running Maia entirely on your own machine with Ollama and open-weight models like Gemma 4, no cloud API keys or paid subscriptions needed"
 ---
 
 # Run Hermes Locally with Ollama — Zero API Cost
@@ -12,7 +12,7 @@ Cloud LLM APIs charge per token. A heavy coding session can cost $5–20. For pe
 
 ## What This Guide Solves
 
-You'll set up Coorporate Hermes running entirely on your own hardware, using [Ollama](https://ollama.com) as the model backend. No API keys, no subscriptions, no data leaving your machine. Once configured, Hermes works exactly like it does with OpenRouter or Anthropic — terminal commands, file editing, web browsing, delegation — but the model runs locally.
+You'll set up Maia running entirely on your own hardware, using [Ollama](https://ollama.com) as the model backend. No API keys, no subscriptions, no data leaving your machine. Once configured, Hermes works exactly like it does with OpenRouter or Anthropic — terminal commands, file editing, web browsing, delegation — but the model runs locally.
 
 By the end, you'll have:
 
@@ -105,7 +105,7 @@ When prompted for a provider, select **Custom Endpoint** and enter:
 - **API Key:** Leave empty or type `no-key` (Ollama doesn't need one)
 - **Model:** `gemma4:31b` (or whichever model you pulled)
 
-Alternatively, edit `~/.hermes/config.yaml` directly:
+Alternatively, edit `~/.maia/config.yaml` directly:
 
 ```yaml
 model:
@@ -205,7 +205,7 @@ Once Hermes works locally in the CLI, you can expose it as a Telegram or Discord
 ### Telegram
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
-2. Add to your `~/.hermes/config.yaml`:
+2. Add to your `~/.maia/config.yaml`:
 
 ```yaml
 model:

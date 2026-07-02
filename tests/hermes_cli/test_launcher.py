@@ -1,4 +1,4 @@
-"""Tests for the top-level `./coorporate` launcher script."""
+"""Tests for the top-level `./maia` launcher script."""
 
 import runpy
 import sys
@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def test_launcher_delegates_to_argparse_entrypoint(monkeypatch):
-    """`./coorporate` should use `hermes_cli.main`, not the legacy Fire wrapper."""
-    launcher_path = Path(__file__).resolve().parents[2] / "coorporate"
+    """`./maia` should use `hermes_cli.main`, not the legacy Fire wrapper."""
+    launcher_path = Path(__file__).resolve().parents[2] / "maia"
     called = []
 
     fake_main_module = types.ModuleType("hermes_cli.main")

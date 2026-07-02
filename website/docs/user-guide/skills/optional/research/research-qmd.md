@@ -17,7 +17,7 @@ Search personal knowledge bases, notes, docs, and meeting transcripts locally us
 | Source | Optional — install with `hermes skills install official/research/qmd` |
 | Path | `optional-skills/research/qmd` |
 | Version | `1.0.0` |
-| Author | Coorporate Hermes + Teknium |
+| Author | Maia + Teknium |
 | License | MIT |
 | Platforms | macos, linux |
 | Tags | `Search`, `Knowledge-Base`, `RAG`, `Notes`, `MCP`, `Local-AI` |
@@ -238,13 +238,13 @@ qmd multi-get "journals/*.md" --json  # Batch retrieve by glob
 ## MCP Integration (Recommended)
 
 qmd exposes an MCP server that provides search tools directly to
-Coorporate Hermes via the native MCP client. This is the preferred
+Maia via the native MCP client. This is the preferred
 integration — once configured, the agent gets qmd tools automatically
 without needing to load this skill.
 
 ### Option A: Stdio Mode (Simple)
 
-Add to `~/.hermes/config.yaml`:
+Add to `~/.maia/config.yaml`:
 
 ```yaml
 mcp_servers:
@@ -272,7 +272,7 @@ qmd mcp --http --daemon
 # Runs on http://localhost:8181 by default
 ```
 
-Then configure Coorporate Hermes to connect via HTTP:
+Then configure Maia to connect via HTTP:
 
 ```yaml
 mcp_servers:

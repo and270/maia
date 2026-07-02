@@ -176,7 +176,7 @@ function DashboardAuthGate({ children }: { children: ReactNode }) {
               Dashboard Access
             </Typography>
             <Typography className="mt-1 text-xs leading-tight tracking-normal text-midground/65">
-              Coorporate Hermes
+              Maia
             </Typography>
           </div>
         </div>
@@ -662,7 +662,7 @@ export default function App() {
                   className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground"
                   style={{ mixBlendMode: "plus-lighter" }}
                 >
-                  Coorporate
+                  Maia
                   <br />
                   Hermes
                 </Typography>

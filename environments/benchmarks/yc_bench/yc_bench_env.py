@@ -34,7 +34,7 @@ Key features:
   - Per-preset difficulty breakdown in results
   - Isolated SQLite DB per run (no cross-run state leakage)
 
-Requires: pip install coorporate-hermes[yc-bench]
+Requires: pip install maia[yc-bench]
 """
 
 import asyncio
@@ -400,7 +400,7 @@ class YCBenchEvalEnv(HermesAgentBaseEnv):
         except (FileNotFoundError, subprocess.TimeoutExpired):
             raise RuntimeError(
                 "yc-bench CLI not found. Install with:\n"
-                '  pip install "coorporate-hermes[yc-bench]"\n'
+                '  pip install "maia[yc-bench]"\n'
                 "Or: git clone https://github.com/collinear-ai/yc-bench "
                 "&& cd yc-bench && pip install -e ."
             )

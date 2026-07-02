@@ -1,19 +1,19 @@
 #!/bin/bash
 # ============================================================================
-# Coorporate Hermes Setup Script
+# Maia Setup Script
 # ============================================================================
 # Quick setup for developers who cloned the repo manually.
 # Uses uv for desktop/server setup and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   ./setup-coorporate.sh
+#   ./setup-maia.sh
 #
 # This script:
 # 1. Detects desktop/server vs Android/Termux setup path
 # 2. Creates a Python 3.11 virtual environment
 # 3. Installs the appropriate dependency set for the platform
 # 4. Creates .env from template (if not exists)
-# 5. Symlinks the 'coorporate' CLI command into a user-facing bin dir
+# 5. Symlinks the 'maia' CLI command into a user-facing bin dir
 # 6. Runs the setup wizard (optional)
 # ============================================================================
 
@@ -45,7 +45,7 @@ ensure_writable_dir() {
 
 get_uv_install_dir() {
     local preferred_dir="$HOME/.local/bin"
-    local fallback_dir="$HOME/.coorporate/bin"
+    local fallback_dir="$HOME/.maia/bin"
 
     if ensure_writable_dir "$preferred_dir"; then
         echo "$preferred_dir"
@@ -60,7 +60,7 @@ get_command_link_dir() {
         echo "$PREFIX/bin"
     else
         local preferred_dir="$HOME/.local/bin"
-        local fallback_dir="$HOME/.coorporate/bin"
+        local fallback_dir="$HOME/.maia/bin"
 
         if ensure_writable_dir "$preferred_dir"; then
             echo "$preferred_dir"
@@ -68,8 +68,8 @@ get_command_link_dir() {
         fi
 
         # Prefer conventional writable bin dirs already on PATH so
-        # `coorporate setup` works immediately after this script exits.
-        for path_dir in "$HOME/bin" "$HOME/.coorporate/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+        # `maia setup` works immediately after this script exits.
+        for path_dir in "$HOME/bin" "$HOME/.maia/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
             if path_has_dir "$path_dir" && ensure_writable_dir "$path_dir"; then
                 echo "$path_dir"
                 return
@@ -88,8 +88,8 @@ get_command_link_display_dir() {
         echo '$PREFIX/bin'
     elif [ "$resolved_dir" = "$HOME/.local/bin" ]; then
         echo '~/.local/bin'
-    elif [ "$resolved_dir" = "$HOME/.coorporate/bin" ]; then
-        echo '~/.coorporate/bin'
+    elif [ "$resolved_dir" = "$HOME/.maia/bin" ]; then
+        echo '~/.maia/bin'
     elif [[ "$resolved_dir" == "$HOME/"* ]]; then
         echo "~/${resolved_dir#$HOME/}"
     else
@@ -98,7 +98,7 @@ get_command_link_display_dir() {
 }
 
 echo ""
-echo -e "${CYAN}Coorporate Hermes Setup${NC}"
+echo -e "${CYAN}Maia Setup${NC}"
 echo ""
 
 # ============================================================================
@@ -115,8 +115,8 @@ else
         UV_CMD="uv"
     elif [ -x "$HOME/.local/bin/uv" ]; then
         UV_CMD="$HOME/.local/bin/uv"
-    elif [ -x "$HOME/.coorporate/bin/uv" ]; then
-        UV_CMD="$HOME/.coorporate/bin/uv"
+    elif [ -x "$HOME/.maia/bin/uv" ]; then
+        UV_CMD="$HOME/.maia/bin/uv"
     elif [ -x "$HOME/.cargo/bin/uv" ]; then
         UV_CMD="$HOME/.cargo/bin/uv"
     fi
@@ -137,8 +137,8 @@ else
                 UV_CMD="$UV_INSTALL_DIR/uv"
             elif [ -x "$HOME/.local/bin/uv" ]; then
                 UV_CMD="$HOME/.local/bin/uv"
-            elif [ -x "$HOME/.coorporate/bin/uv" ]; then
-                UV_CMD="$HOME/.coorporate/bin/uv"
+            elif [ -x "$HOME/.maia/bin/uv" ]; then
+                UV_CMD="$HOME/.maia/bin/uv"
             elif [ -x "$HOME/.cargo/bin/uv" ]; then
                 UV_CMD="$HOME/.cargo/bin/uv"
             fi
@@ -374,17 +374,19 @@ else
 fi
 
 # ============================================================================
-# PATH setup — symlink coorporate into a user-facing bin dir
+# PATH setup — symlink maia into a user-facing bin dir
 # ============================================================================
 
-echo -e "${CYAN}→${NC} Setting up coorporate command..."
+echo -e "${CYAN}→${NC} Setting up maia command..."
 
-COORPORATE_BIN="$SCRIPT_DIR/venv/bin/coorporate"
+MAIA_BIN="$SCRIPT_DIR/venv/bin/maia"
 COMMAND_LINK_DIR="$(get_command_link_dir)"
 COMMAND_LINK_DISPLAY_DIR="$(get_command_link_display_dir "$COMMAND_LINK_DIR")"
 mkdir -p "$COMMAND_LINK_DIR"
-ln -sf "$COORPORATE_BIN" "$COMMAND_LINK_DIR/coorporate"
-echo -e "${GREEN}✓${NC} Symlinked coorporate -> $COMMAND_LINK_DISPLAY_DIR/coorporate"
+ln -sf "$MAIA_BIN" "$COMMAND_LINK_DIR/maia"
+ln -sf "$MAIA_BIN" "$COMMAND_LINK_DIR/coorporate"
+echo -e "${GREEN}✓${NC} Symlinked maia -> $COMMAND_LINK_DISPLAY_DIR/maia"
+echo -e "${GREEN}✓${NC} Legacy alias coorporate -> $COMMAND_LINK_DISPLAY_DIR/coorporate"
 
 if is_termux; then
     export PATH="$COMMAND_LINK_DIR:$PATH"
@@ -421,7 +423,7 @@ else
             if ! grep -Fq "$COMMAND_LINK_DIR" "$SHELL_CONFIG" 2>/dev/null && \
                ! grep -Fq "$PATH_EXPORT_DIR" "$SHELL_CONFIG" 2>/dev/null; then
                 echo "" >> "$SHELL_CONFIG"
-                echo "# Coorporate Hermes - ensure $COMMAND_LINK_DISPLAY_DIR is on PATH" >> "$SHELL_CONFIG"
+                echo "# Maia - ensure $COMMAND_LINK_DISPLAY_DIR is on PATH" >> "$SHELL_CONFIG"
                 echo "export PATH=\"$PATH_EXPORT_DIR:\$PATH\"" >> "$SHELL_CONFIG"
                 echo -e "${GREEN}✓${NC} Added $COMMAND_LINK_DISPLAY_DIR to PATH in $SHELL_CONFIG"
             else
@@ -434,20 +436,21 @@ else
 fi
 
 # ============================================================================
-# Seed bundled skills into ~/.hermes/skills/
+# Seed bundled skills into Maia data home
 # ============================================================================
 
-HERMES_SKILLS_DIR="${HERMES_HOME:-$HOME/.hermes}/skills"
-mkdir -p "$HERMES_SKILLS_DIR"
+MAIA_DATA_HOME="${MAIA_HOME:-${HERMES_HOME:-$HOME/.maia}}"
+MAIA_SKILLS_DIR="$MAIA_DATA_HOME/skills"
+mkdir -p "$MAIA_SKILLS_DIR"
 
 echo ""
-echo "Syncing bundled skills to ~/.hermes/skills/ ..."
+echo "Syncing bundled skills to $MAIA_DATA_HOME/skills/ ..."
 if "$SCRIPT_DIR/venv/bin/python" "$SCRIPT_DIR/tools/skills_sync.py" 2>/dev/null; then
     echo -e "${GREEN}✓${NC} Skills synced"
 else
     # Fallback: copy if sync script fails (missing deps, etc.)
     if [ -d "$SCRIPT_DIR/skills" ]; then
-        cp -rn "$SCRIPT_DIR/skills/"* "$HERMES_SKILLS_DIR/" 2>/dev/null || true
+        cp -rn "$SCRIPT_DIR/skills/"* "$MAIA_SKILLS_DIR/" 2>/dev/null || true
         echo -e "${GREEN}✓${NC} Skills copied"
     fi
 fi
@@ -463,31 +466,31 @@ echo "Next steps:"
 echo ""
 if is_termux; then
     echo "  1. Run the setup wizard to configure API keys:"
-    echo "     coorporate setup"
+    echo "     maia setup"
     echo ""
     echo "  2. Start chatting:"
-    echo "     coorporate"
+    echo "     maia"
     echo ""
 else
     echo "  1. Reload your shell:"
     echo "     source $SHELL_CONFIG"
     echo ""
     echo "  2. Run the setup wizard to configure API keys:"
-    echo "     coorporate setup"
+    echo "     maia setup"
     echo ""
     echo "  3. Start chatting:"
-    echo "     coorporate"
+    echo "     maia"
     echo ""
 fi
 echo "Other commands:"
-echo "  coorporate status        # Check configuration"
+echo "  maia status        # Check configuration"
 if is_termux; then
-    echo "  coorporate gateway       # Run gateway in foreground"
+    echo "  maia gateway       # Run gateway in foreground"
 else
-    echo "  coorporate gateway install # Install gateway service (messaging + cron)"
+    echo "  maia gateway install # Install gateway service (messaging + cron)"
 fi
-echo "  coorporate cron list     # View scheduled jobs"
-echo "  coorporate doctor        # Diagnose issues"
+echo "  maia cron list     # View scheduled jobs"
+echo "  maia doctor        # Diagnose issues"
 echo ""
 
 # Ask if they want to run setup wizard now

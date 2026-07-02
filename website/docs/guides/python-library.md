@@ -1,44 +1,44 @@
 ---
 sidebar_position: 5
-title: "Using Coorporate Hermes as a Python Library"
+title: "Using Maia as a Python Library"
 description: "Embed AIAgent in your own Python scripts, web apps, or automation pipelines — no CLI required"
 ---
 
-# Using Coorporate Hermes as a Python Library
+# Using Maia as a Python Library
 
-Coorporate Hermes isn't just a CLI tool. You can import `AIAgent` directly and use it programmatically in your own Python scripts, web applications, or automation pipelines. This guide shows you how.
+Maia isn't just a CLI tool. You can import `AIAgent` directly and use it programmatically in your own Python scripts, web applications, or automation pipelines. This guide shows you how.
 
 ---
 
 ## Installation
 
-Install Coorporate Hermes directly from the repository:
+Install Maia directly from the repository:
 
 ```bash
-pip install git+https://github.com/and270/coorporate-hermes.git
+pip install git+https://github.com/and270/maia.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install git+https://github.com/and270/coorporate-hermes.git
+uv pip install git+https://github.com/and270/maia.git
 ```
 
 You can also pin it in your `requirements.txt`:
 
 ```text
-coorporate-hermes @ git+https://github.com/and270/coorporate-hermes.git
+maia @ git+https://github.com/and270/maia.git
 ```
 
 :::tip
-The same environment variables used by the CLI are required when using Coorporate Hermes as a library. At minimum, set `OPENROUTER_API_KEY` (or `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` if using direct provider access).
+The same environment variables used by the CLI are required when using Maia as a library. At minimum, set `OPENROUTER_API_KEY` (or `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` if using direct provider access).
 :::
 
 ---
 
 ## Basic Usage
 
-The simplest way to use Coorporate Hermes is the `chat()` method — pass a message, get a string back:
+The simplest way to use Maia is the `chat()` method — pass a message, get a string back:
 
 ```python
 from run_agent import AIAgent
@@ -54,7 +54,7 @@ print(response)
 `chat()` handles the full conversation loop internally — tool calls, retries, everything — and returns just the final text response.
 
 :::warning
-Always set `quiet_mode=True` when embedding Coorporate Hermes in your own code. Without it, the agent prints CLI spinners, progress indicators, and other terminal output that will clutter your application's output.
+Always set `quiet_mode=True` when embedding Maia in your own code. Without it, the agent prints CLI spinners, progress indicators, and other terminal output that will clutter your application's output.
 :::
 
 ---

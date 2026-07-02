@@ -117,7 +117,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // body doesn't have to setState (React 19's set-state-in-effect rule).
   const [banner, setBanner] = useState<string | null>(() =>
     typeof window !== "undefined" && !window.__HERMES_SESSION_TOKEN__
-      ? "Session token unavailable. Open this page through `coorporate dashboard`, not directly."
+      ? "Session token unavailable. Open this page through `maia dashboard`, not directly."
       : null,
   );
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");

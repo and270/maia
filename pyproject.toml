@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "coorporate-hermes"
+name = "maia"
 version = "0.13.0"
 description = "A private one-tenant corporate AI assistant with gateway, RBAC, governance, and human-in-the-loop automation controls"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Coorporate Hermes maintainers" }]
+authors = [{ name = "Maia maintainers" }]
 license = { text = "Internal proprietary distribution; includes MIT-licensed upstream Hermes Agent components" }
 dependencies = [
   # Core — pinned to known-good ranges to limit supply chain attack surface
@@ -72,12 +72,12 @@ termux = [
   # avoiding extras that currently depend on non-Android wheels (notably
   # faster-whisper -> ctranslate2 via the voice extra).
   "python-telegram-bot[webhooks]>=22.6,<23",
-  "coorporate-hermes[cron]",
-  "coorporate-hermes[cli]",
-  "coorporate-hermes[pty]",
-  "coorporate-hermes[mcp]",
-  "coorporate-hermes[honcho]",
-  "coorporate-hermes[acp]",
+  "maia[cron]",
+  "maia[cli]",
+  "maia[pty]",
+  "maia[mcp]",
+  "maia[honcho]",
+  "maia[acp]",
 ]
 dingtalk = ["dingtalk-stream>=0.20,<1", "alibabacloud-dingtalk>=2.0.0", "qrcode>=7.0,<8"]
 feishu = ["lark-oapi>=1.5.3,<2", "qrcode>=7.0,<8"]
@@ -90,7 +90,7 @@ google = [
   "google-auth-oauthlib>=1.0,<2",
   "google-auth-httplib2>=0.2,<1",
 ]
-# `coorporate dashboard` (localhost SPA + API).  Not in core to keep the default install lean.
+# `maia dashboard` (localhost SPA + API).  Not in core to keep the default install lean.
 web = ["fastapi>=0.104.0,<1", "uvicorn[standard]>=0.24.0,<1"]
 rl = [
   "atroposlib @ git+https://github.com/NousResearch/atropos.git@c20c85256e5a45ad31edf8b7276e9c5ee1995a30",
@@ -101,35 +101,39 @@ rl = [
 ]
 yc-bench = ["yc-bench @ git+https://github.com/collinear-ai/yc-bench.git@bfb0c88062450f46341bd9a5298903fc2e952a5c ; python_version >= '3.12'"]
 all = [
-  "coorporate-hermes[modal]",
-  "coorporate-hermes[daytona]",
-  "coorporate-hermes[vercel]",
-  "coorporate-hermes[messaging]",
+  "maia[modal]",
+  "maia[daytona]",
+  "maia[vercel]",
+  "maia[messaging]",
   # matrix: python-olm (required by matrix-nio[e2e]) is upstream-broken on
   # modern macOS (archived libolm, C++ errors with Clang 21+).  On Linux the
   # [matrix] extra's own marker pulls in the [e2e] variant automatically.
-  "coorporate-hermes[matrix]; sys_platform == 'linux'",
-  "coorporate-hermes[cron]",
-  "coorporate-hermes[cli]",
-  "coorporate-hermes[dev]",
-  "coorporate-hermes[tts-premium]",
-  "coorporate-hermes[slack]",
-  "coorporate-hermes[pty]",
-  "coorporate-hermes[honcho]",
-  "coorporate-hermes[mcp]",
-  "coorporate-hermes[homeassistant]",
-  "coorporate-hermes[sms]",
-  "coorporate-hermes[acp]",
-  "coorporate-hermes[voice]",
-  "coorporate-hermes[dingtalk]",
-  "coorporate-hermes[feishu]",
-  "coorporate-hermes[google]",
-  "coorporate-hermes[mistral]",
-  "coorporate-hermes[bedrock]",
-  "coorporate-hermes[web]",
+  "maia[matrix]; sys_platform == 'linux'",
+  "maia[cron]",
+  "maia[cli]",
+  "maia[dev]",
+  "maia[tts-premium]",
+  "maia[slack]",
+  "maia[pty]",
+  "maia[honcho]",
+  "maia[mcp]",
+  "maia[homeassistant]",
+  "maia[sms]",
+  "maia[acp]",
+  "maia[voice]",
+  "maia[dingtalk]",
+  "maia[feishu]",
+  "maia[google]",
+  "maia[mistral]",
+  "maia[bedrock]",
+  "maia[web]",
 ]
 
 [project.scripts]
+maia = "hermes_cli.main:main"
+maia-agent = "run_agent:main"
+maia-acp = "acp_adapter.entry:main"
+# Legacy aliases kept for existing corporate deployments and scripts.
 coorporate = "hermes_cli.main:main"
 coorporate-agent = "run_agent:main"
 coorporate-acp = "acp_adapter.entry:main"

@@ -1,13 +1,13 @@
 # Observability
 
-Coorporate Hermes has two observability layers:
+Maia has two observability layers:
 
 - runtime logs for operations and debugging;
 - a corporate audit trail for governance-sensitive decisions.
 
 ## Runtime Logs
 
-Runtime logs live under `<HERMES_HOME>/logs/`:
+Runtime logs live under `<MAIA_HOME>/logs/`:
 
 ```text
 agent.log
@@ -19,9 +19,9 @@ mcp-stderr.log
 Use:
 
 ```bash
-coorporate logs
-coorporate logs errors
-coorporate logs gateway --component gateway
+maia logs
+maia logs errors
+maia logs gateway --component gateway
 ```
 
 ## Audit Trail
@@ -29,7 +29,7 @@ coorporate logs gateway --component gateway
 Audit events are append-only JSONL records. The default file is:
 
 ```text
-<HERMES_HOME>/logs/audit.jsonl
+<MAIA_HOME>/logs/audit.jsonl
 ```
 
 The audit trail records:
@@ -48,7 +48,7 @@ The audit trail records:
 Inspect it with:
 
 ```bash
-coorporate logs audit
+maia logs audit
 ```
 
 or use the dashboard Logs page and select `audit`.
@@ -66,7 +66,7 @@ observability:
   retention_days: 180
 ```
 
-`audit_log_path: ""` uses the default path. Relative paths resolve under `HERMES_HOME`; absolute paths are useful for mounted logging volumes.
+`audit_log_path: ""` uses the default path. Relative paths resolve under `MAIA_HOME`; absolute paths are useful for mounted logging volumes.
 
 `siem_webhook_url` posts each audit event as JSON after local write. Keep it empty until the receiving endpoint is private, authenticated at the network layer, and approved for governance metadata.
 

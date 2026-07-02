@@ -1,24 +1,24 @@
 # Migrating From Upstream Hermes
 
-Coorporate Hermes can migrate the export archive produced by upstream Hermes without treating it as a full trusted restore. This matters because corporate deployments have additional guardrails: tenant identity, user roles, folder policies, governed corporate/team knowledge, cron approvals, and audit logging.
+Maia can migrate the export archive produced by upstream Hermes without treating it as a full trusted restore. This matters because corporate deployments have additional guardrails: tenant identity, user roles, folder policies, governed corporate/team knowledge, cron approvals, and audit logging.
 
 ## Supported Archives
 
 Use guarded migration mode for `.tar`, `.tar.gz`, `.tgz`, or `.zip` exports:
 
 ```bash
-coorporate import ~/Downloads/hermes-export.tar.gz --from-hermes-export
+maia import ~/Downloads/hermes-export.tar.gz --from-hermes-export
 ```
 
-Full overlay restore remains available only for Coorporate Hermes ZIP backups created by `coorporate backup`.
+Full overlay restore remains available only for Maia ZIP backups created by `maia backup`.
 
 ## What Migration Does
 
 Guarded migration mode:
 
 - preserves the existing `config.yaml` governance and security settings;
-- stages upstream `memories/` under `<HERMES_HOME>/migration/hermes-import-*/memories/`;
-- stages upstream `skills/` under `<HERMES_HOME>/migration/hermes-import-*/skills-review/`;
+- stages upstream `memories/` under `<MAIA_HOME>/migration/hermes-import-*/memories/`;
+- stages upstream `skills/` under `<MAIA_HOME>/migration/hermes-import-*/skills-review/`;
 - copies `.env`, `auth.json`, and `mcp-tokens/` only into the review folder;
 - reads `mcp_servers` from the imported config, redacts secret-like values, imports the server definitions disabled, and marks them as requiring review;
 - writes a `report.json` describing imported, staged, and skipped entries;
@@ -28,7 +28,7 @@ Guarded migration mode:
 
 Guarded migration does not:
 
-- overwrite Coorporate Hermes `governance`, `approvals`, `terminal`, or observability settings;
+- overwrite Maia `governance`, `approvals`, `terminal`, or observability settings;
 - promote imported memories or skills into corporate/team knowledge layers automatically;
 - activate imported skills automatically;
 - activate imported MCP servers automatically;
@@ -39,8 +39,8 @@ Guarded migration does not:
 
 1. Open the migration folder printed by the command.
 2. Review `report.json`.
-3. Read every staged `SKILL.md` before copying approved user-level skills into `<HERMES_HOME>/skills/`.
-4. For corporate or team knowledge, use the dashboard Knowledge approval flow instead of copying directly into `<HERMES_HOME>/corporate/` or `<HERMES_HOME>/teams/`.
+3. Read every staged `SKILL.md` before copying approved user-level skills into `<MAIA_HOME>/skills/`.
+4. For corporate or team knowledge, use the dashboard Knowledge approval flow instead of copying directly into `<MAIA_HOME>/corporate/` or `<MAIA_HOME>/teams/`.
 5. Re-enter secrets through the dashboard Keys page or the managed `.env` workflow.
 6. Inspect imported MCP servers in `config.yaml`; only set `enabled: true` after reviewing command, URL, tool filters, and env requirements.
 7. Keep `governance.default_file_policy: deny` unless this is a local test profile.

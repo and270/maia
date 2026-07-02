@@ -7,7 +7,7 @@ sidebar_position: 8
 
 # Fallback Providers
 
-Coorporate Hermes has three layers of resilience that keep your sessions running when providers hit issues:
+Maia has three layers of resilience that keep your sessions running when providers hit issues:
 
 1. **[Credential pools](./credential-pools.md)** — rotate across multiple API keys for the *same* provider (tried first)
 2. **Primary model fallback** — automatically switches to a *different* provider:model when your main model fails
@@ -29,7 +29,7 @@ hermes fallback
 
 `hermes fallback` reuses the provider picker from `hermes model` — same provider list, same credential prompts, same validation. Press `a` to add a fallback, `↑`/`↓` to reorder, `d` to remove, `q` to save and exit. Changes persist under `model.fallback_providers` in `config.yaml`.
 
-If you'd rather edit the YAML directly, add a `fallback_model` section to `~/.hermes/config.yaml`:
+If you'd rather edit the YAML directly, add a `fallback_model` section to `~/.maia/config.yaml`:
 
 ```yaml
 fallback_model:

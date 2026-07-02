@@ -1,6 +1,6 @@
 """Governed corporate/team/user knowledge layers.
 
-Coorporate Hermes keeps the upstream user memory and user skill behavior, but
+Maia keeps the upstream user memory and user skill behavior, but
 adds shared layers above it:
 
 * corporate: approved tenant-wide facts and skills injected into every session
@@ -197,7 +197,7 @@ def build_enterprise_knowledge_prompt(actor: Optional[Any] = None) -> str:
     separator = "═" * 46
     return (
         f"{separator}\n"
-        "COORPORATE HERMES SHARED KNOWLEDGE\n"
+        "MAIA HERMES SHARED KNOWLEDGE\n"
         f"{separator}\n"
         "Corporate and team memory/skills below are approved shared knowledge. "
         "They outrank user-level memory/skills when there is a conflict. "

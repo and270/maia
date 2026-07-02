@@ -1,13 +1,13 @@
 ---
 title: Home Assistant
-description: Control your smart home with Coorporate Hermes via Home Assistant integration.
+description: Control your smart home with Maia via Home Assistant integration.
 sidebar_label: Home Assistant
 sidebar_position: 5
 ---
 
 # Home Assistant Integration
 
-Coorporate Hermes integrates with [Home Assistant](https://www.home-assistant.io/) in two ways:
+Maia integrates with [Home Assistant](https://www.home-assistant.io/) in two ways:
 
 1. **Gateway platform** — subscribes to real-time state changes via WebSocket and responds to events
 2. **Smart home tools** — four LLM-callable tools for querying and controlling devices via the REST API
@@ -19,13 +19,13 @@ Coorporate Hermes integrates with [Home Assistant](https://www.home-assistant.io
 1. Open your Home Assistant instance
 2. Go to your **Profile** (click your name in the sidebar)
 3. Scroll to **Long-Lived Access Tokens**
-4. Click **Create Token**, give it a name like "Coorporate Hermes"
+4. Click **Create Token**, give it a name like "Maia"
 5. Copy the token
 
 ### 2. Configure Environment Variables
 
 ```bash
-# Add to ~/.hermes/.env
+# Add to ~/.maia/.env
 
 # Required: your Long-Lived Access Token
 HASS_TOKEN=your-long-lived-access-token
@@ -48,7 +48,7 @@ Home Assistant will appear as a connected platform alongside any other messaging
 
 ## Available Tools
 
-Coorporate Hermes registers four tools for smart home control:
+Maia registers four tools for smart home control:
 
 ### `ha_list_entities`
 
@@ -130,7 +130,7 @@ The Home Assistant gateway adapter connects via WebSocket and subscribes to `sta
 By default, **no events are forwarded**. You must configure at least one of `watch_domains`, `watch_entities`, or `watch_all` to receive events. Without filters, a warning is logged at startup and all state changes are silently dropped.
 :::
 
-Configure which events the agent sees in `~/.hermes/config.yaml` under the Home Assistant platform's `extra` section:
+Configure which events the agent sees in `~/.maia/config.yaml` under the Home Assistant platform's `extra` section:
 
 ```yaml
 platforms:
@@ -178,7 +178,7 @@ State changes are formatted as human-readable messages based on domain:
 
 ### Agent Responses
 
-Outbound messages from the agent are delivered as **Home Assistant persistent notifications** (via `persistent_notification.create`). These appear in the HA notification panel with the title "Coorporate Hermes".
+Outbound messages from the agent are delivered as **Home Assistant persistent notifications** (via `persistent_notification.create`). These appear in the HA notification panel with the title "Maia".
 
 ### Connection Management
 

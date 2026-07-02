@@ -5,13 +5,13 @@ description: "Identity, roles, dashboard access, folder policies, gateway isolat
 
 # Enterprise Governance
 
-Coorporate Hermes adds a governance layer for private one-tenant deployments. The policy lives in `<HERMES_HOME>/config.yaml` (`~/.hermes/config.yaml` by default). Normal administration happens through the protected dashboard; direct YAML edits are for server operators, reviewed deployment automation, backup restore, or break-glass recovery.
+Maia adds a governance layer for private one-tenant deployments. The policy lives in `<MAIA_HOME>/config.yaml` (`~/.maia/config.yaml` by default). Normal administration happens through the protected dashboard; direct YAML edits are for server operators, reviewed deployment automation, backup restore, or break-glass recovery.
 
-Most employees do not need the dashboard. They interact with Coorporate Hermes through a messaging gateway such as Discord, Slack, Mattermost, Matrix, WhatsApp, or Telegram. The dashboard is the admin surface for configuring the deployment, approving dashboard access, assigning governance roles, reviewing logs, and managing policies; protect it like any other admin console.
+Most employees do not need the dashboard. They interact with Maia through a messaging gateway such as Discord, Slack, Mattermost, Matrix, WhatsApp, or Telegram. The dashboard is the admin surface for configuring the deployment, approving dashboard access, assigning governance roles, reviewing logs, and managing policies; protect it like any other admin console.
 
 ## Identity and Roles
 
-Gateway users are identified by stable `platform:user_id` keys. Gateway allowlists such as `DISCORD_ALLOWED_USERS` decide who may talk to the bot; `governance.users` decides the Coorporate Hermes roles, teams, and policy behavior attached to that identity. Adding a Discord ID to the gateway allowlist does not automatically make that person a dashboard admin.
+Gateway users are identified by stable `platform:user_id` keys. Gateway allowlists such as `DISCORD_ALLOWED_USERS` decide who may talk to the bot; `governance.users` decides the Maia roles, teams, and policy behavior attached to that identity. Adding a Discord ID to the gateway allowlist does not automatically make that person a dashboard admin.
 
 ```yaml
 governance:
@@ -28,23 +28,23 @@ governance:
 
 Roles drive authorization. Teams drive approved team memory and skill injection.
 
-The normal dashboard path does not require manually copying `/whoami` output into YAML. A user sends `/dashboard` in a private/direct chat, Coorporate Hermes records the exact actor key in **Dashboard Access**, and a system admin approves the request with roles and teams. `/whoami` is still useful for troubleshooting because it shows the channel identity and current mapping.
+The normal dashboard path does not require manually copying `/whoami` output into YAML. A user sends `/dashboard` in a private/direct chat, Maia records the exact actor key in **Dashboard Access**, and a system admin approves the request with roles and teams. `/whoami` is still useful for troubleshooting because it shows the channel identity and current mapping.
 
 ## Dashboard Access
 
 The dashboard can change config, secrets, server folder policies, cron jobs, approval decisions, plugins, and model settings. It binds to localhost by default:
 
 ```bash
-coorporate dashboard
+maia dashboard
 ```
 
-For intranet or public serving, configure protected mode first. Coorporate Hermes refuses non-loopback binding without dashboard auth unless `--insecure` is explicitly used.
+For intranet or public serving, configure protected mode first. Maia refuses non-loopback binding without dashboard auth unless `--insecure` is explicitly used.
 
 ```yaml
 dashboard:
   auth:
     enabled: true
-    token_env: COORPORATE_DASHBOARD_TOKEN
+    token_env: MAIA_DASHBOARD_TOKEN
     local_token_roles: [admin]
     read_roles: [auditor, manager, admin]
     manage_roles: [manager, admin]
@@ -52,16 +52,16 @@ dashboard:
 ```
 
 ```bash
-export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
-coorporate dashboard --host 0.0.0.0 --no-open
+export MAIA_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+maia dashboard --host 0.0.0.0 --no-open
 ```
 
 Default built-in flow for team leaders:
 
 1. The team leader sends `/dashboard` in a private/direct gateway chat.
-2. Coorporate Hermes creates a pending request in **Dashboard Access**.
+2. Maia creates a pending request in **Dashboard Access**.
 3. A system admin opens **Dashboard Access**, reviews the actor key, assigns roles and teams, and approves or denies the request.
-4. On approval, Coorporate Hermes writes the actor under `governance.users`.
+4. On approval, Maia writes the actor under `governance.users`.
 5. The team leader sends `/dashboard` again to receive a short-lived one-time dashboard token.
 6. The admin can revoke or restore that dashboard access from the same page.
 
@@ -75,7 +75,7 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 
@@ -92,7 +92,7 @@ governance:
       managers: ["discord:99887766"]
 ```
 
-Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If the company already operates that access layer, Coorporate Hermes can sit behind it and consume trusted headers from it:
+Maia does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If the company already operates that access layer, Maia can sit behind it and consume trusted headers from it:
 
 ```yaml
 dashboard:
@@ -103,7 +103,7 @@ dashboard:
     trusted_platform: sso
 ```
 
-Use `trusted_user_header` only behind a TLS reverse proxy or SSO layer that strips spoofed client headers. Prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
+Use `trusted_user_header` only behind a TLS reverse proxy or SSO layer that strips spoofed client headers. Prefer binding Maia to `127.0.0.1` behind that proxy.
 
 There is one dashboard application. A system admin sees global config, secrets, plugins, all folder policies, delegated roots, approvals, and audit evidence. A team leader sees only the approval surfaces allowed by role and the File Access roots delegated to their team. Operators normally work through CLI or gateway channels inside the same server-side policy.
 
@@ -118,27 +118,27 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 ```
 
 First `/dashboard` request:
 
-1. If the actor is not approved, Coorporate Hermes creates a pending **Dashboard Access** request.
+1. If the actor is not approved, Maia creates a pending **Dashboard Access** request.
 2. The bot tells the user the request is pending.
 3. A system admin reviews the request, assigns roles and teams, and approves or denies it.
 
 After approval:
 
 1. The user sends `/dashboard` again.
-2. Coorporate Hermes checks that access is approved, not revoked, and that roles satisfy `dashboard.auth.read_roles`.
+2. Maia checks that access is approved, not revoked, and that roles satisfy `dashboard.auth.read_roles`.
 3. The bot sends a one-time token for the dashboard login form.
 4. The token is short-lived, consumed on first use, stored hashed on disk, and audited when audit logging is enabled.
 
 ## File Authorization By Team And User
 
-Use **Dashboard -> File Access** for normal file authorization. The dashboard writes the same values to `<HERMES_HOME>/config.yaml` on the server under `governance`; this YAML is not a separate repo file. Direct YAML edits are for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
+Use **Dashboard -> File Access** for normal file authorization. The dashboard writes the same values to `<MAIA_HOME>/config.yaml` on the server under `governance`; this YAML is not a separate repo file. Direct YAML edits are for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
 
 Before creating policies:
 
@@ -169,7 +169,7 @@ Team leader workflow:
 
 Team leaders cannot change the global default, edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
-Practical marketing example, as saved in `<HERMES_HOME>/config.yaml`:
+Practical marketing example, as saved in `<MAIA_HOME>/config.yaml`:
 
 ```yaml
 governance:
@@ -255,4 +255,4 @@ When due, the job enters `awaiting_authorization` until an allowed user or role 
 
 ## Audit Trail
 
-Audit events are written to `<HERMES_HOME>/logs/audit.jsonl` when observability audit logging is enabled. Coverage includes governance file denials, knowledge approval requests/decisions, cron authorization requests/decisions, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard authorization denials, and mutating dashboard API calls.
+Audit events are written to `<MAIA_HOME>/logs/audit.jsonl` when observability audit logging is enabled. Coverage includes governance file denials, knowledge approval requests/decisions, cron authorization requests/decisions, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard authorization denials, and mutating dashboard API calls.

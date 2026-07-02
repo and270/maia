@@ -15,7 +15,7 @@ description: "Build an automated AI code reviewer that monitors your repos, revi
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │                                                                   │
-│   Cron Timer  ──▶  Coorporate Hermes  ──▶  GitHub API  ──▶  Review     │
+│   Cron Timer  ──▶  Maia  ──▶  GitHub API  ──▶  Review     │
 │   (every 2h)       + gh CLI           (PR diffs)       delivery   │
 │                    + skill                             (Telegram, │
 │                    + memory                            Discord,   │
@@ -34,7 +34,7 @@ If you have a public endpoint available, check out [Automated GitHub PR Comments
 
 ## Prerequisites
 
-- **Coorporate Hermes installed** — see the [Installation guide](/docs/getting-started/installation)
+- **Maia installed** — see the [Installation guide](/docs/getting-started/installation)
 - **Gateway running** for cron jobs:
   ```bash
   hermes gateway install   # Install as a service
@@ -53,7 +53,7 @@ If you have a public endpoint available, check out [Automated GitHub PR Comments
 - **Messaging configured** (optional) — [Telegram](/docs/user-guide/messaging/telegram) or [Discord](/docs/user-guide/messaging/discord)
 
 :::tip No messaging? No problem
-Use `deliver: "local"` to save reviews to `~/.hermes/cron/output/`. Great for testing before wiring up notifications.
+Use `deliver: "local"` to save reviews to `~/.maia/cron/output/`. Great for testing before wiring up notifications.
 :::
 
 ---
@@ -69,7 +69,7 @@ hermes
 Test with a simple command:
 
 ```
-Run: gh pr list --repo and270/coorporate-hermes --state open --limit 3
+Run: gh pr list --repo and270/maia --state open --limit 3
 ```
 
 You should see a list of open PRs. If this works, you're ready.
@@ -84,7 +84,7 @@ Still in the chat, ask Hermes to review a real PR:
 Review this pull request. Read the diff, check for bugs, security issues,
 and code quality. Be specific about line numbers and quote problematic code.
 
-Run: gh pr diff 3888 --repo and270/coorporate-hermes
+Run: gh pr diff 3888 --repo and270/maia
 ```
 
 Hermes will:
@@ -101,10 +101,10 @@ If you're happy with the quality, time to automate it.
 A skill gives Hermes consistent review guidelines that persist across sessions and cron runs. Without one, review quality varies.
 
 ```bash
-mkdir -p ~/.hermes/skills/code-review
+mkdir -p ~/.maia/skills/code-review
 ```
 
-Create `~/.hermes/skills/code-review/SKILL.md`:
+Create `~/.maia/skills/code-review/SKILL.md`:
 
 ```markdown
 ---

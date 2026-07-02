@@ -40,10 +40,10 @@ export function usePlugins() {
         });
     };
     load();
-    window.addEventListener("coorporate-hermes-dashboard-authenticated", load);
+    window.addEventListener("maia-dashboard-authenticated", load);
     return () => {
       active = false;
-      window.removeEventListener("coorporate-hermes-dashboard-authenticated", load);
+      window.removeEventListener("maia-dashboard-authenticated", load);
     };
   }, []);
 

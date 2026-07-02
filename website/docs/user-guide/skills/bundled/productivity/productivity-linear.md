@@ -17,7 +17,7 @@ Linear: manage issues, projects, teams via GraphQL + curl.
 | Source | Bundled (installed by default) |
 | Path | `skills/productivity/linear` |
 | Version | `1.0.0` |
-| Author | Coorporate Hermes |
+| Author | Maia |
 | License | MIT |
 | Tags | `Linear`, `Project Management`, `Issues`, `GraphQL`, `API`, `Productivity` |
 
@@ -56,7 +56,7 @@ curl -s -X POST https://api.linear.app/graphql \
 For faster one-liners that don't need hand-written GraphQL, this skill ships a stdlib Python CLI at `scripts/linear_api.py`. Zero dependencies. Same auth (reads `LINEAR_API_KEY`).
 
 ```bash
-SCRIPT=$(dirname "$(find ~/.hermes -path '*skills/productivity/linear/scripts/linear_api.py' 2>/dev/null | head -1)")/linear_api.py
+SCRIPT=$(dirname "$(find ~/.maia -path '*skills/productivity/linear/scripts/linear_api.py' 2>/dev/null | head -1)")/linear_api.py
 
 python3 "$SCRIPT" whoami
 python3 "$SCRIPT" list-teams

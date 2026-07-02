@@ -1,4 +1,4 @@
-"""Shared constants for Hermes Agent.
+"""Shared constants for Maia.
 
 Import-safe module with no dependencies — can be imported from anywhere
 without risk of circular imports.
@@ -10,24 +10,81 @@ from pathlib import Path
 
 _profile_fallback_warned: bool = False
 
+MAIA_HOME_ENV = "MAIA_HOME"
+LEGACY_HERMES_HOME_ENV = "HERMES_HOME"
+MAIA_HOME_DIRNAME = ".maia"
+LEGACY_HERMES_HOME_DIRNAME = ".hermes"
+
+
+def bridge_maia_env_aliases() -> None:
+    """Mirror MAIA_* and legacy HERMES_* env vars inside this process.
+
+    Most internal modules still read HERMES_* names directly. Maia exposes the
+    MAIA_* spelling as the primary public API, so this bridge lets users set
+    MAIA_INFERENCE_MODEL, MAIA_ACCEPT_HOOKS, MAIA_HOME, etc. while preserving
+    HERMES_* compatibility for old deployments. If both spellings are set, the
+    MAIA_* value wins for the legacy alias.
+    """
+    for key, value in list(os.environ.items()):
+        if key.startswith("MAIA_"):
+            legacy_key = "HERMES_" + key[len("MAIA_"):]
+            os.environ[legacy_key] = value
+
+    for key, value in list(os.environ.items()):
+        if key.startswith("HERMES_"):
+            maia_key = "MAIA_" + key[len("HERMES_"):]
+            os.environ.setdefault(maia_key, value)
+
+
+bridge_maia_env_aliases()
+
+
+def _standard_maia_root() -> Path:
+    return Path.home() / MAIA_HOME_DIRNAME
+
+
+def _legacy_hermes_root() -> Path:
+    return Path.home() / LEGACY_HERMES_HOME_DIRNAME
+
+
+def _default_data_root() -> Path:
+    """Return the default data root, preserving existing legacy installs.
+
+    Fresh Maia installs use ``~/.maia``. Existing installations that already
+    have ``~/.hermes`` and do not yet have ``~/.maia`` continue to use the
+    legacy directory so upgrades do not appear to lose config, sessions, or
+    credentials.
+    """
+    maia_root = _standard_maia_root()
+    legacy_root = _legacy_hermes_root()
+    if maia_root.exists() or not legacy_root.exists():
+        return maia_root
+    return legacy_root
+
+
+def _home_env_value() -> str:
+    """Return MAIA_HOME, falling back to legacy HERMES_HOME."""
+    maia_home = os.environ.get(MAIA_HOME_ENV, "").strip()
+    if maia_home:
+        return maia_home
+    return os.environ.get(LEGACY_HERMES_HOME_ENV, "").strip()
+
 
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the Maia home directory.
 
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
-    This is the single source of truth — all other copies should import this.
+    Reads ``MAIA_HOME`` first, then the legacy ``HERMES_HOME`` alias. Fresh
+    installs default to ``~/.maia``; existing legacy installs with ``~/.hermes``
+    keep using that directory until they opt into ``MAIA_HOME`` or migrate.
+    This function remains named ``get_hermes_home`` for import compatibility.
 
-    When ``HERMES_HOME`` is unset but an ``active_profile`` file indicates
-    a non-default profile is active, logs a loud one-shot warning to
+    When no home env var is set but an ``active_profile`` file indicates a
+    non-default profile is active, logs a loud one-shot warning to
     ``errors.log`` so cross-profile data corruption is diagnosable instead
-    of silent.  Behavior is unchanged otherwise — we still return
-    ``~/.hermes`` — because raising here would brick 30+ module-level
-    callers that import this at load time.  Subprocess spawners are
-    expected to propagate ``HERMES_HOME`` explicitly (see the systemd
-    template in ``hermes_cli/gateway.py`` and the kanban dispatcher in
-    ``hermes_cli/kanban_db.py``).  See https://github.com/NousResearch/hermes-agent/issues/18594.
+    of silent. Subprocess spawners are expected to propagate ``MAIA_HOME``
+    explicitly, with ``HERMES_HOME`` kept as a compatibility alias.
     """
-    val = os.environ.get("HERMES_HOME", "").strip()
+    val = _home_env_value()
     if val:
         return Path(val)
 
@@ -39,7 +96,7 @@ def get_hermes_home() -> Path:
             # Inline the default-root resolution from get_default_hermes_root()
             # to stay import-safe (this function is called from module scope
             # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".hermes" / "active_profile")
+            active_path = (_default_data_root() / "active_profile")
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
@@ -52,12 +109,12 @@ def get_hermes_home() -> Path:
             # on consoles where a StreamHandler is already attached.
             import sys
             msg = (
-                f"[HERMES_HOME fallback] HERMES_HOME is unset but active "
-                f"profile is {active!r}. Falling back to ~/.hermes, which "
-                f"is the DEFAULT profile — not {active!r}. Any data this "
-                f"process writes will land in the wrong profile. The "
-                f"subprocess spawner should pass HERMES_HOME explicitly "
-                f"(see issue #18594)."
+                f"[MAIA_HOME fallback] neither MAIA_HOME nor HERMES_HOME is "
+                f"set but active profile is {active!r}. Falling back to "
+                f"{_default_data_root()}, which is the DEFAULT profile — not "
+                f"{active!r}. Any data this process writes will land in the "
+                f"wrong profile. The subprocess spawner should pass "
+                f"MAIA_HOME explicitly."
             )
             try:
                 sys.stderr.write(msg + "\n")
@@ -65,33 +122,33 @@ def get_hermes_home() -> Path:
             except Exception:
                 pass
 
-    return Path.home() / ".hermes"
+    return _default_data_root()
 
 
 def get_default_hermes_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """Return the root Maia directory for profile-level operations.
 
-    In standard deployments this is ``~/.hermes``.
+    In standard deployments this is ``~/.maia`` for fresh installs, or the
+    legacy ``~/.hermes`` when upgrading an existing installation.
 
-    In Docker or custom deployments where ``HERMES_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``HERMES_HOME`` directly
-    — that IS the root.
+    In Docker or custom deployments where ``MAIA_HOME`` / ``HERMES_HOME``
+    points outside the standard root (e.g. ``/opt/data``), returns that home
+    directly — that IS the root.
 
-    In profile mode where ``HERMES_HOME`` is ``<root>/profiles/<name>``,
+    In profile mode where the home is ``<root>/profiles/<name>``,
     returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
-    (``/opt/data/profiles/coder``) layouts.
+    Works for both standard and Docker layouts.
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
-    env_home = os.environ.get("HERMES_HOME", "")
+    native_home = _default_data_root()
+    env_home = _home_env_value()
     if not env_home:
         return native_home
     env_path = Path(env_home)
     try:
         env_path.resolve().relative_to(native_home.resolve())
-        # HERMES_HOME is under ~/.hermes (normal or profile mode)
+        # MAIA_HOME/HERMES_HOME is under the standard root (normal/profile mode)
         return native_home
     except ValueError:
         pass
@@ -103,7 +160,7 @@ def get_default_hermes_root() -> Path:
     if env_path.parent.name == "profiles":
         return env_path.parent.parent
 
-    # Not a profile path — HERMES_HOME itself is the root
+    # Not a profile path — the configured home itself is the root
     return env_path
 
 
@@ -111,9 +168,13 @@ def get_optional_skills_dir(default: Path | None = None) -> Path:
     """Return the optional-skills directory, honoring package-manager wrappers.
 
     Packaged installs may ship ``optional-skills`` outside the Python package
-    tree and expose it via ``HERMES_OPTIONAL_SKILLS``.
+    tree and expose it via ``MAIA_OPTIONAL_SKILLS``. ``HERMES_OPTIONAL_SKILLS``
+    is still accepted for legacy deployments.
     """
-    override = os.getenv("HERMES_OPTIONAL_SKILLS", "").strip()
+    override = (
+        os.getenv("MAIA_OPTIONAL_SKILLS", "").strip()
+        or os.getenv("HERMES_OPTIONAL_SKILLS", "").strip()
+    )
     if override:
         return Path(override)
     if default is not None:
@@ -122,15 +183,15 @@ def get_optional_skills_dir(default: Path | None = None) -> Path:
 
 
 def get_hermes_dir(new_subpath: str, old_name: str) -> Path:
-    """Resolve a Hermes subdirectory with backward compatibility.
+    """Resolve a Maia subdirectory with backward compatibility.
 
     New installs get the consolidated layout (e.g. ``cache/images``).
     Existing installs that already have the old path (e.g. ``image_cache``)
     keep using it — no migration required.
 
     Args:
-        new_subpath: Preferred path relative to HERMES_HOME (e.g. ``"cache/images"``).
-        old_name: Legacy path relative to HERMES_HOME (e.g. ``"image_cache"``).
+        new_subpath: Preferred path relative to MAIA_HOME (e.g. ``"cache/images"``).
+        old_name: Legacy path relative to MAIA_HOME (e.g. ``"image_cache"``).
 
     Returns:
         Absolute ``Path`` — old location if it exists on disk, otherwise the new one.
@@ -143,13 +204,14 @@ def get_hermes_dir(new_subpath: str, old_name: str) -> Path:
 
 
 def display_hermes_home() -> str:
-    """Return a user-friendly display string for the current HERMES_HOME.
+    """Return a user-friendly display string for the current Maia home.
 
     Uses ``~/`` shorthand for readability::
 
-        default:  ``~/.hermes``
-        profile:  ``~/.hermes/profiles/coder``
-        custom:   ``/opt/hermes-custom``
+        default:  ``~/.maia``
+        legacy:   ``~/.hermes``
+        profile:  ``~/.maia/profiles/coder``
+        custom:   ``/opt/maia-custom``
 
     Use this in **user-facing** print/log messages instead of hardcoding
     ``~/.hermes``.  For code that needs a real ``Path``, use
@@ -165,7 +227,7 @@ def display_hermes_home() -> str:
 def get_subprocess_home() -> str | None:
     """Return a per-profile HOME directory for subprocesses, or None.
 
-    When ``{HERMES_HOME}/home/`` exists on disk, subprocesses should use it
+    When ``{MAIA_HOME}/home/`` exists on disk, subprocesses should use it
     as ``HOME`` so system tools (git, ssh, gh, npm …) write their configs
     inside the Hermes data directory instead of the OS-level ``/root`` or
     ``~/``.  This provides:
@@ -179,9 +241,9 @@ def get_subprocess_home() -> str | None:
     Activation is directory-based: if the ``home/`` subdirectory doesn't
     exist, returns ``None`` and behavior is unchanged.
     """
-    hermes_home = os.getenv("HERMES_HOME")
+    hermes_home = _home_env_value()
     if not hermes_home:
-        return None
+        hermes_home = str(get_hermes_home())
     profile_home = os.path.join(hermes_home, "home")
     if os.path.isdir(profile_home):
         return profile_home

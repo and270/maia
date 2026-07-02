@@ -1,14 +1,14 @@
 ---
-title: "Coorporate Hermes — Configure, extend, or contribute to Coorporate Hermes"
-sidebar_label: "Coorporate Hermes"
-description: "Configure, extend, or contribute to Coorporate Hermes"
+title: "Maia — Configure, extend, or contribute to Maia"
+sidebar_label: "Maia"
+description: "Configure, extend, or contribute to Maia"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Coorporate Hermes
+# Maia
 
-Configure, extend, or contribute to Coorporate Hermes.
+Configure, extend, or contribute to Maia.
 
 ## Skill metadata
 
@@ -17,7 +17,7 @@ Configure, extend, or contribute to Coorporate Hermes.
 | Source | Bundled (installed by default) |
 | Path | `skills/autonomous-ai-agents/hermes-agent` |
 | Version | `2.0.0` |
-| Author | Coorporate Hermes + Teknium |
+| Author | Maia + Teknium |
 | License | MIT |
 | Tags | `hermes`, `setup`, `configuration`, `multi-agent`, `spawning`, `cli`, `gateway`, `development` |
 | Related skills | [`claude-code`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code), [`codex`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex), [`opencode`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) |
@@ -28,9 +28,9 @@ Configure, extend, or contribute to Coorporate Hermes.
 The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
-# Coorporate Hermes
+# Maia
 
-Coorporate Hermes is an AmpliIA AI agent framework for private company deployments that runs in your terminal, messaging platforms, and IDEs. It is derived from upstream Hermes Agent under the MIT License. Hermes works with any LLM provider (OpenRouter, Anthropic, OpenAI, DeepSeek, local models, and 15+ others) and runs on Linux, macOS, and WSL.
+Maia is an AmpliIA AI agent framework for private company deployments that runs in your terminal, messaging platforms, and IDEs. It is derived from upstream Hermes Agent under the MIT License. Hermes works with any LLM provider (OpenRouter, Anthropic, OpenAI, DeepSeek, local models, and 15+ others) and runs on Linux, macOS, and WSL.
 
 What makes Hermes different:
 
@@ -43,7 +43,7 @@ What makes Hermes different:
 
 People use Hermes for software development, research, system administration, data analysis, content creation, home automation, and anything else that benefits from an AI agent with persistent context and full system access.
 
-**This skill helps you work with Coorporate Hermes effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
+**This skill helps you work with Maia effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
 
 **Docs:** https://ampliia.com/en/docs/
 
@@ -51,9 +51,9 @@ People use Hermes for software development, research, system administration, dat
 
 ```bash
 # Install
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 
 # Interactive chat (default)
 hermes
@@ -328,16 +328,16 @@ Type these during an interactive chat session.
 ## Key Paths & Config
 
 ```
-~/.hermes/config.yaml       Main configuration
-~/.hermes/.env              API keys and secrets
-$HERMES_HOME/skills/        Installed skills
-~/.hermes/sessions/         Session transcripts
-~/.hermes/logs/             Gateway and error logs
-~/.hermes/auth.json         OAuth tokens and credential pools
-~/.hermes/hermes-agent/     Source code (if git-installed)
+~/.maia/config.yaml       Main configuration
+~/.maia/.env              API keys and secrets
+$MAIA_HOME/skills/        Installed skills
+~/.maia/sessions/         Session transcripts
+~/.maia/logs/             Gateway and error logs
+~/.maia/auth.json         OAuth tokens and credential pools
+~/.maia/hermes-agent/     Source code (if git-installed)
 ```
 
-Profiles use `~/.hermes/profiles/<name>/` with the same layout.
+Profiles use `~/.maia/profiles/<name>/` with the same layout.
 
 ### Config Sections
 
@@ -470,7 +470,7 @@ Note: YOLO / `approvals.mode: off` does NOT turn off secret redaction. They are 
 
 ### Shell hooks allowlist
 
-Some shell-hook integrations require explicit allowlisting before they fire. Managed via `~/.hermes/shell-hooks-allowlist.json` — prompted interactively the first time a hook wants to run.
+Some shell-hook integrations require explicit allowlisting before they fire. Managed via `~/.maia/shell-hooks-allowlist.json` — prompted interactively the first time a hook wants to run.
 
 ### Disabling the web/browser/image-gen tools
 
@@ -626,7 +626,7 @@ terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_14305
 ### Gateway issues
 Check logs first:
 ```bash
-grep -i "failed to send\|error" ~/.hermes/logs/gateway.log | tail -20
+grep -i "failed to send\|error" ~/.maia/logs/gateway.log | tail -20
 ```
 
 Common gateway problems:
@@ -664,9 +664,9 @@ hermes config set auxiliary.vision.model <model_name>
 | Memory | `hermes memory status` or [Memory docs](https://ampliia.com/en/docs/user-guide/features/memory) |
 | Env variables | `hermes config env-path` or [Env vars reference](https://ampliia.com/en/docs/reference/environment-variables) |
 | CLI commands | `hermes --help` or [CLI reference](https://ampliia.com/en/docs/reference/cli-commands) |
-| Gateway logs | `~/.hermes/logs/gateway.log` |
-| Session files | `~/.hermes/sessions/` or `hermes sessions browse` |
-| Source code | `~/.hermes/hermes-agent/` |
+| Gateway logs | `~/.maia/logs/gateway.log` |
+| Session files | `~/.maia/sessions/` or `hermes sessions browse` |
+| Source code | `~/.maia/hermes-agent/` |
 
 ---
 
@@ -699,7 +699,7 @@ hermes-agent/
 ```
 <!-- ascii-guard-ignore-end -->
 
-Config: `~/.hermes/config.yaml` (settings), `~/.hermes/.env` (API keys).
+Config: `~/.maia/config.yaml` (settings), `~/.maia/.env` (API keys).
 
 ### Adding a Tool (3 files)
 
@@ -729,7 +729,7 @@ registry.register(
 
 Auto-discovery: any `tools/*.py` file with a top-level `registry.register()` call is imported automatically — no manual list needed.
 
-All handlers must return JSON strings. Use `get_hermes_home()` for paths, never hardcode `~/.hermes`.
+All handlers must return JSON strings. Use `get_hermes_home()` for paths, never hardcode `~/.maia`.
 
 ### Adding a Slash Command
 
@@ -758,7 +758,7 @@ python -m pytest tests/ -o 'addopts=' -q   # Full suite
 python -m pytest tests/tools/ -q            # Specific area
 ```
 
-- Tests auto-redirect `HERMES_HOME` to temp dirs — never touch real `~/.hermes/`
+- Tests auto-redirect `MAIA_HOME` to temp dirs — never touch real `~/.maia/`
 - Run full suite before pushing any change
 - Use `-o 'addopts='` to clear any baked-in pytest flags
 

@@ -100,7 +100,7 @@ const PLATFORMS: GatewayPlatform[] = [
     badge: "Recommended for companies",
     description:
       "Socket Mode gateway for corporate Slack workspaces. No public webhook URL is required.",
-    docUrl: "https://ampliia.com/en/coorporate-hermes/docs/#gateway-setup",
+    docUrl: "https://ampliia.com/en/maia/docs/#gateway-setup",
     required: ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"],
     fields: [
       { key: "SLACK_BOT_TOKEN", label: "Bot token", placeholder: "xoxb-...", secret: true, required: true },
@@ -114,7 +114,7 @@ const PLATFORMS: GatewayPlatform[] = [
       "Add message.im, message.channels, message.groups, and app_mention events.",
       "Install the app, copy the xoxb bot token, then invite the bot to channels.",
     ],
-    test: "DM the bot, then test one approved channel with @Coorporate Hermes.",
+    test: "DM the bot, then test one approved channel with @Maia.",
   },
   {
     id: "discord",
@@ -122,7 +122,7 @@ const PLATFORMS: GatewayPlatform[] = [
     badge: "Recommended for teams",
     description:
       "Discord bot gateway with direct messages, server channels, roles, slash commands, and threads.",
-    docUrl: "https://ampliia.com/en/coorporate-hermes/docs/#gateway-setup",
+    docUrl: "https://ampliia.com/en/maia/docs/#gateway-setup",
     required: ["DISCORD_BOT_TOKEN"],
     requiredAny: [["DISCORD_ALLOWED_USERS", "DISCORD_ALLOWED_ROLES"]],
     fields: [
@@ -145,7 +145,7 @@ const PLATFORMS: GatewayPlatform[] = [
         help: [
           "Optional alternative or complement to named users. Separate multiple role IDs with commas.",
           "In Discord, enable Developer Mode, right-click a role in Server Settings → Roles, then Copy Role ID.",
-          "This grants gateway access to anyone holding that Discord role; Coorporate Hermes governance roles are still configured per user when needed.",
+          "This grants gateway access to anyone holding that Discord role; Maia governance roles are still configured per user when needed.",
         ],
       },
       {
@@ -172,7 +172,7 @@ const PLATFORMS: GatewayPlatform[] = [
     badge: "Self-hosted corporate chat",
     description:
       "Mattermost bot account gateway for companies that run their own chat server.",
-    docUrl: "https://ampliia.com/en/coorporate-hermes/docs/#gateway-setup",
+    docUrl: "https://ampliia.com/en/maia/docs/#gateway-setup",
     required: ["MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_ALLOWED_USERS"],
     fields: [
       { key: "MATTERMOST_URL", label: "Server URL", placeholder: "https://mattermost.company.example", required: true },
@@ -195,12 +195,12 @@ const PLATFORMS: GatewayPlatform[] = [
     badge: "Self-hosted or federated",
     description:
       "Matrix bot user gateway for self-hosted or federated corporate chat.",
-    docUrl: "https://ampliia.com/en/coorporate-hermes/docs/#gateway-setup",
+    docUrl: "https://ampliia.com/en/maia/docs/#gateway-setup",
     required: ["MATRIX_HOMESERVER", "MATRIX_USER_ID", "MATRIX_ALLOWED_USERS"],
     requiredAny: [["MATRIX_ACCESS_TOKEN", "MATRIX_PASSWORD"]],
     fields: [
       { key: "MATRIX_HOMESERVER", label: "Homeserver URL", placeholder: "https://matrix.company.example", required: true },
-      { key: "MATRIX_USER_ID", label: "Bot user ID", placeholder: "@coorporate-hermes:company.example", required: true },
+      { key: "MATRIX_USER_ID", label: "Bot user ID", placeholder: "@maia:company.example", required: true },
       { key: "MATRIX_ACCESS_TOKEN", label: "Access token", placeholder: "Matrix access token", secret: true },
       { key: "MATRIX_PASSWORD", label: "Password login", placeholder: "Only if not using access token", secret: true },
       { key: "MATRIX_ALLOWED_USERS", label: "Allowed user IDs", placeholder: "@ana:company.example,@bruno:company.example", required: true },
@@ -456,7 +456,7 @@ export default function GatewayPage() {
               Messaging Gateway
             </H2>
             <p className="mt-2 max-w-4xl text-sm normal-case leading-6 text-muted-foreground">
-              Configure how employees talk to Coorporate Hermes from Slack, Discord,
+              Configure how employees talk to Maia from Slack, Discord,
               Mattermost, or Matrix. Save credentials here, then start or restart
               the gateway and test with an allowed user before inviting a wider team.
             </p>
@@ -637,7 +637,7 @@ export default function GatewayPage() {
                   <Button
                     size="sm"
                     outlined
-                    onClick={() => copyCommand("coorporate setup gateway")}
+                    onClick={() => copyCommand("maia setup gateway")}
                   >
                     <Copy className="h-4 w-4" />
                     Copy CLI wizard
@@ -666,12 +666,12 @@ export default function GatewayPage() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-sm border border-border bg-black/30 p-3 font-mono-ui text-xs normal-case text-foreground">
-{`coorporate setup gateway
-coorporate gateway run       # foreground test
-coorporate gateway install   # background service
-coorporate gateway start
-coorporate gateway status
-coorporate logs gateway`}
+{`maia setup gateway
+maia gateway run       # foreground test
+maia gateway install   # background service
+maia gateway start
+maia gateway status
+maia logs gateway`}
           </pre>
         </CardContent>
       </Card>

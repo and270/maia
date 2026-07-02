@@ -1,13 +1,13 @@
 ---
 title: "Windows (WSL2) Guide"
-description: "Run Coorporate Hermes on Windows via WSL2 — setup, filesystem access between Windows and Linux, networking, and common pitfalls"
+description: "Run Maia on Windows via WSL2 — setup, filesystem access between Windows and Linux, networking, and common pitfalls"
 sidebar_label: "Windows (WSL2)"
 sidebar_position: 2
 ---
 
 # Windows (WSL2) Guide
 
-Coorporate Hermes is developed and tested on **Linux** and **macOS**. Native Windows is not supported — on Windows you run Hermes inside **WSL2** (Windows Subsystem for Linux, version 2). That means there are effectively two computers in play: your Windows host, and a Linux VM managed by WSL. Most confusion comes from not being sure which one you're on at any moment.
+Maia is developed and tested on **Linux** and **macOS**. Native Windows is not supported — on Windows you run Hermes inside **WSL2** (Windows Subsystem for Linux, version 2). That means there are effectively two computers in play: your Windows host, and a Linux VM managed by WSL. Most confusion comes from not being sure which one you're on at any moment.
 
 This guide covers the parts of that split that specifically affect Hermes: installing WSL2, getting files back and forth between Windows and Linux, networking in both directions, and the pitfalls people actually hit.
 
@@ -87,9 +87,9 @@ The `metadata` mount option above is important — without it, files on `/mnt/c/
 Once you have a WSL2 shell open:
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 source ~/.bashrc
 hermes
 ```
@@ -113,7 +113,7 @@ Both are real, both work, but they are **not the same filesystem** — they're b
 
 **Rule of thumb: keep everything Linux-ish inside the Linux filesystem.**
 
-- Your Hermes install (`~/.hermes/`) — Linux side. The installer already does this.
+- Your Hermes install (`~/.maia/`) — Linux side. The installer already does this.
 - Your git repos that you work on from WSL — Linux side (`~/code/...`, `~/projects/...`).
 - Your models, datasets, venvs — Linux side.
 

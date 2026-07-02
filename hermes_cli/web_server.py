@@ -1,5 +1,5 @@
 """
-Coorporate Hermes web UI server.
+Maia web UI server.
 
 Provides a FastAPI backend serving the Vite/React frontend and REST API
 endpoints for managing configuration, environment variables, and sessions.
@@ -66,7 +66,7 @@ except ImportError:
 WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
 
-app = FastAPI(title="Coorporate Hermes", version=__version__)
+app = FastAPI(title="Maia", version=__version__)
 
 # ---------------------------------------------------------------------------
 # Dashboard authentication.
@@ -78,7 +78,7 @@ app = FastAPI(title="Coorporate Hermes", version=__version__)
 # ---------------------------------------------------------------------------
 _SESSION_TOKEN = secrets.token_urlsafe(32)
 _SESSION_HEADER_NAME = "X-Hermes-Session-Token"
-_DASHBOARD_SESSION_STORAGE_KEY = "coorporateHermes.dashboardSessionToken"
+_DASHBOARD_SESSION_STORAGE_KEY = "maiaHermes.dashboardSessionToken"
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ def _dashboard_auth_enabled(auth_config: Optional[Dict[str, Any]] = None) -> boo
 
 def _dashboard_env_token(auth_config: Optional[Dict[str, Any]] = None) -> str:
     cfg = _dashboard_auth_config() if auth_config is None else auth_config
-    token_env = str(cfg.get("token_env") or "COORPORATE_DASHBOARD_TOKEN").strip()
+    token_env = str(cfg.get("token_env") or "MAIA_DASHBOARD_TOKEN").strip()
     return os.getenv(token_env, "").strip() if token_env else ""
 
 
@@ -2019,7 +2019,7 @@ def _tail_lines(path: Path, n: int) -> List[str]:
 
 @app.post("/api/gateway/restart")
 async def restart_gateway():
-    """Kick off a ``coorporate gateway restart`` in the background."""
+    """Kick off a ``maia gateway restart`` in the background."""
     try:
         proc = _spawn_hermes_action(["gateway", "restart"], "gateway-restart")
     except Exception as exc:
@@ -2034,7 +2034,7 @@ async def restart_gateway():
 
 @app.post("/api/gateway/start")
 async def start_gateway():
-    """Kick off a ``coorporate gateway start`` in the background."""
+    """Kick off a ``maia gateway start`` in the background."""
     try:
         proc = _spawn_hermes_action(["gateway", "start"], "gateway-start")
     except Exception as exc:
@@ -5776,7 +5776,7 @@ def start_server(
         raise SystemExit(
             f"Refusing to bind to {host} — the dashboard exposes API keys, "
             f"config, and server file controls.\n"
-            f"Enable dashboard.auth with {auth_config.get('token_env') or 'COORPORATE_DASHBOARD_TOKEN'} "
+            f"Enable dashboard.auth with {auth_config.get('token_env') or 'MAIA_DASHBOARD_TOKEN'} "
             f"or dashboard.auth.token_hash, trusted SSO headers, or channel_tokens "
             f"before serving it on an intranet/public interface. "
             f"Use --insecure only for temporary trusted-network testing."

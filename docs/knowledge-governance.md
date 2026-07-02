@@ -1,17 +1,17 @@
 # Knowledge Governance
 
-Coorporate Hermes separates memory and skills into three practical layers so company-wide instructions do not get mixed with personal preferences.
+Maia separates memory and skills into three practical layers so company-wide instructions do not get mixed with personal preferences.
 
 ## Layers
 
 | Layer | Path | Loaded For | How It Changes |
 |---|---|---|---|
-| Corporate memory | `<HERMES_HOME>/corporate/memories/MEMORY.md` | Every conversation | Human approval required |
-| Corporate skills | `<HERMES_HOME>/corporate/skills/` | Every conversation | Human approval required |
-| Team memory | `<HERMES_HOME>/teams/<team>/memories/MEMORY.md` | Users assigned to that team | Human approval required |
-| Team skills | `<HERMES_HOME>/teams/<team>/skills/` | Users assigned to that team | Human approval required |
-| User memory | `<HERMES_HOME>/memories/` | Current user/profile | Existing user-level memory flow |
-| User skills | `<HERMES_HOME>/skills/` | Current user/profile | Existing skill flow |
+| Corporate memory | `<MAIA_HOME>/corporate/memories/MEMORY.md` | Every conversation | Human approval required |
+| Corporate skills | `<MAIA_HOME>/corporate/skills/` | Every conversation | Human approval required |
+| Team memory | `<MAIA_HOME>/teams/<team>/memories/MEMORY.md` | Users assigned to that team | Human approval required |
+| Team skills | `<MAIA_HOME>/teams/<team>/skills/` | Users assigned to that team | Human approval required |
+| User memory | `<MAIA_HOME>/memories/` | Current user/profile | Existing user-level memory flow |
+| User skills | `<MAIA_HOME>/skills/` | Current user/profile | Existing skill flow |
 
 Corporate and team knowledge is injected before user memory and user skills. If there is a conflict, the approved corporate/team layer wins.
 
@@ -79,7 +79,7 @@ skill_manage(
 Approvals are stored at:
 
 ```text
-<HERMES_HOME>/knowledge/approvals.json
+<MAIA_HOME>/knowledge/approvals.json
 ```
 
 Approved changes are written to the corporate/team memory or skill path and recorded in the audit trail.

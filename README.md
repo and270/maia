@@ -1,31 +1,31 @@
-# Coorporate Hermes
+# Maia
 
 Private one-tenant corporate AI assistant by [AmpliIA](https://ampliia.com/en/), based on the upstream Hermes Agent codebase and refit for company use: role-aware gateway conversations, governed folder access, corporate/team/user knowledge layers, guarded migration from upstream Hermes exports, human-in-the-loop cron authorization, and corporate observability.
 
-Public documentation: [https://ampliia.com/en/coorporate-hermes/docs/](https://ampliia.com/en/coorporate-hermes/docs/)
+Public documentation: [https://ampliia.com/en/maia/docs/](https://ampliia.com/en/maia/docs/)
 
 The installed commands are renamed so operators do not use the upstream `hermes` command name:
 
 ```bash
-coorporate              # interactive assistant
-coorporate gateway      # messaging gateway
-coorporate cron list    # scheduled workflows
-coorporate model        # model/provider selection
-coorporate doctor       # diagnostics
-coorporate-acp          # ACP editor integration
-coorporate-agent        # direct agent runner
+maia              # interactive assistant
+maia gateway      # messaging gateway
+maia cron list    # scheduled workflows
+maia model        # model/provider selection
+maia doctor       # diagnostics
+maia-acp          # ACP editor integration
+maia-agent        # direct agent runner
 ```
 
 ## Install
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
 # Only needed if setup says it added the command directory to your shell config.
 source ~/.zshrc
-coorporate setup
-coorporate
+maia setup
+maia
 ```
 
 Manual development install:
@@ -34,7 +34,7 @@ Manual development install:
 uv venv .venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[all,dev]"
-coorporate --help
+maia --help
 ```
 
 ## Dashboard Access
@@ -42,7 +42,7 @@ coorporate --help
 Local setup:
 
 ```bash
-coorporate dashboard
+maia dashboard
 ```
 
 The dashboard binds to `127.0.0.1` by default. It can edit `.env`, `config.yaml`, folder policies, cron jobs, knowledge approvals, plugins, and model settings, so configure protected mode before serving it on an intranet or public interface:
@@ -51,7 +51,7 @@ The dashboard binds to `127.0.0.1` by default. It can edit `.env`, `config.yaml`
 dashboard:
   auth:
     enabled: true
-    token_env: COORPORATE_DASHBOARD_TOKEN
+    token_env: MAIA_DASHBOARD_TOKEN
     local_token_roles: [admin]
     read_roles: [auditor, manager, admin]
     manage_roles: [manager, admin]
@@ -59,16 +59,16 @@ dashboard:
 ```
 
 ```bash
-export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
-coorporate dashboard --host 0.0.0.0 --no-open
+export MAIA_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+maia dashboard --host 0.0.0.0 --no-open
 ```
 
-Use a TLS reverse proxy or private network boundary for public access. Coorporate Hermes refuses non-loopback dashboard binding unless `dashboard.auth` is configured, unless `--insecure` is explicitly used for temporary trusted-network testing.
+Use a TLS reverse proxy or private network boundary for public access. Maia refuses non-loopback dashboard binding unless `dashboard.auth` is configured, unless `--insecure` is explicitly used for temporary trusted-network testing.
 
 Use the local token for bootstrap and system-admin access. Default built-in flow for team leaders is dashboard-first:
 
 1. A user sends `/dashboard` in a private/direct chat with the bot.
-2. Coorporate Hermes creates a pending request in **Dashboard Access** instead of asking anyone to edit YAML.
+2. Maia creates a pending request in **Dashboard Access** instead of asking anyone to edit YAML.
 3. A system admin opens **Dashboard Access**, reviews the `platform:user_id`, assigns roles and teams, and approves or denies the request.
 4. After approval, the user sends `/dashboard` again and receives a short-lived one-time token for the dashboard login form.
 5. The admin can revoke or restore that dashboard access from the same page.
@@ -82,16 +82,16 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 ```
 
-Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If your company already has that access layer, Coorporate Hermes can sit behind it and consume trusted identity headers such as `X-Auth-Request-User`.
+Maia does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If your company already has that access layer, Maia can sit behind it and consume trusted identity headers such as `X-Auth-Request-User`.
 
 ## Corporate Governance
 
-Coorporate Hermes keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `<HERMES_HOME>/config.yaml`. The dashboard writes role and team assignments into that section when an admin approves a dashboard access request. Server operators can still edit the YAML directly for infrastructure-as-code, backup restore, or break-glass recovery.
+Maia keeps the existing gateway, tool, memory, and cron capabilities, but adds a `governance` section in `<MAIA_HOME>/config.yaml`. The dashboard writes role and team assignments into that section when an admin approves a dashboard access request. Server operators can still edit the YAML directly for infrastructure-as-code, backup restore, or break-glass recovery.
 
 ```yaml
 governance:
@@ -141,7 +141,7 @@ What this enforces today:
 
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Coorporate Hermes may access for any channel, cron job, or dashboard-triggered action.
+- `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Maia may access for any channel, cron job, or dashboard-triggered action.
 - Admins manage global file access from dashboard **File Access** or server-side YAML. Team leaders use the same page after dashboard login, but only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.
@@ -149,7 +149,7 @@ What this enforces today:
 
 ## Role-Aware Self-Configuration Skill
 
-Coorporate Hermes keeps the upstream `hermes-agent` skill, but extends it with a live governance block rendered at skill load time. The block includes the current actor, roles, teams, tenant, dashboard read/manage/admin gates, delegated team file roots, shared-knowledge approval roles, and cron authorization defaults.
+Maia keeps the upstream `hermes-agent` skill, but extends it with a live governance block rendered at skill load time. The block includes the current actor, roles, teams, tenant, dashboard read/manage/admin gates, delegated team file roots, shared-knowledge approval roles, and cron authorization defaults.
 
 This makes the agent aware of what it may configure for the current user:
 
@@ -212,19 +212,19 @@ The dashboard also includes an **Onboarding** page with the same admin checklist
 Use guarded migration mode for a Hermes export archive:
 
 ```bash
-coorporate import ~/Downloads/hermes-export.tar.gz --from-hermes-export
+maia import ~/Downloads/hermes-export.tar.gz --from-hermes-export
 ```
 
-This stages memories and skills for review, imports MCP servers disabled by default, copies secrets only into the migration review folder, and preserves Coorporate Hermes governance guardrails. Promote reviewed content into corporate or team knowledge only through the Knowledge approval workflow.
+This stages memories and skills for review, imports MCP servers disabled by default, copies secrets only into the migration review folder, and preserves Maia governance guardrails. Promote reviewed content into corporate or team knowledge only through the Knowledge approval workflow.
 
 ## Observability
 
-Operational logs are available through `coorporate logs` and the dashboard Logs page. Corporate audit events are written to `<HERMES_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, cron authorization requests/decisions, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls.
+Operational logs are available through `maia logs` and the dashboard Logs page. Corporate audit events are written to `<MAIA_HOME>/logs/audit.jsonl` and include governance file denials, knowledge approvals, cron authorization requests/decisions, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls.
 
 ```bash
-coorporate logs audit
+maia logs audit
 ```
 
 ## License
 
-Coorporate Hermes is an AmpliIA distribution that includes upstream Hermes Agent components under the MIT License. Nous Research is credited for the upstream Hermes Agent code as required by the preserved MIT notice in [LICENSE](LICENSE).
+Maia is an AmpliIA distribution that includes upstream Hermes Agent components under the MIT License. Nous Research is credited for the upstream Hermes Agent code as required by the preserved MIT notice in [LICENSE](LICENSE).

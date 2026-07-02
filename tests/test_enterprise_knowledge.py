@@ -68,7 +68,7 @@ governance:
         Actor(platform="slack", user_id="U_MANAGER")
     )
 
-    assert "COORPORATE HERMES SHARED KNOWLEDGE" in prompt
+    assert "MAIA HERMES SHARED KNOWLEDGE" in prompt
     assert "Corporate tone is concise." in prompt
     assert "Finance reports use approved templates." in prompt
     assert "security-review" in prompt
@@ -121,8 +121,8 @@ governance:
 
 def test_team_skill_write_requires_approval_and_becomes_viewable(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setenv("COORPORATE_USER_ID", "manager")
-    monkeypatch.setenv("COORPORATE_USER_PLATFORM", "local")
+    monkeypatch.setenv("MAIA_USER_ID", "manager")
+    monkeypatch.setenv("MAIA_USER_PLATFORM", "local")
     _write_config(
         tmp_path,
         """

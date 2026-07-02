@@ -24,19 +24,19 @@ def _client(monkeypatch):
     web_server._DASHBOARD_AUTH_SESSIONS.clear()
     if hasattr(web_server.app.state, "bound_host"):
         del web_server.app.state.bound_host
-    monkeypatch.delenv("COORPORATE_DASHBOARD_TOKEN", raising=False)
+    monkeypatch.delenv("MAIA_DASHBOARD_TOKEN", raising=False)
     return TestClient(web_server.app), web_server
 
 
 def test_protected_dashboard_login_issues_role_session(monkeypatch, _isolate_hermes_home):
     client, web_server = _client(monkeypatch)
-    monkeypatch.setenv("COORPORATE_DASHBOARD_TOKEN", "test-dashboard-token-12345")
+    monkeypatch.setenv("MAIA_DASHBOARD_TOKEN", "test-dashboard-token-12345")
     _write_config(
         {
             "dashboard": {
                 "auth": {
                     "enabled": True,
-                    "token_env": "COORPORATE_DASHBOARD_TOKEN",
+                    "token_env": "MAIA_DASHBOARD_TOKEN",
                     "local_token_roles": ["admin"],
                 },
             },
@@ -67,13 +67,13 @@ def test_protected_dashboard_login_issues_role_session(monkeypatch, _isolate_her
 
 def test_dashboard_read_role_cannot_mutate_config(monkeypatch, _isolate_hermes_home):
     client, web_server = _client(monkeypatch)
-    monkeypatch.setenv("COORPORATE_DASHBOARD_TOKEN", "test-dashboard-token-12345")
+    monkeypatch.setenv("MAIA_DASHBOARD_TOKEN", "test-dashboard-token-12345")
     _write_config(
         {
             "dashboard": {
                 "auth": {
                     "enabled": True,
-                    "token_env": "COORPORATE_DASHBOARD_TOKEN",
+                    "token_env": "MAIA_DASHBOARD_TOKEN",
                     "local_token_roles": ["auditor"],
                     "read_roles": ["auditor", "manager", "admin"],
                     "manage_roles": ["manager", "admin"],
@@ -149,13 +149,13 @@ def test_channel_dashboard_token_logs_in_mapped_user(monkeypatch, _isolate_herme
 
 def test_dashboard_access_request_approval_and_revocation(monkeypatch, _isolate_hermes_home):
     client, web_server = _client(monkeypatch)
-    monkeypatch.setenv("COORPORATE_DASHBOARD_TOKEN", "test-dashboard-token-12345")
+    monkeypatch.setenv("MAIA_DASHBOARD_TOKEN", "test-dashboard-token-12345")
     _write_config(
         {
             "dashboard": {
                 "auth": {
                     "enabled": True,
-                    "token_env": "COORPORATE_DASHBOARD_TOKEN",
+                    "token_env": "MAIA_DASHBOARD_TOKEN",
                     "local_token_roles": ["admin"],
                     "channel_tokens": {
                         "enabled": True,
@@ -272,13 +272,13 @@ def test_non_loopback_bind_allows_configured_dashboard_auth(monkeypatch, _isolat
         "uvicorn",
         types.SimpleNamespace(run=lambda app, **kwargs: calls.append(kwargs)),
     )
-    monkeypatch.setenv("COORPORATE_DASHBOARD_TOKEN", "test-dashboard-token-12345")
+    monkeypatch.setenv("MAIA_DASHBOARD_TOKEN", "test-dashboard-token-12345")
     _write_config(
         {
             "dashboard": {
                 "auth": {
                     "enabled": True,
-                    "token_env": "COORPORATE_DASHBOARD_TOKEN",
+                    "token_env": "MAIA_DASHBOARD_TOKEN",
                 },
             },
         },

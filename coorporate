@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""
-Coorporate Hermes CLI launcher.
+"""Legacy CLI launcher for Maia.
 
-This wrapper should behave like the installed `coorporate` command, including
-subcommands such as `gateway`, `cron`, and `doctor`.
+Kept for backward compatibility with existing coorporate-hermes checkouts and scripts.
+Use `maia` for new installs.
 """
 
 if __name__ == "__main__":

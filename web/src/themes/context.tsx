@@ -380,10 +380,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         .catch(() => {});
     };
     loadThemes();
-    window.addEventListener("coorporate-hermes-dashboard-authenticated", loadThemes);
+    window.addEventListener("maia-dashboard-authenticated", loadThemes);
     return () => {
       cancelled = true;
-      window.removeEventListener("coorporate-hermes-dashboard-authenticated", loadThemes);
+      window.removeEventListener("maia-dashboard-authenticated", loadThemes);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

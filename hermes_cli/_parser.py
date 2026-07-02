@@ -1,5 +1,5 @@
 """
-Top-level argparse construction for the coorporate CLI.
+Top-level argparse construction for the maia CLI.
 
 Lives in its own module so other modules (e.g. ``relaunch.py``) can
 introspect the parser to discover which flags exist without running the
@@ -39,43 +39,43 @@ def _inherited_flag(parser, *args, **kwargs):
 
 _EPILOGUE = """
 Examples:
-    coorporate                        Start interactive chat
-    coorporate chat -q "Hello"        Single query mode
-    coorporate -c                     Resume the most recent session
-    coorporate -c "my project"        Resume a session by name (latest in lineage)
-    coorporate --resume <session_id>  Resume a specific session by ID
-    coorporate setup                  Run setup wizard
-    coorporate logout                 Clear stored authentication
-    coorporate auth add <provider>    Add a pooled credential
-    coorporate auth list              List pooled credentials
-    coorporate auth remove <p> <t>    Remove pooled credential by index, id, or label
-    coorporate auth reset <provider>  Clear exhaustion status for a provider
-    coorporate model                  Select default model
-    coorporate fallback [list]        Show fallback provider chain
-    coorporate fallback add           Add a fallback provider (same picker as `coorporate model`)
-    coorporate fallback remove        Remove a fallback provider from the chain
-    coorporate config                 View configuration
-    coorporate config edit            Edit config in $EDITOR
-    coorporate config set model gpt-4 Set a config value
-    coorporate gateway                Run messaging gateway
-    coorporate -s coorporate-hermes-dev,github-auth
-    coorporate -w                     Start in isolated git worktree
-    coorporate gateway install        Install gateway background service
-    coorporate sessions list          List past sessions
-    coorporate sessions browse        Interactive session picker
-    coorporate sessions rename ID T   Rename/title a session
-    coorporate logs                   View agent.log (last 50 lines)
-    coorporate logs -f                Follow agent.log in real time
-    coorporate logs errors            View errors.log
-    coorporate logs --since 1h        Lines from the last hour
-    coorporate debug share            Upload debug report for support
-    coorporate update                 Update to latest version
-    coorporate dashboard              Start web UI dashboard (port 9119)
-    coorporate dashboard --stop       Stop running dashboard processes
-    coorporate dashboard --status     List running dashboard processes
+    maia                        Start interactive chat
+    maia chat -q "Hello"        Single query mode
+    maia -c                     Resume the most recent session
+    maia -c "my project"        Resume a session by name (latest in lineage)
+    maia --resume <session_id>  Resume a specific session by ID
+    maia setup                  Run setup wizard
+    maia logout                 Clear stored authentication
+    maia auth add <provider>    Add a pooled credential
+    maia auth list              List pooled credentials
+    maia auth remove <p> <t>    Remove pooled credential by index, id, or label
+    maia auth reset <provider>  Clear exhaustion status for a provider
+    maia model                  Select default model
+    maia fallback [list]        Show fallback provider chain
+    maia fallback add           Add a fallback provider (same picker as `maia model`)
+    maia fallback remove        Remove a fallback provider from the chain
+    maia config                 View configuration
+    maia config edit            Edit config in $EDITOR
+    maia config set model gpt-4 Set a config value
+    maia gateway                Run messaging gateway
+    maia -s maia-dev,github-auth
+    maia -w                     Start in isolated git worktree
+    maia gateway install        Install gateway background service
+    maia sessions list          List past sessions
+    maia sessions browse        Interactive session picker
+    maia sessions rename ID T   Rename/title a session
+    maia logs                   View agent.log (last 50 lines)
+    maia logs -f                Follow agent.log in real time
+    maia logs errors            View errors.log
+    maia logs --since 1h        Lines from the last hour
+    maia debug share            Upload debug report for support
+    maia update                 Update to latest version
+    maia dashboard              Start web UI dashboard (port 9119)
+    maia dashboard --stop       Stop running dashboard processes
+    maia dashboard --status     List running dashboard processes
 
 For more help on a command:
-    coorporate <command> --help
+    maia <command> --help
 """
 
 
@@ -87,8 +87,8 @@ def build_top_level_parser():
     other subparsers via ``subparsers.add_parser(...)``.
     """
     parser = argparse.ArgumentParser(
-        prog="coorporate",
-        description="Coorporate Hermes - governed private corporate AI assistant",
+        prog="maia",
+        description="Maia - governed private corporate AI assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_EPILOGUE,
     )
@@ -112,7 +112,7 @@ def build_top_level_parser():
     # --model / --provider are accepted at the top level so they can pair
     # with -z without needing the `chat` subcommand.  If neither -z nor a
     # subcommand consumes them, they fall through harmlessly as None.
-    # Mirrors `coorporate chat --model ... --provider ...` semantics.
+    # Mirrors `maia chat --model ... --provider ...` semantics.
     _inherited_flag(
         parser,
         "-m",

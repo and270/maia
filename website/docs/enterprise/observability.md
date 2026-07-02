@@ -1,30 +1,30 @@
 ---
 title: "Observability"
-description: "Runtime logs, corporate audit events, SIEM webhook export, and current telemetry coverage in Coorporate Hermes."
+description: "Runtime logs, corporate audit events, SIEM webhook export, and current telemetry coverage in Maia."
 ---
 
 # Observability
 
-Coorporate Hermes has runtime logs for operations and an audit trail for governance-sensitive decisions.
+Maia has runtime logs for operations and an audit trail for governance-sensitive decisions.
 
 Runtime logs:
 
 ```text
-<HERMES_HOME>/logs/agent.log
-<HERMES_HOME>/logs/errors.log
-<HERMES_HOME>/logs/gateway.log
+<MAIA_HOME>/logs/agent.log
+<MAIA_HOME>/logs/errors.log
+<MAIA_HOME>/logs/gateway.log
 ```
 
 Audit log:
 
 ```text
-<HERMES_HOME>/logs/audit.jsonl
+<MAIA_HOME>/logs/audit.jsonl
 ```
 
 Use:
 
 ```bash
-coorporate logs audit
+maia logs audit
 ```
 
 Audit events currently cover governance file-access denials, knowledge approval requests and decisions, cron authorization requests/decisions, dashboard access requests/approvals/denials/revocations/restores, dashboard channel-token issuance and denials, dashboard login/logout, dashboard role denials, and mutating dashboard API calls such as config, secret, plugin, cron, and policy changes.

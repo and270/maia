@@ -1,4 +1,4 @@
-# Hermes Agent v0.13.0 (v2026.5.7)
+# Maia v0.13.0 (v2026.5.7)
 
 **Release Date:** May 7, 2026
 **Since v0.12.0:** 864 commits · 588 merged PRs · 829 files changed · 128,366 insertions · 282 issues closed (13 P0, 36 P1) · 295 community contributors (including co-authors)
@@ -101,7 +101,7 @@
 - Fix: skip dispatch for tasks assigned to non-profile lanes (salvages #20105, #20134) ([#20165](https://github.com/NousResearch/hermes-agent/pull/20165))
 - Fix: include default profile in on-disk assignee enumeration (salvages #20123) ([#20170](https://github.com/NousResearch/hermes-agent/pull/20170))
 - Fix: ignore stale current board pointers (salvages #20063) ([#20183](https://github.com/NousResearch/hermes-agent/pull/20183))
-- Fix: profile discovery ignores HERMES_HOME in custom-root deployments (@jackey8616) ([#19020](https://github.com/NousResearch/hermes-agent/pull/19020))
+- Fix: profile discovery ignores MAIA_HOME in custom-root deployments (@jackey8616) ([#19020](https://github.com/NousResearch/hermes-agent/pull/19020))
 - Fix: allow orchestrator profiles to see kanban tools via toolsets config ([#19606](https://github.com/NousResearch/hermes-agent/pull/19606))
 
 ### Batch salvages

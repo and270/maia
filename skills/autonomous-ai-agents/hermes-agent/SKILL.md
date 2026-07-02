@@ -1,12 +1,12 @@
 ---
 name: hermes-agent
-description: "Configure, extend, or contribute to Coorporate Hermes / Hermes Agent with role-aware governance boundaries."
+description: "Configure, extend, or contribute to Maia / Hermes Agent with role-aware governance boundaries."
 version: 2.2.1
 author: Hermes Agent + Teknium
 license: MIT
 metadata:
   hermes:
-    tags: [hermes, coorporate-hermes, setup, configuration, governance, multi-agent, spawning, cli, gateway, development]
+    tags: [hermes, maia, setup, configuration, governance, multi-agent, spawning, cli, gateway, development]
     homepage: https://github.com/NousResearch/hermes-agent
     related_skills: [claude-code, codex, opencode]
 ---
@@ -30,15 +30,15 @@ People use Hermes for software development, research, system administration, dat
 
 **Docs:** https://hermes-agent.nousresearch.com/docs/
 
-## Coorporate Hermes Governance Overlay
+## Maia Governance Overlay
 
-Coorporate Hermes is the AmpliIA corporate fork of Hermes Agent. It keeps the upstream agent, gateway, skills, memory, cron, plugin, and toolset model, but adds tenant governance: role-aware dashboard sessions, users and teams, governed folder policies, corporate/team/user knowledge layers, approval-gated shared memories and skills, cron authorization checkpoints, guarded migration from upstream Hermes exports, and audit logging.
+Maia is the AmpliIA corporate fork of Hermes Agent. It keeps the upstream agent, gateway, skills, memory, cron, plugin, and toolset model, but adds tenant governance: role-aware dashboard sessions, users and teams, governed folder policies, corporate/team/user knowledge layers, approval-gated shared memories and skills, cron authorization checkpoints, guarded migration from upstream Hermes exports, and audit logging.
 
-In this distribution, the installed commands are named `coorporate`, `coorporate-agent`, and `coorporate-acp` instead of upstream `hermes` commands. When examples below use `hermes`, translate them to `coorporate` on this installation unless the user is explicitly working in an upstream Hermes checkout.
+In this distribution, the installed commands are named `maia`, `maia-agent`, and `maia-acp` instead of upstream `hermes` commands. When examples below use `hermes`, translate them to `maia` on this installation unless the user is explicitly working in an upstream Hermes checkout.
 
 The next block is dynamic. It is rendered from the current actor, `governance`, `dashboard.auth`, `knowledge`, delegated team roots, and cron authorization config when this skill is loaded.
 
-${COORPORATE_GOVERNANCE_CONTEXT}
+${MAIA_GOVERNANCE_CONTEXT}
 
 ### Role-Aware Self-Configuration Protocol
 
@@ -53,7 +53,7 @@ Follow these rules before proposing or performing any self-configuration:
 7. For user-level memory and user skills, normal Hermes behavior still applies when the relevant tool is enabled. Use concise personal memory and focused procedural skills; do not save secrets or temporary task progress.
 8. For file authorization, ask an authorized manager/admin to adjust Dashboard -> File Access when access is missing. A prompt cannot grant itself a folder.
 9. For cron jobs that touch governed folders, send external messages, or make sensitive changes, include an authorization node with specific `roles` or `users` instead of relying on implicit trust.
-10. Prefer the protected dashboard or documented `coorporate` CLI for authorized configuration. Avoid ad hoc terminal edits to governance files except for server-operator, infrastructure-as-code, backup restore, or break-glass recovery work.
+10. Prefer the protected dashboard or documented `maia` CLI for authorized configuration. Avoid ad hoc terminal edits to governance files except for server-operator, infrastructure-as-code, backup restore, or break-glass recovery work.
 
 ## Quick Start
 
@@ -77,14 +77,14 @@ hermes model
 hermes doctor
 ```
 
-On Coorporate Hermes installations, use:
+On Maia installations, use:
 
 ```bash
-coorporate
-coorporate setup
-coorporate model
-coorporate doctor
-coorporate dashboard
+maia
+maia setup
+maia model
+maia doctor
+maia dashboard
 ```
 
 ---
@@ -189,12 +189,12 @@ Platform docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
 
 ### Gateway Setup Playbook
 
-Gateway setup is admin/server-operator work. In Coorporate Hermes, do not configure or change gateway platforms, bot tokens, allowlists, dashboard access, user authorization, roles, or channel-token settings unless the current actor satisfies the dynamic block's dashboard admin scope. Managers may request or operate delegated approval/file-access workflows, but they are not global gateway admins unless their role also satisfies `dashboard.auth.admin_roles`.
+Gateway setup is admin/server-operator work. In Maia, do not configure or change gateway platforms, bot tokens, allowlists, dashboard access, user authorization, roles, or channel-token settings unless the current actor satisfies the dynamic block's dashboard admin scope. Managers may request or operate delegated approval/file-access workflows, but they are not global gateway admins unless their role also satisfies `dashboard.auth.admin_roles`.
 
 When an authorized admin asks to connect Discord, Slack, or another messaging platform, work with the user step by step:
 
-1. Explain which actions must happen outside Coorporate Hermes, such as creating an app in Discord or Slack, enabling platform permissions, installing the app, inviting the bot, and copying IDs.
-2. Use built-in helpers where available, for example `coorporate slack manifest --write`, `coorporate setup gateway`, `coorporate gateway run`, `coorporate gateway status`, and `coorporate logs gateway`.
+1. Explain which actions must happen outside Maia, such as creating an app in Discord or Slack, enabling platform permissions, installing the app, inviting the bot, and copying IDs.
+2. Use built-in helpers where available, for example `maia slack manifest --write`, `maia setup gateway`, `maia gateway run`, `maia gateway status`, and `maia logs gateway`.
 3. Store secrets through the dashboard Keys page, managed `.env` commands, or the interactive setup wizard. Do not save bot tokens in memory, skills, prompts, docs, tickets, or chat history.
 4. Keep platform allowlists on by default. Configure allowed users, allowed roles, allowed channels, ignored channels, mention rules, and session isolation before broad rollout.
 5. After configuration, start or restart the gateway, verify status, send a real test message from an allowed account, and check gateway logs if the bot is silent.
@@ -208,19 +208,19 @@ Discord setup checklist:
 5. Invite the bot with scopes `bot` and `applications.commands`. Minimum permissions: View Channels, Send Messages, Read Message History, Attach Files. Recommended also includes Embed Links, Send Messages in Threads, and Add Reactions.
 6. Ask the admin to copy their Discord User ID with Developer Mode enabled. Store it in `DISCORD_ALLOWED_USERS`, or configure `DISCORD_ALLOWED_ROLES` for server role-based access.
 7. Optional hardening: set `DISCORD_ALLOWED_CHANNELS`, `DISCORD_IGNORED_CHANNELS`, `DISCORD_REQUIRE_MENTION=true`, `DISCORD_FREE_RESPONSE_CHANNELS` only for intentional bot rooms, and keep `group_sessions_per_user: true`.
-8. Run `coorporate setup gateway`, select Discord, then `coorporate gateway run` for a foreground test. If the bot is online but silent, re-check Message Content Intent, allowed users/roles, channel permissions, and mention rules.
+8. Run `maia setup gateway`, select Discord, then `maia gateway run` for a foreground test. If the bot is online but silent, re-check Message Content Intent, allowed users/roles, channel permissions, and mention rules.
 
 Slack setup checklist:
 
-1. Prefer the generated manifest: run `coorporate slack manifest --write`, then create a Slack app from that manifest in https://api.slack.com/apps.
+1. Prefer the generated manifest: run `maia slack manifest --write`, then create a Slack app from that manifest in https://api.slack.com/apps.
 2. If configuring manually, add bot scopes: `chat:write`, `app_mentions:read`, `channels:history`, `channels:read`, `groups:history`, `im:history`, `im:read`, `im:write`, `users:read`, `files:read`, and `files:write`. Add `groups:read` when private-channel discovery is required.
 3. Enable Socket Mode and create an app-level token with `connections:write`. Store it as `SLACK_APP_TOKEN`.
 4. Subscribe to bot events: `message.im`, `message.channels`, `message.groups` for private channels, and `app_mention`.
 5. Enable App Home -> Messages Tab and allow users to send slash commands/messages from the tab.
 6. Install the app to the workspace, copy the Bot User OAuth Token, and store it as `SLACK_BOT_TOKEN`.
-7. Copy Slack Member IDs for the allowlist and store them in `SLACK_ALLOWED_USERS`. Invite the bot to every channel where it should answer with `/invite @Coorporate Hermes`.
+7. Copy Slack Member IDs for the allowlist and store them in `SLACK_ALLOWED_USERS`. Invite the bot to every channel where it should answer with `/invite @Maia`.
 8. Optional hardening: keep channel mentions required unless a channel is intentionally configured as free-response, keep `group_sessions_per_user: true`, and use channel prompts/skill bindings only for reviewed channel-specific behavior.
-9. Run `coorporate setup gateway`, select Slack, then `coorporate gateway run` for a foreground test. If DMs work but channels do not, re-check `message.channels` / `message.groups`, channel invitation, scopes, and app reinstall after changes.
+9. Run `maia setup gateway`, select Slack, then `maia gateway run` for a foreground test. If DMs work but channels do not, re-check `message.channels` / `message.groups`, channel invitation, scopes, and app reinstall after changes.
 
 ### Sessions
 
@@ -348,7 +348,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /toolsets            List toolsets (CLI)
 /skills              Search/install skills (CLI)
 /skill <name>        Load a skill into session
-/reload-skills       Re-scan ~/.hermes/skills/ for added/removed skills
+/reload-skills       Re-scan ~/.maia/skills/ for added/removed skills
 /reload              Reload .env variables into the running session (CLI)
 /reload-mcp          Reload MCP servers
 /cron                Manage cron jobs (CLI)
@@ -402,16 +402,16 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 ## Key Paths & Config
 
 ```
-~/.hermes/config.yaml       Main configuration
-~/.hermes/.env              API keys and secrets
-$HERMES_HOME/skills/        Installed skills
-~/.hermes/sessions/         Session transcripts
-~/.hermes/logs/             Gateway and error logs
-~/.hermes/auth.json         OAuth tokens and credential pools
-~/.hermes/hermes-agent/     Source code (if git-installed)
+~/.maia/config.yaml       Main configuration
+~/.maia/.env              API keys and secrets
+$MAIA_HOME/skills/        Installed skills
+~/.maia/sessions/         Session transcripts
+~/.maia/logs/             Gateway and error logs
+~/.maia/auth.json         OAuth tokens and credential pools
+~/.maia/hermes-agent/     Source code (if git-installed)
 ```
 
-Profiles use `~/.hermes/profiles/<name>/` with the same layout.
+Profiles use `~/.maia/profiles/<name>/` with the same layout.
 
 ### Config Sections
 
@@ -556,7 +556,7 @@ Note: YOLO / `approvals.mode: off` does NOT turn off secret redaction. They are 
 
 ### Shell hooks allowlist
 
-Some shell-hook integrations require explicit allowlisting before they fire. Managed via `~/.hermes/shell-hooks-allowlist.json` — prompted interactively the first time a hook wants to run.
+Some shell-hook integrations require explicit allowlisting before they fire. Managed via `~/.maia/shell-hooks-allowlist.json` — prompted interactively the first time a hook wants to run.
 
 ### Disabling the web/browser/image-gen tools
 
@@ -737,7 +737,7 @@ so nothing is lost.
   Bundled + hub-installed skills are off-limits. **Never deletes** —
   max destructive action is archive. Pinned skills are exempt from
   every auto-transition and every LLM review pass.
-- **Telemetry:** sidecar at `~/.hermes/skills/.usage.json` holds
+- **Telemetry:** sidecar at `~/.maia/skills/.usage.json` holds
   per-skill `use_count`, `view_count`, `patch_count`,
   `last_activity_at`, `state`, `pinned`.
 
@@ -801,7 +801,7 @@ User docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
 ### Gateway issues
 Check logs first:
 ```bash
-grep -i "failed to send\|error" ~/.hermes/logs/gateway.log | tail -20
+grep -i "failed to send\|error" ~/.maia/logs/gateway.log | tail -20
 ```
 
 Common gateway problems:
@@ -839,9 +839,9 @@ hermes config set auxiliary.vision.model <model_name>
 | Memory | `hermes memory status` or [Memory docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) |
 | Env variables | `hermes config env-path` or [Env vars reference](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) |
 | CLI commands | `hermes --help` or [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) |
-| Gateway logs | `~/.hermes/logs/gateway.log` |
-| Session files | `~/.hermes/sessions/` or `hermes sessions browse` |
-| Source code | `~/.hermes/hermes-agent/` |
+| Gateway logs | `~/.maia/logs/gateway.log` |
+| Session files | `~/.maia/sessions/` or `hermes sessions browse` |
+| Source code | `~/.maia/hermes-agent/` |
 
 ---
 
@@ -872,7 +872,7 @@ hermes-agent/
 └── website/              # Docusaurus docs site
 ```
 
-Config: `~/.hermes/config.yaml` (settings), `~/.hermes/.env` (API keys).
+Config: `~/.maia/config.yaml` (settings), `~/.maia/.env` (API keys).
 
 ### Adding a Tool (3 files)
 
@@ -902,7 +902,7 @@ registry.register(
 
 Auto-discovery: any `tools/*.py` file with a top-level `registry.register()` call is imported automatically — no manual list needed.
 
-All handlers must return JSON strings. Use `get_hermes_home()` for paths, never hardcode `~/.hermes`.
+All handlers must return JSON strings. Use `get_hermes_home()` for paths, never hardcode `~/.maia`.
 
 ### Adding a Slash Command
 
@@ -931,7 +931,7 @@ python -m pytest tests/ -o 'addopts=' -q   # Full suite
 python -m pytest tests/tools/ -q            # Specific area
 ```
 
-- Tests auto-redirect `HERMES_HOME` to temp dirs — never touch real `~/.hermes/`
+- Tests auto-redirect `MAIA_HOME` to temp dirs — never touch real `~/.maia/`
 - Run full suite before pushing any change
 - Use `-o 'addopts='` to clear any baked-in pytest flags
 

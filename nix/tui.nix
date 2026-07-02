@@ -7,13 +7,13 @@ let
     hash = "sha256-MLcLhjTF6dgdvNBtJWzo8Nh19eNh/ZitD2b07nm61Tc=";
   };
 
-  npm = hermesNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "hermes-tui"; };
+  npm = hermesNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "maia-tui"; };
 
   packageJson = builtins.fromJSON (builtins.readFile (src + "/package.json"));
   version = packageJson.version;
 in
 pkgs.buildNpmPackage (npm // {
-  pname = "hermes-tui";
+  pname = "maia-tui";
   inherit src npmDeps version;
 
   doCheck = false;
@@ -22,19 +22,19 @@ pkgs.buildNpmPackage (npm // {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p $out/lib/hermes-tui
+    mkdir -p $out/lib/maia-tui
 
-    cp -r dist $out/lib/hermes-tui/dist
+    cp -r dist $out/lib/maia-tui/dist
 
     # runtime node_modules
-    cp -r node_modules $out/lib/hermes-tui/node_modules
+    cp -r node_modules $out/lib/maia-tui/node_modules
 
-    # @hermes/ink is a file: dependency, we need to copy it in fr
-    rm -f $out/lib/hermes-tui/node_modules/@hermes/ink
-    cp -r packages/hermes-ink $out/lib/hermes-tui/node_modules/@hermes/ink
+    # @maia/ink is a file: dependency, we need to copy it in fr
+    rm -f $out/lib/maia-tui/node_modules/@maia/ink
+    cp -r packages/maia-ink $out/lib/maia-tui/node_modules/@maia/ink
 
     # package.json needed for "type": "module" resolution
-    cp package.json $out/lib/hermes-tui/
+    cp package.json $out/lib/maia-tui/
 
     runHook postInstall
   '';

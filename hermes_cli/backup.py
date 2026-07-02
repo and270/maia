@@ -1,10 +1,10 @@
 """
-Backup and import commands for the Coorporate Hermes CLI.
+Backup and import commands for the Maia CLI.
 
-`coorporate backup` creates a zip archive of the entire HERMES_HOME directory
+`maia backup` creates a zip archive of the entire HERMES_HOME directory
 (excluding the codebase repo and transient files).
 
-`coorporate import` restores from a backup zip, overlaying onto the current
+`maia import` restores from a backup zip, overlaying onto the current
 HERMES_HOME root.
 """
 
@@ -600,7 +600,7 @@ def run_backup(args) -> None:
         if len(errors) > 10:
             print(f"  ... and {len(errors) - 10} more")
 
-    print(f"\nRestore with: coorporate import {out_path.name}")
+    print(f"\nRestore with: maia import {out_path.name}")
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +659,7 @@ def _detect_prefix(zf: zipfile.ZipFile) -> str:
 
 
 def run_import(args) -> None:
-    """Restore a Coorporate Hermes backup or migrate an upstream Hermes export."""
+    """Restore a Maia backup or migrate an upstream Hermes export."""
     if getattr(args, "from_hermes_export", False):
         _run_hermes_export_migration(args)
         return
@@ -673,7 +673,7 @@ def run_import(args) -> None:
     if not zipfile.is_zipfile(zip_path):
         if tarfile.is_tarfile(zip_path):
             print("Error: tar archives are supported only for guarded Hermes export migration.")
-            print(f"Run: coorporate import {zip_path} --from-hermes-export")
+            print(f"Run: maia import {zip_path} --from-hermes-export")
             sys.exit(1)
         print(f"Error: Not a valid zip file: {zip_path}")
         sys.exit(1)
@@ -703,7 +703,7 @@ def run_import(args) -> None:
 
         if (has_config or has_env) and not args.force:
             print()
-            print("Warning: Target directory already has Coorporate Hermes configuration.")
+            print("Warning: Target directory already has Maia configuration.")
             print("Importing will overwrite existing files with backup contents.")
             print()
             try:
@@ -808,25 +808,25 @@ def run_import(args) -> None:
                 # hermes_cli.profiles might not be available (fresh install)
                 if any(profiles_dir.iterdir()):
                     print(f"\n  Profiles detected but aliases could not be created.")
-                    print("  Run: coorporate profile list  (after installing Coorporate Hermes)")
+                    print("  Run: maia profile list  (after installing Maia)")
 
         # Guidance
         print()
         if not (hermes_root / "hermes-agent").is_dir():
             print("Note: The codebase was not included in the backup.")
-            print("  If this is a fresh install, run: coorporate update")
+            print("  If this is a fresh install, run: maia update")
 
         if restored_profiles:
             gw_profiles = [n for n, _ in restored_profiles]
             print("\nTo re-enable gateway services for profiles:")
             for pname in gw_profiles:
-                print(f"  coorporate -p {pname} gateway install")
+                print(f"  maia -p {pname} gateway install")
 
-        print("Done. Your Coorporate Hermes configuration has been restored.")
+        print("Done. Your Maia configuration has been restored.")
 
 
 # ---------------------------------------------------------------------------
-# Quick state snapshots (used by /snapshot slash command and coorporate backup --quick)
+# Quick state snapshots (used by /snapshot slash command and maia backup --quick)
 # ---------------------------------------------------------------------------
 
 # Critical state files to include in quick snapshots (relative to HERMES_HOME).
@@ -1224,7 +1224,7 @@ def create_pre_update_backup(
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration auto-backup (used by `coorporate claw migrate`)
+# Pre-migration auto-backup (used by `maia claw migrate`)
 # ---------------------------------------------------------------------------
 
 _PRE_MIGRATION_PREFIX = "pre-migration-"
@@ -1265,11 +1265,11 @@ def create_pre_migration_backup(
     keep: int = _PRE_MIGRATION_DEFAULT_KEEP,
 ) -> Optional[Path]:
     """Create a full zip backup of HERMES_HOME under ``backups/`` before a
-    ``coorporate claw migrate`` apply.
+    ``maia claw migrate`` apply.
 
     Shares implementation with :func:`create_pre_update_backup` via
     ``_write_full_zip_backup`` — same exclusions, same SQLite safe-copy,
-    restorable with ``coorporate import <archive>``.  Writes to
+    restorable with ``maia import <archive>``.  Writes to
     ``<HERMES_HOME>/backups/pre-migration-<timestamp>.zip`` and auto-prunes
     old pre-migration backups.
 
@@ -1281,7 +1281,7 @@ def create_pre_migration_backup(
     if not hermes_root.is_dir():
         return None
 
-    # Reuses the shared backups/ directory so `coorporate import` and the
+    # Reuses the shared backups/ directory so `maia import` and the
     # update-backup listing pick up pre-migration archives too.
     backup_dir = _pre_update_backup_dir(hermes_root)
     try:

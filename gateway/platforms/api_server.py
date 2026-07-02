@@ -2,11 +2,11 @@
 OpenAI-compatible API server platform adapter.
 
 Exposes an HTTP server with endpoints:
-- POST /v1/chat/completions        — OpenAI Chat Completions format (stateless; opt-in session continuity via X-Hermes-Session-Id header; opt-in long-term memory scoping via X-Hermes-Session-Key header)
-- POST /v1/responses               — OpenAI Responses API format (stateful via previous_response_id; X-Hermes-Session-Key supported)
+- POST /v1/chat/completions        — OpenAI Chat Completions format (stateless; opt-in session continuity via X-Maia-Session-Id header; opt-in long-term memory scoping via X-Maia-Session-Key header; legacy X-Hermes-* aliases accepted)
+- POST /v1/responses               — OpenAI Responses API format (stateful via previous_response_id; X-Maia-Session-Key supported)
 - GET  /v1/responses/{response_id} — Retrieve a stored response
 - DELETE /v1/responses/{response_id} — Delete a stored response
-- GET  /v1/models                  — lists hermes-agent as an available model
+- GET  /v1/models                  — lists maia as an available model
 - GET  /v1/capabilities            — machine-readable API capabilities for external UIs
 - POST /v1/runs                    — start a run, returns run_id immediately (202)
 - GET  /v1/runs/{run_id}           — retrieve current run status
@@ -16,7 +16,7 @@ Exposes an HTTP server with endpoints:
 - GET  /health/detailed            — rich status for cross-container dashboard probing
 
 Any OpenAI-compatible frontend (Open WebUI, LobeChat, LibreChat,
-AnythingLLM, NextChat, ChatBox, etc.) can connect to hermes-agent
+AnythingLLM, NextChat, ChatBox, etc.) can connect to Maia
 through this adapter by pointing at http://localhost:8642/v1.
 
 Requires:
@@ -629,7 +629,7 @@ class APIServerAdapter(BasePlatformAdapter):
         Priority:
         1. Explicit override (config extra or API_SERVER_MODEL_NAME env var)
         2. Active profile name (so each profile advertises a distinct model)
-        3. Fallback: "coorporate-hermes"
+        3. Fallback: "maia"
         """
         if explicit and explicit.strip():
             return explicit.strip()
@@ -640,7 +640,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 return profile
         except Exception:
             pass
-        return "coorporate-hermes"
+        return "maia"
 
     def _cors_headers_for_origin(self, origin: str) -> Optional[Dict[str, str]]:
         """Return CORS headers for an allowed browser origin."""
@@ -714,12 +714,13 @@ class APIServerAdapter(BasePlatformAdapter):
     def _parse_session_key_header(
         self, request: "web.Request"
     ) -> tuple[Optional[str], Optional["web.Response"]]:
-        """Extract and validate the ``X-Hermes-Session-Key`` header.
+        """Extract and validate the ``X-Maia-Session-Key`` header.
 
         The session key is a stable per-channel identifier that scopes
         long-term memory (e.g. Honcho sessions) across transcripts.  It
-        is independent of ``X-Hermes-Session-Id``: callers may send
-        either, both, or neither.
+        is independent of ``X-Maia-Session-Id``: callers may send
+        either, both, or neither. Legacy ``X-Hermes-*`` headers are still
+        accepted for backward compatibility.
 
         Returns ``(session_key, None)`` on success (with an empty/absent
         header yielding ``None`` for the key), or ``(None, error_response)``
@@ -730,18 +731,21 @@ class APIServerAdapter(BasePlatformAdapter):
         unauthenticated client on a local-only server can't inject itself
         into another user's long-term memory scope by guessing a key.
         """
-        raw = request.headers.get("X-Hermes-Session-Key", "").strip()
+        raw = (
+            request.headers.get("X-Maia-Session-Key", "").strip()
+            or request.headers.get("X-Hermes-Session-Key", "").strip()
+        )
         if not raw:
             return None, None
 
         if not self._api_key:
             logger.warning(
-                "X-Hermes-Session-Key rejected: no API key configured. "
+                "X-Maia-Session-Key rejected: no API key configured. "
                 "Set API_SERVER_KEY to enable long-term memory scoping."
             )
             return None, web.json_response(
                 _openai_error(
-                    "X-Hermes-Session-Key requires API key authentication. "
+                    "X-Maia-Session-Key requires API key authentication. "
                     "Configure API_SERVER_KEY to enable this feature."
                 ),
                 status=403,
@@ -804,7 +808,8 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway platforms), falling back to the hermes-api-server default.
 
         ``gateway_session_key`` is a stable per-channel identifier supplied
-        by the client (via ``X-Hermes-Session-Key``).  Unlike ``session_id``
+        by the client (via ``X-Maia-Session-Key`` or legacy
+        ``X-Hermes-Session-Key``).  Unlike ``session_id``
         which scopes the short-term transcript and rotates on /new, this
         key is meant to persist across transcripts so long-term memory
         providers (e.g. Honcho) can scope their per-chat state correctly
@@ -854,7 +859,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
     async def _handle_health(self, request: "web.Request") -> "web.Response":
         """GET /health — simple health check."""
-        return web.json_response({"status": "ok", "platform": "coorporate-hermes"})
+        return web.json_response({"status": "ok", "platform": "maia"})
 
     async def _handle_health_detailed(self, request: "web.Request") -> "web.Response":
         """GET /health/detailed — rich status for cross-container dashboard probing.
@@ -868,7 +873,7 @@ class APIServerAdapter(BasePlatformAdapter):
         runtime = read_runtime_status() or {}
         return web.json_response({
             "status": "ok",
-            "platform": "coorporate-hermes",
+            "platform": "maia",
             "gateway_state": runtime.get("gateway_state"),
             "platforms": runtime.get("platforms", {}),
             "active_agents": runtime.get("active_agents", 0),
@@ -878,7 +883,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_models(self, request: "web.Request") -> "web.Response":
-        """GET /v1/models — return coorporate-hermes as an available model."""
+        """GET /v1/models — return maia as an available model."""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -890,7 +895,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "id": self._model_name,
                     "object": "model",
                     "created": int(time.time()),
-                    "owned_by": "coorporate",
+                    "owned_by": "maia",
                     "permission": [],
                     "root": self._model_name,
                     "parent": None,
@@ -910,8 +915,8 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
 
         return web.json_response({
-            "object": "hermes.api_server.capabilities",
-            "platform": "coorporate-hermes",
+            "object": "maia.api_server.capabilities",
+            "platform": "maia",
             "model": self._model_name,
             "auth": {
                 "type": "bearer",
@@ -922,7 +927,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "tool_execution": "server",
                 "split_runtime": False,
                 "description": (
-                    "The API server creates a server-side Hermes AIAgent; "
+                    "The API server creates a server-side Maia AIAgent; "
                     "tools execute on the API-server host unless a future "
                     "explicit split-runtime mode is enabled."
                 ),
@@ -937,8 +942,10 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_events_sse": True,
                 "run_stop": True,
                 "tool_progress_events": True,
-                "session_continuity_header": "X-Hermes-Session-Id",
-                "session_key_header": "X-Hermes-Session-Key",
+                "session_continuity_header": "X-Maia-Session-Id",
+                "legacy_session_continuity_header": "X-Hermes-Session-Id",
+                "session_key_header": "X-Maia-Session-Key",
+                "legacy_session_key_header": "X-Hermes-Session-Key",
                 "cors": bool(self._cors_origins),
             },
             "endpoints": {
@@ -1011,26 +1018,30 @@ class APIServerAdapter(BasePlatformAdapter):
             )
 
         # Allow caller to scope long-term memory (e.g. Honcho) with a
-        # stable per-channel identifier via X-Hermes-Session-Key.  This
-        # is independent of X-Hermes-Session-Id: the key persists across
+        # stable per-channel identifier via X-Maia-Session-Key. This
+        # is independent of X-Maia-Session-Id: the key persists across
         # transcripts while the id rotates when the caller starts a new
         # transcript (i.e. /new semantics).  See _parse_session_key_header.
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
 
-        # Allow caller to continue an existing session by passing X-Hermes-Session-Id.
+        # Allow caller to continue an existing session by passing X-Maia-Session-Id
+        # (legacy X-Hermes-Session-Id is also accepted).
         # When provided, history is loaded from state.db instead of from the request body.
         #
         # Security: session continuation exposes conversation history, so it is
         # only allowed when the API key is configured and the request is
         # authenticated.  Without this gate, any unauthenticated client could
         # read arbitrary session history by guessing/enumerating session IDs.
-        provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
+        provided_session_id = (
+            request.headers.get("X-Maia-Session-Id", "").strip()
+            or request.headers.get("X-Hermes-Session-Id", "").strip()
+        )
         if provided_session_id:
             if not self._api_key:
                 logger.warning(
-                    "Session continuation via X-Hermes-Session-Id rejected: "
+                    "Session continuation via X-Maia-Session-Id rejected: "
                     "no API key configured.  Set API_SERVER_KEY to enable "
                     "session continuity."
                 )
@@ -1220,9 +1231,11 @@ class APIServerAdapter(BasePlatformAdapter):
         }
 
         response_headers = {
+            "X-Maia-Session-Id": result.get("session_id", session_id),
             "X-Hermes-Session-Id": result.get("session_id", session_id),
         }
         if gateway_session_key:
+            response_headers["X-Maia-Session-Key"] = gateway_session_key
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
         return web.json_response(response_data, headers=response_headers)
 
@@ -1251,8 +1264,10 @@ class APIServerAdapter(BasePlatformAdapter):
         if cors:
             sse_headers.update(cors)
         if session_id:
+            sse_headers["X-Maia-Session-Id"] = session_id
             sse_headers["X-Hermes-Session-Id"] = session_id
         if gateway_session_key:
+            sse_headers["X-Maia-Session-Key"] = gateway_session_key
             sse_headers["X-Hermes-Session-Key"] = gateway_session_key
         response = web.StreamResponse(status=200, headers=sse_headers)
         await response.prepare(request)
@@ -1435,8 +1450,10 @@ class APIServerAdapter(BasePlatformAdapter):
         if cors:
             sse_headers.update(cors)
         if session_id:
+            sse_headers["X-Maia-Session-Id"] = session_id
             sse_headers["X-Hermes-Session-Id"] = session_id
         if gateway_session_key:
+            sse_headers["X-Maia-Session-Key"] = gateway_session_key
             sse_headers["X-Hermes-Session-Key"] = gateway_session_key
         response = web.StreamResponse(status=200, headers=sse_headers)
         await response.prepare(request)
@@ -2246,8 +2263,12 @@ class APIServerAdapter(BasePlatformAdapter):
             if conversation:
                 self._response_store.set_conversation(conversation, response_id)
 
-        response_headers = {"X-Hermes-Session-Id": session_id}
+        response_headers = {
+            "X-Maia-Session-Id": session_id,
+            "X-Hermes-Session-Id": session_id,
+        }
         if gateway_session_key:
+            response_headers["X-Maia-Session-Key"] = gateway_session_key
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
         return web.json_response(response_data, headers=response_headers)
 
@@ -2663,7 +2684,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "total_tokens": getattr(agent, "session_total_tokens", 0) or 0,
             }
             # Include the effective session ID in the result so callers
-            # (e.g. X-Hermes-Session-Id header) can track compression-
+            # (e.g. X-Maia-Session-Id header) can track compression-
             # triggered session rotations. (#16938)
             _eff_sid = getattr(agent, "session_id", session_id)
             if isinstance(_eff_sid, str) and _eff_sid:
@@ -2962,7 +2983,11 @@ class APIServerAdapter(BasePlatformAdapter):
             task.add_done_callback(self._background_tasks.discard)
 
         response_headers = (
-            {"X-Hermes-Session-Key": gateway_session_key} if gateway_session_key else {}
+            {
+                "X-Maia-Session-Key": gateway_session_key,
+                "X-Hermes-Session-Key": gateway_session_key,
+            }
+            if gateway_session_key else {}
         )
         return web.json_response(
             {"run_id": run_id, "status": "started"},

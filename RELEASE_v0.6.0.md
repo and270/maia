@@ -1,4 +1,4 @@
-# Hermes Agent v0.6.0 (v2026.3.30)
+# Maia v0.6.0 (v2026.3.30)
 
 **Release Date:** March 30, 2026
 
@@ -50,10 +50,10 @@
 - **Omit empty tools param** — sends no `tools` parameter when empty instead of `None`, fixing compatibility with strict providers ([#3820](https://github.com/NousResearch/hermes-agent/pull/3820))
 
 ### Profiles & Multi-Instance
-- **Profiles system** — `hermes profile create/list/switch/delete/export/import/rename`. Each profile gets isolated HERMES_HOME, gateway service, CLI wrapper. Token locks prevent credential collisions. Tab completion for profile names. ([#3681](https://github.com/NousResearch/hermes-agent/pull/3681))
-- **Profile-aware display paths** — all user-facing `~/.hermes` paths replaced with `display_hermes_home()` to show the correct profile directory ([#3623](https://github.com/NousResearch/hermes-agent/pull/3623))
+- **Profiles system** — `hermes profile create/list/switch/delete/export/import/rename`. Each profile gets isolated MAIA_HOME, gateway service, CLI wrapper. Token locks prevent credential collisions. Tab completion for profile names. ([#3681](https://github.com/NousResearch/hermes-agent/pull/3681))
+- **Profile-aware display paths** — all user-facing `~/.maia` paths replaced with `display_hermes_home()` to show the correct profile directory ([#3623](https://github.com/NousResearch/hermes-agent/pull/3623))
 - **Lazy display_hermes_home imports** — prevents `ImportError` during `hermes update` when modules cache stale bytecode ([#3776](https://github.com/NousResearch/hermes-agent/pull/3776))
-- **HERMES_HOME for protected paths** — `.env` write-deny path now respects HERMES_HOME instead of hardcoded `~/.hermes` ([#3840](https://github.com/NousResearch/hermes-agent/pull/3840))
+- **MAIA_HOME for protected paths** — `.env` write-deny path now respects MAIA_HOME instead of hardcoded `~/.maia` ([#3840](https://github.com/NousResearch/hermes-agent/pull/3840))
 
 ---
 

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 6
 title: "Use MCP with Hermes"
-description: "A practical guide to connecting MCP servers to Coorporate Hermes, filtering their tools, and using them safely in real workflows"
+description: "A practical guide to connecting MCP servers to Maia, filtering their tools, and using them safely in real workflows"
 ---
 
 # Use MCP with Hermes
 
-This guide shows how to actually use MCP with Coorporate Hermes in day-to-day workflows.
+This guide shows how to actually use MCP with Maia in day-to-day workflows.
 
 If the feature page explains what MCP is, this guide is about how to get value from it quickly and safely.
 
@@ -42,7 +42,7 @@ If you installed Hermes with the standard install script, MCP support is already
 If you installed without extras and need to add MCP separately:
 
 ```bash
-cd ~/.hermes/hermes-agent
+cd ~/.maia/hermes-agent
 uv pip install -e ".[mcp]"
 ```
 

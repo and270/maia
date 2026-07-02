@@ -41,7 +41,7 @@ The following is the complete skill definition that Hermes loads when this skill
 ## Architecture
 
 ```
-Coorporate Hermes -> MCP (Streamable HTTP) -> twozero.tox (port 40404) -> TD Python
+Maia -> MCP (Streamable HTTP) -> twozero.tox (port 40404) -> TD Python
 ```
 
 36 native tools. Free plugin (no payment/license — confirmed April 2026).
@@ -53,7 +53,7 @@ Hub health check: `GET http://localhost:40404/mcp` returns JSON with instance PI
 Run the setup script to handle everything:
 
 ```bash
-bash "${HERMES_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh"
+bash "${MAIA_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh"
 ```
 
 The script will:

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 11
 title: "ACP Editor Integration"
-description: "Use Coorporate Hermes inside ACP-compatible editors such as VS Code, Zed, and JetBrains"
+description: "Use Maia inside ACP-compatible editors such as VS Code, Zed, and JetBrains"
 ---
 
 # ACP Editor Integration
 
-Coorporate Hermes can run as an ACP server, letting ACP-compatible editors talk to Hermes over stdio and render:
+Maia can run as an ACP server, letting ACP-compatible editors talk to Hermes over stdio and render:
 
 - chat messages
 - tool activity
@@ -72,7 +72,7 @@ Install the [ACP Client](https://marketplace.visualstudio.com/items?itemName=for
 To connect:
 
 1. Open the ACP Client panel from the Activity Bar.
-2. Select **Coorporate Hermes** from the built-in agent list.
+2. Select **Maia** from the built-in agent list.
 3. Connect and start chatting.
 
 If you want to define Hermes manually, add it through VS Code settings under `acp.agents`:
@@ -80,7 +80,7 @@ If you want to define Hermes manually, add it through VS Code settings under `ac
 ```json
 {
   "acp.agents": {
-    "Coorporate Hermes": {
+    "Maia": {
       "command": "hermes",
       "args": ["acp"]
     }
@@ -130,10 +130,10 @@ hermes acp
 
 ACP mode uses the same Hermes configuration as the CLI:
 
-- `~/.hermes/.env`
-- `~/.hermes/config.yaml`
-- `~/.hermes/skills/`
-- `~/.hermes/state.db`
+- `~/.maia/.env`
+- `~/.maia/config.yaml`
+- `~/.maia/skills/`
+- `~/.maia/state.db`
 
 Provider resolution uses Hermes' normal runtime resolver, so ACP inherits the currently configured provider and credentials.
 
@@ -193,7 +193,7 @@ ACP mode does not have its own login flow. It uses Hermes' existing provider set
 hermes model
 ```
 
-or by editing `~/.hermes/.env`.
+or by editing `~/.maia/.env`.
 
 ## See also
 

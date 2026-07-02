@@ -1,7 +1,7 @@
 ---
 sidebar_position: 6
 title: "Signal"
-description: "Set up Coorporate Hermes as a Signal messenger bot via signal-cli daemon"
+description: "Set up Maia as a Signal messenger bot via signal-cli daemon"
 ---
 
 # Signal Setup
@@ -96,7 +96,7 @@ Select **Signal** from the platform menu. The wizard will:
 
 ### Manual Configuration
 
-Add to `~/.hermes/.env`:
+Add to `~/.maia/.env`:
 
 ```bash
 # Required

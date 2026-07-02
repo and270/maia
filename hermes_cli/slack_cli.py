@@ -1,15 +1,15 @@
-"""``coorporate slack ...`` CLI subcommands.
+"""``maia slack ...`` CLI subcommands.
 
-Today only ``coorporate slack manifest`` is implemented — it generates the
+Today only ``maia slack manifest`` is implemented — it generates the
 Slack app manifest JSON for registering every gateway command as a native
 Slack slash (``/btw``, ``/stop``, ``/model``, …) so users get the same
 first-class slash UX Discord and Telegram already have.
 
 Typical workflow::
 
-    $ coorporate slack manifest > slack-manifest.json
+    $ maia slack manifest > slack-manifest.json
     # or:
-    $ coorporate slack manifest --write
+    $ maia slack manifest --write
 
 Then paste the printed JSON into the Slack app config (Features → App
 Manifest → Edit) and click Save. Slack diffs the manifest and prompts
@@ -27,9 +27,9 @@ def _build_full_manifest(bot_name: str, bot_description: str) -> dict:
     """Build a full Slack manifest merging display info + our slash list.
 
     The slash-command list is always generated from ``COMMAND_REGISTRY`` so
-    it stays in sync with the rest of Coorporate Hermes. Other manifest sections
+    it stays in sync with the rest of Maia. Other manifest sections
     (display info, OAuth scopes, socket mode) are set to sensible defaults
-    for a Coorporate Hermes deployment — users can tweak them in the Slack UI after
+    for a Maia deployment — users can tweak them in the Slack UI after
     pasting.
     """
     from hermes_cli.commands import slack_app_manifest
@@ -44,7 +44,7 @@ def _build_full_manifest(bot_name: str, bot_description: str) -> dict:
         },
         "display_information": {
             "name": bot_name[:35],
-            "description": (bot_description or "Your Coorporate Hermes agent on Slack")[:140],
+            "description": (bot_description or "Your Maia agent on Slack")[:140],
             "background_color": "#1a1a2e",
         },
         "features": {
@@ -54,7 +54,7 @@ def _build_full_manifest(bot_name: str, bot_description: str) -> dict:
             },
             "slash_commands": slashes,
             "assistant_view": {
-                "assistant_description": "Chat with Coorporate Hermes in threads and DMs.",
+                "assistant_description": "Chat with Maia in threads and DMs.",
             },
         },
         "oauth_config": {
@@ -103,13 +103,13 @@ def slack_manifest_command(args) -> int:
     Flags (all parsed in ``hermes_cli/main.py``):
       --write [PATH]  Write to file instead of stdout (default path:
                       ``$HERMES_HOME/slack-manifest.json``)
-      --name NAME     Override the bot display name (default: "Coorporate Hermes")
+      --name NAME     Override the bot display name (default: "Maia")
       --description DESC  Override the bot description
       --slashes-only  Emit only the ``features.slash_commands`` array (for
                       merging into an existing manifest manually)
     """
-    name = getattr(args, "name", None) or "Coorporate Hermes"
-    description = getattr(args, "description", None) or "Your Coorporate Hermes agent on Slack"
+    name = getattr(args, "name", None) or "Maia"
+    description = getattr(args, "description", None) or "Your Maia agent on Slack"
 
     if getattr(args, "slashes_only", False):
         from hermes_cli.commands import slack_app_manifest
@@ -129,7 +129,11 @@ def slack_manifest_command(args) -> int:
 
                 target = Path(get_hermes_home()) / "slack-manifest.json"
             except Exception:
-                target = Path(os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")) / "slack-manifest.json"
+                target = Path(
+                    os.environ.get("MAIA_HOME")
+                    or os.environ.get("HERMES_HOME")
+                    or str(Path.home() / ".maia")
+                ) / "slack-manifest.json"
         else:
             target = Path(write_target).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +141,7 @@ def slack_manifest_command(args) -> int:
         print(f"Slack manifest written to: {target}", file=sys.stderr)
         print(
             "\nNext steps:\n"
-            "  1. Open https://api.slack.com/apps and pick your Coorporate Hermes app\n"
+            "  1. Open https://api.slack.com/apps and pick your Maia app\n"
             "     (or create a new one: Create New App → From an app manifest).\n"
             f"  2. Features → App Manifest → paste the contents of\n"
             f"     {target}\n"
@@ -145,7 +149,7 @@ def slack_manifest_command(args) -> int:
             "     slash commands changed.\n"
             "  4. Make sure Socket Mode is enabled and you have a bot token\n"
             "     (xoxb-...) and app token (xapp-...) configured via\n"
-            "     `coorporate setup`.\n",
+            "     `maia setup`.\n",
             file=sys.stderr,
         )
     else:

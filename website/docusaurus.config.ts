@@ -3,7 +3,7 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Coorporate Hermes',
+  title: 'Maia',
   tagline: 'Private corporate AI assistant governance by AmpliIA',
   favicon: 'img/favicon.ico',
 
@@ -11,7 +11,7 @@ const config: Config = {
   baseUrl: '/docs/',
 
   organizationName: 'AmpliIA',
-  projectName: 'coorporate-hermes',
+  projectName: 'maia',
 
   onBrokenLinks: 'warn',
 
@@ -73,7 +73,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/and270/coorporate-hermes/edit/main/website/',
+          editUrl: 'https://github.com/and270/maia/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -96,9 +96,9 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Coorporate Hermes',
+      title: 'Maia',
       logo: {
-        alt: 'Coorporate Hermes',
+        alt: 'Maia',
         src: 'img/logo.png',
       },
       items: [
@@ -123,7 +123,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/and270/coorporate-hermes',
+          href: 'https://github.com/and270/maia',
           label: 'GitHub',
           position: 'right',
         },
@@ -151,12 +151,12 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            { label: 'GitHub', href: 'https://github.com/and270/coorporate-hermes' },
+            { label: 'GitHub', href: 'https://github.com/and270/maia' },
             { label: 'Upstream Hermes Agent', href: 'https://github.com/NousResearch/hermes-agent' },
           ],
         },
       ],
-      copyright: `Coorporate Hermes by <a href="https://ampliia.com/en/">AmpliIA</a> · includes upstream Hermes Agent components under MIT · ${new Date().getFullYear()}`,
+      copyright: `Maia by <a href="https://ampliia.com/en/">AmpliIA</a> · includes upstream Hermes Agent components under MIT · ${new Date().getFullYear()}`,
     },
     prism: {
       theme: prismThemes.github,

@@ -35,7 +35,7 @@ The picker has two columns:
 
 Type in the filter box to narrow by provider name, slug, or model ID.
 
-Pick a model, hit **Switch**, and Hermes writes it to `~/.hermes/config.yaml` under the `model` section. **This applies to new sessions only** — any chat tab you already have open keeps running whatever model it started with. To hot-swap the current chat, use the `/model` slash command inside it.
+Pick a model, hit **Switch**, and Hermes writes it to `~/.maia/config.yaml` under the `model` section. **This applies to new sessions only** — any chat tab you already have open keeps running whatever model it started with. To hot-swap the current chat, use the `/model` slash command inside it.
 
 ## Setting auxiliary models
 
@@ -82,7 +82,7 @@ Cards are badged with `main` or `aux · <task>` when they're currently assigned 
 
 ## What gets written to `config.yaml`
 
-When you save via the dashboard, Hermes writes to `~/.hermes/config.yaml`:
+When you save via the dashboard, Hermes writes to `~/.maia/config.yaml`:
 
 **Main model:**
 ```yaml
@@ -166,7 +166,7 @@ Inside any `hermes chat` session:
 Define your own short names for models you reach for often, then use `/model <alias>` in the CLI or any messaging platform:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.maia/config.yaml
 model_aliases:
   fav:
     model: claude-sonnet-4.6
@@ -194,7 +194,7 @@ hermes model set anthropic/claude-opus-4.7 --provider openrouter
 
 ### Direct config edit
 
-Edit `~/.hermes/config.yaml` and restart whatever reads it. See the [Configuration reference](./configuration.md) for the full schema.
+Edit `~/.maia/config.yaml` and restart whatever reads it. See the [Configuration reference](./configuration.md) for the full schema.
 
 ### REST API
 

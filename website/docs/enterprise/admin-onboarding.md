@@ -1,11 +1,11 @@
 ---
 title: "Admin Onboarding"
-description: "Configure Coorporate Hermes tenant governance, users, roles, knowledge layers, folder policies, cron approvals, migration, and audit logging."
+description: "Configure Maia tenant governance, users, roles, knowledge layers, folder policies, cron approvals, migration, and audit logging."
 ---
 
 # Admin Onboarding
 
-Coorporate Hermes is an AmpliIA distribution for private, one-tenant company deployments. The administrator configures tenant identity, gateway users, role mapping, knowledge layers, folder access, cron approvals, and audit retention before broad rollout.
+Maia is an AmpliIA distribution for private, one-tenant company deployments. The administrator configures tenant identity, gateway users, role mapping, knowledge layers, folder access, cron approvals, and audit retention before broad rollout.
 
 ## Baseline
 
@@ -40,14 +40,14 @@ Practical flow:
 5. Ask the user to run `/whoami` only when you need to troubleshoot or verify roles and teams.
 6. Ask the user to run `/dashboard` again to receive the one-time dashboard login token.
 
-The channel provider authenticates who sent the message. Coorporate Hermes authorizes that identity through the approved Dashboard Access request and `governance.users`.
+The channel provider authenticates who sent the message. Maia authorizes that identity through the approved Dashboard Access request and `governance.users`.
 
 ## Dashboard Access
 
 The dashboard is a server administration surface for config, secrets, folder policies, cron jobs, and approval decisions. There is one dashboard application; the logged-in identity decides which controls are available. It binds to `127.0.0.1` by default:
 
 ```bash
-coorporate dashboard
+maia dashboard
 ```
 
 Before serving it on an intranet or public host, enable protected mode. Token mode is best for bootstrap and platform-admin access:
@@ -56,7 +56,7 @@ Before serving it on an intranet or public host, enable protected mode. Token mo
 dashboard:
   auth:
     enabled: true
-    token_env: COORPORATE_DASHBOARD_TOKEN
+    token_env: MAIA_DASHBOARD_TOKEN
     local_token_roles: [admin]
     read_roles: [auditor, manager, admin]
     manage_roles: [manager, admin]
@@ -64,8 +64,8 @@ dashboard:
 ```
 
 ```bash
-export COORPORATE_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
-coorporate dashboard --host 0.0.0.0 --no-open
+export MAIA_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
+maia dashboard --host 0.0.0.0 --no-open
 ```
 
 Default built-in flow for team leaders:
@@ -74,7 +74,7 @@ Default built-in flow for team leaders:
 2. Set `dashboard.auth.channel_tokens.dashboard_url` to the URL the user will open.
 3. Keep `dashboard.auth.channel_tokens.approval_required: true`.
 4. Ask the team leader to send `/dashboard` in a private/direct chat.
-5. Coorporate Hermes creates a pending request in **Dashboard Access**.
+5. Maia creates a pending request in **Dashboard Access**.
 6. Open **Dashboard Access**, review the actor key, assign roles and teams, then approve or deny the request.
 7. If the team leader should manage files, add a delegated root in **File Access**.
 8. Ask the team leader to send `/dashboard` again.
@@ -90,7 +90,7 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 
@@ -111,7 +111,7 @@ The first `/dashboard` message is an access request, not a token issuance. Appro
 
 Revocation is also in **Dashboard Access**. Click **Revoke** beside an approved actor or enter an actor key manually. Revocation blocks future token issuance, removes unused channel tokens, and drops active dashboard sessions for that actor. Click **Restore** if access should be allowed again.
 
-Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If the company already has that layer and chooses this optional integration, Coorporate Hermes can consume trusted identity headers from it. The external TLS reverse proxy must strip spoofed headers, set trusted identity headers, and be the only network path to the dashboard:
+Maia does not provide SSO, VPN, zero-trust networking, or an identity-aware proxy. If the company already has that layer and chooses this optional integration, Maia can consume trusted identity headers from it. The external TLS reverse proxy must strip spoofed headers, set trusted identity headers, and be the only network path to the dashboard:
 
 ```yaml
 dashboard:
@@ -139,7 +139,7 @@ Corporate memory/skills apply to every conversation. Team memory/skills apply by
 
 ## File Access
 
-Use **Dashboard -> File Access** for normal file authorization. The dashboard saves these settings to `<HERMES_HOME>/config.yaml` under `governance`; the YAML below is the backing shape, not a separate repo file. Direct YAML edits are for the server operator, infrastructure-as-code, backup restore, or break-glass recovery.
+Use **Dashboard -> File Access** for normal file authorization. The dashboard saves these settings to `<MAIA_HOME>/config.yaml` under `governance`; the YAML below is the backing shape, not a separate repo file. Direct YAML edits are for the server operator, infrastructure-as-code, backup restore, or break-glass recovery.
 
 System admin workflow:
 
@@ -251,12 +251,12 @@ observability:
   retention_days: 180
 ```
 
-Review audit events with `coorporate logs audit` or the dashboard Logs page. Knowledge approvals, governance denials, cron authorization decisions, dashboard logins, dashboard denials, and mutating dashboard API calls are audit events.
+Review audit events with `maia logs audit` or the dashboard Logs page. Knowledge approvals, governance denials, cron authorization decisions, dashboard logins, dashboard denials, and mutating dashboard API calls are audit events.
 
 ## Migration
 
 ```bash
-coorporate import ~/Downloads/hermes-export.tar.gz --from-hermes-export
+maia import ~/Downloads/hermes-export.tar.gz --from-hermes-export
 ```
 
-This stages memories and skills for review, imports MCP servers disabled by default, and preserves Coorporate Hermes guardrails. Promote reviewed content into corporate/team layers only through the Knowledge approval flow.
+This stages memories and skills for review, imports MCP servers disabled by default, and preserves Maia guardrails. Promote reviewed content into corporate/team layers only through the Knowledge approval flow.

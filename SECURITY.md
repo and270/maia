@@ -1,6 +1,6 @@
-# Coorporate Hermes Security Policy
+# Maia Security Policy
 
-Coorporate Hermes is an AmpliIA distribution intended for a private, one-tenant corporate assistant deployment. It assumes company-controlled operators, configured gateway users, governed filesystem roots, and audited scheduled workflows.
+Maia is an AmpliIA distribution intended for a private, one-tenant corporate assistant deployment. It assumes company-controlled operators, configured gateway users, governed filesystem roots, and audited scheduled workflows.
 
 ## Trust Model
 
@@ -12,11 +12,11 @@ Coorporate Hermes is an AmpliIA distribution intended for a private, one-tenant 
 - **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders. Reads/searches require read grants; writes/patches/deletes require write grants.
 - **Team file delegation:** `governance.team_file_roots` lets a team leader manage policies only under their team's configured root from the dashboard.
 - **Dashboard access:** The dashboard is localhost-only by default. Intranet or public serving requires `dashboard.auth` unless an operator explicitly uses `--insecure` for temporary trusted-network testing.
-- **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team leaders request dashboard access through `/dashboard`; admins approve, deny, revoke, or restore that access in **Dashboard Access**. If the company already has SSO or an identity-aware proxy, Coorporate Hermes can also consume trusted headers mapped through `governance.users`.
+- **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team leaders request dashboard access through `/dashboard`; admins approve, deny, revoke, or restore that access in **Dashboard Access**. If the company already has SSO or an identity-aware proxy, Maia can also consume trusted headers mapped through `governance.users`.
 - **Channel dashboard tokens:** Authenticated gateway users can request dashboard access with `/dashboard`. By default the first request creates a pending approval; after approval, `/dashboard` issues a short-lived one-use token. Tokens are hashed on disk and should be requested from private/direct chats.
-- **Shared knowledge approval:** Corporate and team memory/skill edits are proposal-first and require an authorized human approval before files under `<HERMES_HOME>/corporate/` or `<HERMES_HOME>/teams/` are changed.
+- **Shared knowledge approval:** Corporate and team memory/skill edits are proposal-first and require an authorized human approval before files under `<MAIA_HOME>/corporate/` or `<MAIA_HOME>/teams/` are changed.
 - **Cron authorization:** Scheduled workflows can require role or user approval before execution. Approval and denial metadata is persisted in the cron job record.
-- **Audit trail:** Governance denials, knowledge approvals, and cron authorization decisions are written to `<HERMES_HOME>/logs/audit.jsonl` when observability is enabled.
+- **Audit trail:** Governance denials, knowledge approvals, and cron authorization decisions are written to `<MAIA_HOME>/logs/audit.jsonl` when observability is enabled.
 
 ## Governance Controls
 
@@ -26,14 +26,14 @@ Dashboard protected mode:
 dashboard:
   auth:
     enabled: true
-    token_env: COORPORATE_DASHBOARD_TOKEN
+    token_env: MAIA_DASHBOARD_TOKEN
     local_token_roles: [admin]
     read_roles: [auditor, manager, admin]
     manage_roles: [manager, admin]
     admin_roles: [admin]
 ```
 
-Set `COORPORATE_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. Coorporate Hermes does not provide SSO, VPN, zero-trust networking, or a reverse proxy. If the company already has that layer, configure `trusted_user_header` only behind a proxy that strips spoofed client headers, and prefer binding Coorporate Hermes to `127.0.0.1` behind that proxy.
+Set `MAIA_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. Maia does not provide SSO, VPN, zero-trust networking, or a reverse proxy. If the company already has that layer, configure `trusted_user_header` only behind a proxy that strips spoofed client headers, and prefer binding Maia to `127.0.0.1` behind that proxy.
 
 System admins can edit global folder policy, role-wide grants, and `team_file_roots`. Team leaders can save policies only under delegated roots, cannot change `default_file_policy`, cannot grant role-wide access, and cannot reference users outside the managed team.
 
@@ -46,7 +46,7 @@ dashboard:
     channel_tokens:
       enabled: true
       ttl_minutes: 10
-      dashboard_url: "https://hermes.company.example"
+      dashboard_url: "https://maia.company.example"
       require_dm: true
       approval_required: true
 ```
@@ -54,7 +54,7 @@ dashboard:
 Default channel access flow:
 
 1. The user sends `/dashboard` in a private/direct chat.
-2. Coorporate Hermes creates a pending **Dashboard Access** request with the gateway actor key.
+2. Maia creates a pending **Dashboard Access** request with the gateway actor key.
 3. A system admin approves the request in the dashboard and assigns roles and teams.
 4. The user sends `/dashboard` again to receive a one-time login token.
 5. Admins can revoke access from **Dashboard Access**. Revocation blocks future token issuance and invalidates active dashboard sessions for that actor.
@@ -118,7 +118,7 @@ pause at `awaiting_authorization` until an authorized user runs `cronjob(action=
 ## Deployment Hardening
 
 - Run the gateway and API server behind VPN, private network ingress, or an identity-aware proxy.
-- Keep `coorporate dashboard` bound to `127.0.0.1` unless `dashboard.auth` is enabled. For public dashboard access, use TLS and a reverse proxy; do not use `--insecure` outside short-lived tests.
+- Keep `maia dashboard` bound to `127.0.0.1` unless `dashboard.auth` is enabled. For public dashboard access, use TLS and a reverse proxy; do not use `--insecure` outside short-lived tests.
 - Use a container, VM, or dedicated service account for production workloads. Avoid broad host access from `terminal.backend: local`.
 - Set filesystem ownership and mode so only the service account can read secrets and job state.
 - Keep API keys in the environment or `.env`; do not store secrets in prompts, docs, or `config.yaml`.
@@ -140,11 +140,11 @@ observability:
   retention_days: 180
 ```
 
-Use `coorporate logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, cron authorization, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
+Use `maia logs audit` or the dashboard Logs page to review audit events. Configure `siem_webhook_url` only for private, approved collectors. The audit log is for governance decisions, knowledge approvals, cron authorization, dashboard access requests/approvals/revocations, dashboard login/logout, dashboard role denials, and mutating dashboard API calls; runtime debugging remains in `agent.log`, `errors.log`, and `gateway.log`.
 
 ## Guarded Migration
 
-Use `coorporate import <archive> --from-hermes-export` for upstream Hermes tar/tar.gz exports. This stages imported skills and memories for review, imports MCP servers disabled by default, and does not activate old secrets or overwrite Coorporate Hermes guardrails. Promote reviewed memories or skills into corporate/team layers only through the Knowledge approval flow.
+Use `maia import <archive> --from-hermes-export` for upstream Hermes tar/tar.gz exports. This stages imported skills and memories for review, imports MCP servers disabled by default, and does not activate old secrets or overwrite Maia guardrails. Promote reviewed memories or skills into corporate/team layers only through the Knowledge approval flow.
 
 ## Enterprise References
 
@@ -159,7 +159,7 @@ The security posture is aligned with:
 For this private distribution, report issues through the owning organization's internal security process. Include:
 
 - affected file path and line range;
-- `coorporate version`, commit SHA, OS, and Python version;
+- `maia version`, commit SHA, OS, and Python version;
 - reproduction steps;
 - impact and trust boundary crossed;
 - whether governance, approval, or folder-policy controls were bypassed.

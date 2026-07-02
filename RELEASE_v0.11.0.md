@@ -1,4 +1,4 @@
-# Hermes Agent v0.11.0 (v2026.4.23)
+# Maia v0.11.0 (v2026.4.23)
 
 **Release Date:** April 23, 2026
 **Since v0.9.0:** 1,556 commits · 761 merged PRs · 1,314 files changed · 224,174 insertions · 29 community contributors (290 including co-authors)
@@ -113,7 +113,7 @@ This release also folds in all the highlights deferred from v0.10.0 (which shipp
 - **Honcho overhaul** — context injection, 5-tool surface, cost safety, session isolation ([#10619](https://github.com/NousResearch/hermes-agent/pull/10619))
 - **Hindsight richer session-scoped retain metadata** (salvage of #6290) ([#13987](https://github.com/NousResearch/hermes-agent/pull/13987))
 - Fix: deduplicate memory provider tools to prevent 400 on strict providers ([#10511](https://github.com/NousResearch/hermes-agent/pull/10511))
-- Fix: discover user-installed memory providers from `$HERMES_HOME/plugins/` ([#10529](https://github.com/NousResearch/hermes-agent/pull/10529))
+- Fix: discover user-installed memory providers from `$MAIA_HOME/plugins/` ([#10529](https://github.com/NousResearch/hermes-agent/pull/10529))
 - Fix: add `on_memory_write` bridge to sequential tool execution path ([#10507](https://github.com/NousResearch/hermes-agent/pull/10507))
 - Fix: preserve `session_id` across `previous_response_id` chains in `/v1/responses` ([#10059](https://github.com/NousResearch/hermes-agent/pull/10059))
 
@@ -334,7 +334,7 @@ A full React/Ink rewrite of the interactive CLI — invoked via `hermes --tui` o
 - **Account limits section in `/usage`** ([#13428](https://github.com/NousResearch/hermes-agent/pull/13428))
 - **Doctor: Command Installation check** for `hermes` bin symlink ([#10112](https://github.com/NousResearch/hermes-agent/pull/10112))
 - **ESC cancels secret/sudo prompts**, clearer skip messaging ([#9902](https://github.com/NousResearch/hermes-agent/pull/9902))
-- Fix: agent-facing text uses `display_hermes_home()` instead of hardcoded `~/.hermes` ([#10285](https://github.com/NousResearch/hermes-agent/pull/10285))
+- Fix: agent-facing text uses `display_hermes_home()` instead of hardcoded `~/.maia` ([#10285](https://github.com/NousResearch/hermes-agent/pull/10285))
 - Fix: enforce `config.yaml` as sole CWD source + deprecate `.env` CWD vars + add `hermes memory reset` ([#11029](https://github.com/NousResearch/hermes-agent/pull/11029))
 
 ---
@@ -362,7 +362,7 @@ The `fix:` category in this window covers 482 PRs. Highlights:
 - Gateway display.streaming root-config override regression ([#9799](https://github.com/NousResearch/hermes-agent/pull/9799))
 - Context `session_search` coerces limit to int (prevents TypeError) ([#10522](https://github.com/NousResearch/hermes-agent/pull/10522))
 - Memory tool stays available when `fcntl` is unavailable (Windows) ([#9783](https://github.com/NousResearch/hermes-agent/pull/9783))
-- Trajectory compressor credentials load from `HERMES_HOME/.env` ([#9632](https://github.com/NousResearch/hermes-agent/pull/9632), @Dusk1e)
+- Trajectory compressor credentials load from `MAIA_HOME/.env` ([#9632](https://github.com/NousResearch/hermes-agent/pull/9632), @Dusk1e)
 - `@_context_completions` no longer crashes on `@` mention ([#9683](https://github.com/NousResearch/hermes-agent/pull/9683), @kshitijk4poor)
 - Group session `user_id` no longer treated as `thread_id` in shutdown notifications ([#10546](https://github.com/NousResearch/hermes-agent/pull/10546))
 - Telegram `platform_hint` — markdown is supported (closes #8261) ([#10612](https://github.com/NousResearch/hermes-agent/pull/10612))

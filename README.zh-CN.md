@@ -1,15 +1,15 @@
-# Coorporate Hermes
+# Maia
 
-Coorporate Hermes 是由 [AmpliIA](https://ampliia.com/en/) 维护的单租户企业 AI 助手发行版，基于上游 Hermes Agent 代码库改造，面向公司内部部署：角色化网关会话、受治理的文件夹访问、企业/团队/用户三层记忆与技能、从上游 Hermes 导出包的安全迁移、cron 人工审批检查点，以及企业审计日志。
+Maia 是由 [AmpliIA](https://ampliia.com/en/) 维护的单租户企业 AI 助手发行版，基于上游 Hermes Agent 代码库改造，面向公司内部部署：角色化网关会话、受治理的文件夹访问、企业/团队/用户三层记忆与技能、从上游 Hermes 导出包的安全迁移、cron 人工审批检查点，以及企业审计日志。
 
 ## 安装
 
 ```bash
-git clone https://github.com/and270/coorporate-hermes.git
-cd coorporate-hermes
-./setup-coorporate.sh
-coorporate setup
-coorporate
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
+maia setup
+maia
 ```
 
 开发安装：
@@ -18,7 +18,7 @@ coorporate
 uv venv .venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[all,dev]"
-coorporate --help
+maia --help
 ```
 
 ## 企业治理
@@ -55,4 +55,4 @@ governance:
 
 ## 许可证
 
-Coorporate Hermes 使用 MIT License。该发行版包含并修改了 Nous Research 以 MIT License 发布的上游 Hermes Agent 组件；相关版权声明已保留在 [LICENSE](LICENSE) 中。
+Maia 使用 MIT License。该发行版包含并修改了 Nous Research 以 MIT License 发布的上游 Hermes Agent 组件；相关版权声明已保留在 [LICENSE](LICENSE) 中。
