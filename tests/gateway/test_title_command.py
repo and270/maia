@@ -114,6 +114,9 @@ class TestHandleTitleCommand:
         result = await runner._handle_title_command(event)
         assert "already in use" in result
         assert "⚠️" in result
+        # Must NOT leak the conflicting (other user's) session id — that would
+        # be a cross-origin metadata oracle.
+        assert "other_session" not in result
         db.close()
 
     @pytest.mark.asyncio

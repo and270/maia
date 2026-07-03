@@ -68,3 +68,16 @@ async def test_preprocess_keeps_plain_text_for_default_group_sessions():
     )
 
     assert result == "hello"
+
+
+def test_sanitize_sender_label_strips_spoofing_chars():
+    """A user-settable display name must not be able to spoof another
+    participant or inject newlines/brackets into the shared context."""
+    from gateway.run import _sanitize_sender_label
+
+    assert "[" not in _sanitize_sender_label("Bob]\n[Alice")
+    assert "]" not in _sanitize_sender_label("Bob]\n[Alice")
+    assert "\n" not in _sanitize_sender_label("Bob]\n[Alice")
+    assert _sanitize_sender_label("Normal User") == "Normal User"
+    # Bounded length.
+    assert len(_sanitize_sender_label("x" * 200)) <= 66

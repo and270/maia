@@ -945,6 +945,28 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
     return None
 
 
+def _sanitize_sender_label(name: str, *, max_len: int = 64) -> str:
+    """Sanitize a display name for use in the ``[sender]`` attribution prefix.
+
+    In a shared session this prefix is the ONLY per-message attribution, and
+    display names are user-settable on most platforms. Without sanitizing, a
+    user named e.g. ``Bob]\\n[Alice`` could spoof another participant or inject
+    newlines/brackets into the shared context the model reads. Strip control
+    characters and the framing brackets, collapse whitespace, and bound length.
+    """
+    if not name:
+        return ""
+    # Drop control chars (incl. newlines/tabs) and the bracket delimiters.
+    cleaned = "".join(
+        ch for ch in str(name)
+        if ch not in "[]" and (ch == " " or ch.isprintable())
+    )
+    cleaned = " ".join(cleaned.split())  # collapse runs of whitespace
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip() + "…"
+    return cleaned
+
+
 def _parse_session_key(session_key: str) -> "dict | None":
     """Parse a session key into its component parts.
 
@@ -6040,7 +6062,9 @@ class GatewayRunner:
             thread_sessions_per_user=_thread_sessions_per_user,
         )
         if _is_shared_multi_user and source.user_name:
-            message_text = f"[{source.user_name}] {message_text}"
+            _sender_label = _sanitize_sender_label(source.user_name)
+            if _sender_label:
+                message_text = f"[{_sender_label}] {message_text}"
 
         if event.media_urls:
             image_paths = []
@@ -10733,6 +10757,15 @@ class GatewayRunner:
                 else:
                     return "Session not found in database."
             except ValueError as e:
+                # A title-uniqueness conflict names the OTHER session's id in
+                # its message. Titles are global, so echoing that raw error
+                # leaks another user's session id across the corporate boundary
+                # (a cross-origin metadata oracle). Return a generic message.
+                if "already in use" in str(e):
+                    return (
+                        "⚠️ That title is already in use. Please choose a "
+                        "different one."
+                    )
                 return f"⚠️ {e}"
         else:
             # Show the current title and session ID
