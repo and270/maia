@@ -130,6 +130,21 @@ UPDATE_AVAILABLE_NO_COUNT = -1
 _UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
 
 
+def _non_interactive_git_env() -> dict:
+    """Environment for background git network calls that must NEVER prompt.
+
+    The update check runs in a daemon thread while the chat REPL owns the
+    terminal. Without these, a remote that wants credentials (HTTPS with no
+    credential helper — common on fresh WSL installs) makes git prompt on
+    /dev/tty and fight the REPL for keystrokes. Prompting is disabled so the
+    check silently fails instead.
+    """
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
+    return env
+
+
 def _check_via_rev(local_rev: str) -> Optional[int]:
     """Compare an embedded git revision to upstream main via ls-remote.
 
@@ -140,6 +155,7 @@ def _check_via_rev(local_rev: str) -> Optional[int]:
         result = subprocess.run(
             ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
             capture_output=True, text=True, timeout=10,
+            stdin=subprocess.DEVNULL, env=_non_interactive_git_env(),
         )
     except Exception:
         return None
@@ -158,9 +174,10 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
             ["git", "fetch", "origin", "--quiet"],
             capture_output=True, timeout=10,
             cwd=str(repo_dir),
+            stdin=subprocess.DEVNULL, env=_non_interactive_git_env(),
         )
     except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
+        pass  # Offline, timeout, or auth needed — use stale refs, that's fine
 
     try:
         result = subprocess.run(

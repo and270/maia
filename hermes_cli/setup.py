@@ -3266,13 +3266,19 @@ def run_setup_wizard(args):
 
 
 def _offer_launch_chat():
-    """Prompt the user to jump straight into chat after setup."""
-    print()
-    if not prompt_yes_no("Launch hermes chat now?", True):
-        return
+    """Tell the user how to start chatting instead of auto-launching.
 
-    from hermes_cli.relaunch import relaunch
-    relaunch(["chat"])
+    Auto-launching chat straight out of the wizard proved fragile on fresh
+    environments (WSL installs in particular): if anything in the install
+    was incomplete the relaunch crashed with a raw traceback, and the
+    spawned REPL could fight the parent shell for the terminal. A printed
+    next-step is predictable everywhere.
+    """
+    print()
+    print_success("You're all set.")
+    print_info("Start chatting:        maia")
+    print_info("  (open a new terminal or reload your shell first if the command is not found)")
+    print_info("Dashboard (optional):  maia dashboard")
 
 
 def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):

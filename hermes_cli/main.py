@@ -5537,6 +5537,26 @@ def _run_npm_install_deterministic(
     )
 
 
+def _print_npm_failure_output(result: subprocess.CompletedProcess) -> None:
+    """Show the tail of a failed npm run so the user sees WHY it failed.
+
+    Without this the dashboard build fails with a bare "build failed" line
+    while the actual error (missing node, wrong node version, OOM, ...)
+    stays captured and invisible.
+    """
+    for stream in (result.stderr, result.stdout):
+        if not stream:
+            continue
+        text = stream.decode("utf-8", "replace") if isinstance(stream, bytes) else str(stream)
+        lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+        if not lines:
+            continue
+        print("  Error output (last lines):")
+        for line in lines[-10:]:
+            print(f"    {line}")
+        return
+
+
 def _build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
     """Build the web UI frontend if npm is available.
 
@@ -5571,17 +5591,23 @@ def _build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
             f"  {'✗' if fatal else '⚠'} Web UI npm install failed"
             + ("" if fatal else " (hermes web will not be available)")
         )
+        _print_npm_failure_output(r1)
         if fatal:
             print("  Run manually:  cd web && npm install && npm run build")
+            print("  (requires Node.js 20+; on WSL/Ubuntu: sudo apt install nodejs npm,")
+            print("   or use nvm — https://github.com/nvm-sh/nvm)")
         return False
-    r2 = subprocess.run([npm, "run", "build"], cwd=web_dir, capture_output=True)
+    r2 = subprocess.run([npm, "run", "build"], cwd=web_dir, capture_output=True, text=True)
     if r2.returncode != 0:
         print(
             f"  {'✗' if fatal else '⚠'} Web UI build failed"
             + ("" if fatal else " (hermes web will not be available)")
         )
+        _print_npm_failure_output(r2)
         if fatal:
             print("  Run manually:  cd web && npm install && npm run build")
+            print("  (requires Node.js 20+; on WSL/Ubuntu: sudo apt install nodejs npm,")
+            print("   or use nvm — https://github.com/nvm-sh/nvm)")
         return False
     print("  ✓ Web UI built")
     return True

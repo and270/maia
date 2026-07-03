@@ -35,6 +35,29 @@ is_termux() {
     [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]
 }
 
+is_wsl() {
+    grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null
+}
+
+# WSL note: /mnt/<drive> is the NTFS bridge — installs there are slow, break
+# hardlinks (uv cache lives on the Linux filesystem), and are the most common
+# source of flaky Windows installs. Recommend the Linux filesystem and switch
+# uv to copy-mode links so it doesn't spam degraded-performance warnings.
+if is_wsl; then
+    case "$SCRIPT_DIR" in
+        /mnt/*)
+            echo ""
+            echo -e "${YELLOW}⚠ You are installing from the Windows filesystem ($SCRIPT_DIR).${NC}"
+            echo "  WSL is much faster and more reliable on the Linux filesystem."
+            echo "  Recommended: clone into your WSL home instead:"
+            echo "    git clone https://github.com/and270/maia.git ~/maia"
+            echo "    cd ~/maia && ./setup-maia.sh"
+            echo ""
+            export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+            ;;
+    esac
+fi
+
 path_has_dir() {
     echo "$PATH" | tr ':' '\n' | grep -Fxq "$1"
 }
@@ -235,19 +258,46 @@ if is_termux; then
     fi
     echo -e "${GREEN}✓${NC} Dependencies installed"
 else
+    install_failed() {
+        echo ""
+        echo -e "${RED}✗ Dependency installation failed.${NC}"
+        echo "  Nothing was launched because the install is incomplete."
+        echo "  Common causes and fixes:"
+        echo "    - Flaky network: re-run  ./setup-maia.sh"
+        if is_wsl; then
+            echo "    - Windows filesystem (/mnt/...): clone into your WSL home (~) and re-run"
+        fi
+        echo "    - Inspect the error above, then install manually:"
+        echo "        source venv/bin/activate && uv pip install -e '.[all]'"
+        exit 1
+    }
+
     # Prefer uv sync with lockfile (hash-verified installs) when available,
     # fall back to pip install for compatibility or when lockfile is stale.
     if [ -f "uv.lock" ]; then
         echo -e "${CYAN}→${NC} Using uv.lock for hash-verified installation..."
-        UV_PROJECT_ENVIRONMENT="$SCRIPT_DIR/venv" $UV_CMD sync --all-extras --locked 2>/dev/null && \
-            echo -e "${GREEN}✓${NC} Dependencies installed (lockfile verified)" || {
-            echo -e "${YELLOW}⚠${NC} Lockfile install failed (may be outdated), falling back to pip install..."
-            $UV_CMD pip install -e ".[all]" || $UV_CMD pip install -e "."
+        UV_SYNC_LOG="$(mktemp 2>/dev/null || echo /tmp/maia-uv-sync.log)"
+        if UV_PROJECT_ENVIRONMENT="$SCRIPT_DIR/venv" $UV_CMD sync --all-extras --locked 2>"$UV_SYNC_LOG"; then
+            echo -e "${GREEN}✓${NC} Dependencies installed (lockfile verified)"
+        else
+            echo -e "${YELLOW}⚠${NC} Lockfile install failed, falling back to pip install..."
+            echo "  Reason (last lines from uv):"
+            tail -n 6 "$UV_SYNC_LOG" 2>/dev/null | sed 's/^/    /'
+            $UV_CMD pip install -e ".[all]" || $UV_CMD pip install -e "." || install_failed
             echo -e "${GREEN}✓${NC} Dependencies installed"
-        }
+        fi
+        rm -f "$UV_SYNC_LOG" 2>/dev/null || true
     else
-        $UV_CMD pip install -e ".[all]" || $UV_CMD pip install -e "."
+        $UV_CMD pip install -e ".[all]" || $UV_CMD pip install -e "." || install_failed
         echo -e "${GREEN}✓${NC} Dependencies installed"
+    fi
+
+    # Sanity check: a core import must work before we advertise success or
+    # offer the wizard. Catches silent partial installs (seen on WSL /mnt/*)
+    # that otherwise crash later with ModuleNotFoundError.
+    if ! "$SETUP_PYTHON" -c "import dotenv, httpx" 2>/dev/null; then
+        echo -e "${RED}✗${NC} Core dependencies did not import after install."
+        install_failed
     fi
 fi
 

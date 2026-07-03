@@ -599,46 +599,28 @@ def test_vercel_setup_prefills_project_and_team_from_link_file(tmp_path, monkeyp
     assert defaults["    Vercel team ID"] == "linked-team"
 
 
-def test_offer_launch_chat_relaunches_via_bin(monkeypatch):
+def test_offer_launch_chat_prints_guidance_without_relaunch(monkeypatch, capsys):
+    """The wizard must NOT auto-launch chat: fragile on fresh installs (WSL).
+
+    It prints how to start instead, and never prompts or exec()s.
+    """
     from hermes_cli import setup as setup_mod
     from hermes_cli import relaunch as relaunch_mod
 
-    monkeypatch.setattr(setup_mod, "prompt_yes_no", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(relaunch_mod, "resolve_hermes_bin", lambda: "/usr/local/bin/hermes")
+    def fail_prompt(*_args, **_kwargs):
+        raise AssertionError("_offer_launch_chat must not prompt")
 
-    exec_calls = []
+    def fail_execvp(path, argv):
+        raise AssertionError("_offer_launch_chat must not relaunch chat")
 
-    def fake_execvp(path, argv):
-        exec_calls.append((path, argv))
-        raise SystemExit(0)
+    monkeypatch.setattr(setup_mod, "prompt_yes_no", fail_prompt)
+    monkeypatch.setattr(relaunch_mod.os, "execvp", fail_execvp)
 
-    monkeypatch.setattr(relaunch_mod.os, "execvp", fake_execvp)
+    setup_mod._offer_launch_chat()
 
-    with pytest.raises(SystemExit):
-        setup_mod._offer_launch_chat()
-
-    assert exec_calls == [("/usr/local/bin/hermes", ["/usr/local/bin/hermes", "chat"])]
-
-
-def test_offer_launch_chat_falls_back_to_module(monkeypatch):
-    from hermes_cli import setup as setup_mod
-    from hermes_cli import relaunch as relaunch_mod
-
-    monkeypatch.setattr(setup_mod, "prompt_yes_no", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(relaunch_mod, "resolve_hermes_bin", lambda: None)
-
-    exec_calls = []
-
-    def fake_execvp(path, argv):
-        exec_calls.append((path, argv))
-        raise SystemExit(0)
-
-    monkeypatch.setattr(relaunch_mod.os, "execvp", fake_execvp)
-
-    with pytest.raises(SystemExit):
-        setup_mod._offer_launch_chat()
-
-    assert exec_calls == [(sys.executable, [sys.executable, "-m", "hermes_cli.main", "chat"])]
+    out = capsys.readouterr().out
+    assert "maia" in out
+    assert "Start chatting" in out
 
 
 def test_setup_slack_saves_home_channel(monkeypatch):

@@ -18,6 +18,8 @@ maia-agent        # direct agent runner
 
 ## Install
 
+### macOS / Linux
+
 ```bash
 git clone https://github.com/and270/maia.git
 cd maia
@@ -28,7 +30,40 @@ maia setup
 maia
 ```
 
-Manual development install:
+### Windows (WSL)
+
+Maia runs on Windows through WSL2 (same recommendation as upstream Hermes).
+One-time WSL setup from PowerShell (as Administrator), then reboot if asked:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Then, inside the Ubuntu/WSL terminal:
+
+```bash
+sudo apt update && sudo apt install -y git curl build-essential
+
+# IMPORTANT: clone into the Linux filesystem (your WSL home, "~"),
+# NOT into /mnt/c/... — installs on the Windows filesystem are slow
+# and are the most common cause of failed installs on WSL.
+git clone https://github.com/and270/maia.git ~/maia
+cd ~/maia
+./setup-maia.sh
+source ~/.bashrc
+maia setup
+maia
+```
+
+Notes for WSL:
+- The `maia` command works from any directory once your shell is reloaded.
+- The dashboard build (`maia dashboard`) needs Node.js 20+:
+  `sudo apt install -y nodejs npm` (or use [nvm](https://github.com/nvm-sh/nvm) for a newer Node).
+- Keep company files you want Maia to govern inside WSL (e.g. `~/company-files`)
+  for the same filesystem-performance reason. Windows paths remain reachable
+  under `/mnt/c/...` when needed.
+
+### Manual development install
 
 ```bash
 uv venv .venv --python 3.11
