@@ -1,8 +1,58 @@
-# Maia
+<div align="center">
 
-Private one-tenant corporate AI assistant by [AmpliIA](https://ampliia.com/en/), based on the upstream Hermes Agent codebase and refit for company use: role-aware gateway conversations, governed folder access, corporate/team/user knowledge layers, guarded migration from upstream Hermes exports, human-in-the-loop cron authorization, and corporate observability.
+<img src="assets/maia-banner.svg" alt="Maia — the enterprise AI agent by AmpliIA" width="100%"/>
 
-About Maia: [https://ampliia.com/en/maia/](https://ampliia.com/en/maia/) &nbsp;·&nbsp; Public documentation: [https://ampliia.com/en/maia/docs/](https://ampliia.com/en/maia/docs/)
+**An AI agent for the enterprise. Open source. Free.**
+
+Role-aware conversations, governed file access, human-in-the-loop approvals, and corporate audit — on top of the Hermes Agent runtime.
+
+[About Maia](https://ampliia.com/en/maia/) · [Documentation](https://ampliia.com/en/maia/docs/) · [Install](#install) · [Governance](#corporate-governance) · [Security](SECURITY.md)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-0C0A92)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-0C0A92)
+[![Lint](https://github.com/and270/maia/actions/workflows/lint.yml/badge.svg)](https://github.com/and270/maia/actions/workflows/lint.yml)
+![Model agnostic](https://img.shields.io/badge/LLM-model--agnostic-0C0A92)
+[![Based on Hermes Agent](https://img.shields.io/badge/based%20on-Hermes%20Agent-555555)](LICENSE)
+
+</div>
+
+Maia is a private one-tenant corporate AI assistant by [AmpliIA](https://ampliia.com/en/), based on the upstream Hermes Agent codebase and refit for company use: role-aware gateway conversations, governed folder access, corporate/team/user knowledge layers, guarded migration from upstream Hermes exports, human-in-the-loop cron authorization, and corporate observability.
+
+## Why Maia
+
+| | |
+|---|---|
+| 🗂️ **Governed file access** — folder policies by role, team, or user; default-deny for production; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals** — file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
+| 🧠 **Layered knowledge** — corporate, team, and user memories/skills with explicit precedence; shared layers change only through approval. | 💬 **Multi-channel gateway** — Slack, Discord, Mattermost, Matrix, Telegram, WhatsApp, and more, with per-user sessions and `platform:user_id` identity mapping. |
+| 🔁 **Model agnostic** — major cloud APIs, OpenAI-compatible endpoints, or fully local models on your servers, with multi-provider fallback. | 📜 **Audit & observability** — append-only audit JSONL for every allow, deny, and approval, plus optional SIEM webhook export. |
+
+## How a request is governed
+
+```mermaid
+flowchart LR
+    U["Employee<br/>(Slack · Discord · Teams · WhatsApp)"] --> G["Maia governance<br/>identity → roles & teams"]
+    G -->|"cleared to see"| R["Read<br/>company docs & memory"]
+    G -->|"protected folder"| E["Edit<br/>staged as a diff"]
+    G -->|"flagged command"| C["Command<br/>held for an approver"]
+    E --> M["Manager approves<br/>in dashboard or chat"]
+    C --> M
+    R --> A["Audit log"]
+    M --> A
+```
+
+Every allow, deny, and approval is recorded; anything outside the actor's policy is blocked. Requesters can never approve their own gated changes.
+
+## Model agnostic by design
+
+Maia treats the LLM as a replaceable component: switching providers is a configuration change (`maia model`), not a rewrite. The same conversations, skills, memories, approvals, and policies keep working when the model changes.
+
+| Cloud APIs | Local / self-hosted | Resilience |
+|---|---|---|
+| Anthropic, OpenAI, Google Gemini, Mistral, DeepSeek, xAI, OpenRouter, and any OpenAI-compatible endpoint. | Ollama, LM Studio, or any compatible inference server on your own hardware — **no data leaves the company**, a natural fit for sensitive documents, LGPD/GDPR, and air-gapped networks. | Multi-provider fallback keeps operations running through provider outages, account blocks, model deprecations, or price changes. No vendor lock-in: governance, audit trails, and corporate knowledge stay yours. |
+
+Provider keys live in the managed `.env` credential flow — never in prompts, memories, skills, or docs.
+
+## Commands
 
 The installed commands are renamed so operators do not use the upstream `hermes` command name:
 

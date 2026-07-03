@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-label="Maia — the enterprise AI agent by Ampliia. Open source, governed, model-agnostic." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect x="0.5" y="0.5" width="1199" height="259" fill="#fbfbf8" stroke="#050505" stroke-opacity=".18"/>
+  <rect x="0.5" y="0.5" width="1199" height="4" fill="#0C0A92"/>
+  <text x="64" y="88" fill="#0C0A92" font-size="14" font-weight="800" letter-spacing="5">AMPLIIA</text>
+  <text x="60" y="172" fill="#050505" font-size="96" font-weight="800" letter-spacing="-4">Maia<tspan fill="#0C0A92">.</tspan></text>
+  <text x="64" y="212" fill="#6e6a62" font-size="17">The enterprise AI agent — open source, governed, model-agnostic.</text>
+  <g>
+    <rect x="756" y="42" width="380" height="50" fill="#ffffff" stroke="#050505" stroke-opacity=".18"/>
+    <path d="M776,66 l6,6 l11,-13" fill="none" stroke="#0C0A92" stroke-width="2"/>
+    <text x="802" y="72" fill="#0C0A92" font-size="12" font-weight="800" letter-spacing="1">READ</text>
+    <text x="856" y="72" fill="#6e6a62" font-size="12">governed docs &amp; memory</text>
+  </g>
+  <g>
+    <rect x="756" y="106" width="380" height="50" fill="#ffffff" stroke="#050505" stroke-opacity=".18"/>
+    <text x="776" y="136" fill="#0C0A92" font-size="12" font-weight="800" letter-spacing="1">EDIT</text>
+    <rect x="820" y="121" width="88" height="19" fill="#ffffff" stroke="#0C0A92" stroke-opacity=".8"/>
+    <text x="828" y="134.5" fill="#0C0A92" font-size="10" font-weight="800" letter-spacing=".5">APPROVAL</text>
+    <text x="922" y="136" fill="#6e6a62" font-size="12">staged as a diff</text>
+  </g>
+  <g>
+    <rect x="756" y="170" width="380" height="50" fill="#ffffff" stroke="#050505" stroke-opacity=".18"/>
+    <text x="776" y="200" fill="#0C0A92" font-size="12" font-weight="800" letter-spacing="1">RUN</text>
+    <rect x="818" y="185" width="88" height="19" fill="#ffffff" stroke="#0C0A92" stroke-opacity=".8"/>
+    <text x="826" y="198.5" fill="#0C0A92" font-size="10" font-weight="800" letter-spacing=".5">APPROVAL</text>
+    <text x="920" y="200" fill="#6e6a62" font-size="12">approver @mentioned</text>
+  </g>
+</svg>
