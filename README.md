@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/maia-banner.svg" alt="Maia — the enterprise AI agent by AmpliIA" width="100%"/>
+<img src="assets/maia-banner.svg" alt="Maia: the enterprise AI agent by AmpliIA" width="100%"/>
 
 **An AI agent for the enterprise. Open source. Free.**
 
-Role-aware conversations, governed file access, human-in-the-loop approvals, and corporate audit — on top of the Hermes Agent runtime.
+Role-aware conversations, governed file access, human-in-the-loop approvals, and corporate audit, on top of the Hermes Agent runtime.
 
 [About Maia](https://ampliia.com/en/maia/) · [Documentation](https://ampliia.com/en/maia/docs/) · [Install](#install) · [Governance](#corporate-governance) · [Security](SECURITY.md)
 
@@ -22,9 +22,9 @@ Maia is a private one-tenant corporate AI assistant by [AmpliIA](https://ampliia
 
 | | |
 |---|---|
-| 🗂️ **Governed file access** — folder policies by role, team, or user; default-deny for production; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals** — file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
-| 🧠 **Layered knowledge** — corporate, team, and user memories/skills with explicit precedence; shared layers change only through approval. | 💬 **Multi-channel gateway** — Slack, Discord, Mattermost, Matrix, Telegram, WhatsApp, and more, with per-user sessions and `platform:user_id` identity mapping. |
-| 🔁 **Model agnostic** — major cloud APIs, OpenAI-compatible endpoints, or fully local models on your servers, with multi-provider fallback. | 📜 **Audit & observability** — append-only audit JSONL for every allow, deny, and approval, plus optional SIEM webhook export. |
+| 🗂️ **Governed file access:** folder policies by role, team, or user; default-deny for production; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals:** file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
+| 🧠 **Layered knowledge:** corporate, team, and user memories/skills with explicit precedence; shared layers change only through approval. | 💬 **Multi-channel gateway:** Slack, Discord, Mattermost, Matrix, Telegram, WhatsApp, and more, with per-user sessions and `platform:user_id` identity mapping. |
+| 🔁 **Model agnostic:** major cloud APIs, OpenAI-compatible endpoints, or fully local models on your servers, with multi-provider fallback. | 📜 **Audit & observability:** append-only audit JSONL for every allow, deny, and approval, plus optional SIEM webhook export. |
 
 ## How a request is governed
 
@@ -48,9 +48,9 @@ Maia treats the LLM as a replaceable component: switching providers is a configu
 
 | Cloud APIs | Local / self-hosted | Resilience |
 |---|---|---|
-| Anthropic, OpenAI, Google Gemini, Mistral, DeepSeek, xAI, OpenRouter, and any OpenAI-compatible endpoint. | Ollama, LM Studio, or any compatible inference server on your own hardware — **no data leaves the company**, a natural fit for sensitive documents, LGPD/GDPR, and air-gapped networks. | Multi-provider fallback keeps operations running through provider outages, account blocks, model deprecations, or price changes. No vendor lock-in: governance, audit trails, and corporate knowledge stay yours. |
+| Anthropic, OpenAI, Google Gemini, Mistral, DeepSeek, xAI, OpenRouter, and any OpenAI-compatible endpoint. | Ollama, LM Studio, or any compatible inference server on your own hardware: **no data leaves the company**, a natural fit for sensitive documents, LGPD/GDPR, and air-gapped networks. | Multi-provider fallback keeps operations running through provider outages, account blocks, model deprecations, or price changes. No vendor lock-in: governance, audit trails, and corporate knowledge stay yours. |
 
-Provider keys live in the managed `.env` credential flow — never in prompts, memories, skills, or docs.
+Provider keys live in the managed `.env` credential flow, never in prompts, memories, skills, or docs.
 
 ## Commands
 
@@ -95,7 +95,7 @@ Then, inside the Ubuntu/WSL terminal:
 sudo apt update && sudo apt install -y git curl build-essential
 
 # IMPORTANT: clone into the Linux filesystem (your WSL home, "~"),
-# NOT into /mnt/c/... — installs on the Windows filesystem are slow
+# NOT into /mnt/c/...: installs on the Windows filesystem are slow
 # and are the most common cause of failed installs on WSL.
 git clone https://github.com/and270/maia.git ~/maia
 cd ~/maia
@@ -284,11 +284,11 @@ For configuration details, see [docs/enterprise-governance.md](docs/enterprise-g
 
 Start with the administrator flow:
 
-- [docs/admin-onboarding.md](docs/admin-onboarding.md) — tenant, roles, gateway identities, folder access, cron approvals, and audit retention.
-- [docs/knowledge-governance.md](docs/knowledge-governance.md) — corporate, team, and user memory/skill layers plus the approval flow.
-- [docs/migration-from-hermes.md](docs/migration-from-hermes.md) — guarded import for upstream Hermes tar/tar.gz exports.
-- [docs/cron-authorization-panel.md](docs/cron-authorization-panel.md) — dashboard and tool approval checkpoints per role or user.
-- [docs/observability.md](docs/observability.md) — runtime logs, audit JSONL, SIEM webhook export, and current telemetry coverage.
+- [docs/admin-onboarding.md](docs/admin-onboarding.md): tenant, roles, gateway identities, folder access, cron approvals, and audit retention.
+- [docs/knowledge-governance.md](docs/knowledge-governance.md): corporate, team, and user memory/skill layers plus the approval flow.
+- [docs/migration-from-hermes.md](docs/migration-from-hermes.md): guarded import for upstream Hermes tar/tar.gz exports.
+- [docs/cron-authorization-panel.md](docs/cron-authorization-panel.md): dashboard and tool approval checkpoints per role or user.
+- [docs/observability.md](docs/observability.md): runtime logs, audit JSONL, SIEM webhook export, and current telemetry coverage.
 
 The dashboard also includes an **Onboarding** page with the same admin checklist.
 

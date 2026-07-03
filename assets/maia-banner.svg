@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-label="Maia — the enterprise AI agent by Ampliia. Open source, governed, model-agnostic." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-label="Maia: the enterprise AI agent by Ampliia. Open source, governed, model-agnostic." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
   <rect x="0.5" y="0.5" width="1199" height="259" fill="#fbfbf8" stroke="#050505" stroke-opacity=".18"/>
   <rect x="0.5" y="0.5" width="1199" height="4" fill="#0C0A92"/>
   <text x="64" y="88" fill="#0C0A92" font-size="14" font-weight="800" letter-spacing="5">AMPLIIA</text>
   <text x="60" y="172" fill="#050505" font-size="96" font-weight="800" letter-spacing="-4">Maia<tspan fill="#0C0A92">.</tspan></text>
-  <text x="64" y="212" fill="#6e6a62" font-size="17">The enterprise AI agent — open source, governed, model-agnostic.</text>
+  <text x="64" y="212" fill="#6e6a62" font-size="17">The enterprise AI agent: open source, governed, model-agnostic.</text>
   <g>
     <rect x="756" y="42" width="380" height="50" fill="#ffffff" stroke="#050505" stroke-opacity=".18"/>
     <path d="M776,66 l6,6 l11,-13" fill="none" stroke="#0C0A92" stroke-width="2"/>
