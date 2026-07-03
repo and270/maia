@@ -1187,10 +1187,16 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     # don't clobber each other's targets (os.environ is process-global).
     from gateway.session_context import set_session_vars, clear_session_vars, _VAR_MAP
 
+    # Set the scheduling user's identity too, so governance checks during the
+    # run (file access, etc.) evaluate against THAT user's role rather than the
+    # local/service account. Older jobs persisted without user_id fall back to
+    # the local actor (unchanged behavior).
     _ctx_tokens = set_session_vars(
         platform=origin["platform"] if origin else "",
         chat_id=str(origin["chat_id"]) if origin else "",
         chat_name=origin.get("chat_name", "") if origin else "",
+        user_id=str(origin.get("user_id") or "") if origin else "",
+        user_name=str(origin.get("user_name") or "") if origin else "",
     )
     _cron_delivery_vars = (
         "HERMES_CRON_AUTO_DELIVER_PLATFORM",

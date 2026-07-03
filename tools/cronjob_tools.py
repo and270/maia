@@ -80,11 +80,17 @@ def _origin_from_env() -> Optional[Dict[str, str]]:
                 "Cron origin captured thread_id=%s for %s:%s",
                 thread_id, origin_platform, origin_chat_id,
             )
+        # Capture the scheduling user's identity so the job runs under THEIR
+        # governance role (file-access checks etc.) rather than the local/
+        # service account. Re-evaluated against current config at run time, so
+        # a since-revoked user's job runs with their reduced privileges.
         return {
             "platform": origin_platform,
             "chat_id": origin_chat_id,
             "chat_name": get_session_env("HERMES_SESSION_CHAT_NAME") or None,
             "thread_id": thread_id,
+            "user_id": get_session_env("HERMES_SESSION_USER_ID") or None,
+            "user_name": get_session_env("HERMES_SESSION_USER_NAME") or None,
         }
     return None
 
