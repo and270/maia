@@ -422,3 +422,82 @@ governance:
     ) in text
     assert str({"marketing": str(marketing_dir)}) in text
     assert "Management-scope actions are limited" in text
+
+
+def test_malformed_folder_policies_fail_closed(tmp_path, monkeypatch):
+    """folder_policies written as a mapping (not a list) must deny, not fall
+    through to the permissive default_file_policy."""
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  default_file_policy: allow
+  folder_policies:
+    finance:
+      path: /company/finance
+      read_roles: [manager]
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    allowed, reason = check_file_access(
+        "/company/finance/secret.txt", "read",
+        actor=Actor(platform="slack", user_id="U1"),
+    )
+    assert allowed is False
+    assert "misconfigured" in reason
+
+
+def test_typo_default_file_policy_fails_closed(tmp_path, monkeypatch):
+    """A default_file_policy that isn't 'allow'/'deny' (e.g. a typo) must fail
+    closed rather than silently allowing."""
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  default_file_policy: denyy
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    allowed, reason = check_file_access(
+        "/anywhere/file.txt", "write",
+        actor=Actor(platform="slack", user_id="U1"),
+    )
+    assert allowed is False
+    assert "unrecognized value" in reason
+
+
+def test_wellformed_deny_default_still_denies_unmatched(tmp_path, monkeypatch):
+    """Sanity: a valid deny default with a valid policy list still behaves."""
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  default_file_policy: deny
+  role_hierarchy: [viewer, admin]
+  folder_policies:
+    - path: /company/public
+      read_roles: [viewer]
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    # Unmatched path under deny default → denied.
+    allowed, _ = check_file_access(
+        "/company/private/x.txt", "read",
+        actor=Actor(platform="slack", user_id="U1"),
+    )
+    assert allowed is False

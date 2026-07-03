@@ -235,6 +235,38 @@ def _resolve_policy_path(raw: Any) -> Optional[Path]:
         return None
 
 
+def _folder_policies_malformed(config: dict[str, Any]) -> Optional[str]:
+    """Return a reason string when ``folder_policies`` is structurally invalid.
+
+    The advertised contract is that a malformed governance configuration fails
+    CLOSED. Without this, a ``folder_policies`` written as a mapping instead of
+    a list, a non-mapping entry, or an entry whose ``path`` is missing/blank/
+    unresolvable is silently dropped — so a policy meant to RESTRICT a folder
+    just vanishes and access falls through to ``default_file_policy`` (which
+    defaults to ``allow``). Better to deny-all and alert the admin than to
+    grant-all invisibly. Returns None when the structure is well-formed
+    (including simply absent).
+    """
+    if "folder_policies" not in config:
+        return None
+    policies = config.get("folder_policies")
+    if policies is None:
+        return None
+    if not isinstance(policies, list):
+        return "governance.folder_policies must be a list of policy entries"
+    for idx, policy in enumerate(policies):
+        if not isinstance(policy, dict):
+            return f"governance.folder_policies[{idx}] is not a mapping"
+        if "path" not in policy:
+            return f"governance.folder_policies[{idx}] is missing 'path'"
+        if _resolve_policy_path(policy.get("path")) is None:
+            return (
+                f"governance.folder_policies[{idx}] has an invalid or "
+                f"unresolvable 'path': {policy.get('path')!r}"
+            )
+    return None
+
+
 def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[str, Any]]:
     try:
         target = Path(path).expanduser().resolve(strict=False)
@@ -320,13 +352,34 @@ def check_file_access(
     if not is_enabled(cfg):
         return True, ""
 
+    # Malformed folder_policies must fail closed, matching the top-level
+    # config-error contract — otherwise a policy meant to restrict a folder
+    # silently disappears and access falls through to the permissive default.
+    policies_error = _folder_policies_malformed(cfg)
+    if policies_error:
+        return _deny(
+            "Access denied by governance: folder policies are misconfigured, "
+            f"so {op} access to {path!r} is blocked until the governance "
+            f"configuration is fixed. {policies_error}",
+        )
+
     policy = _matching_folder_policy(path, cfg)
 
     if policy is None:
-        default_policy = str(cfg.get("default_file_policy", "allow")).strip().lower()
+        raw_default = cfg.get("default_file_policy", "allow")
+        default_policy = str(raw_default).strip().lower()
         if default_policy == "deny":
             return _deny(
                 f"Access denied by governance: no folder policy allows {op} on {path!r} for {actor_display(who)}.",
+            )
+        # An explicitly-set default that isn't a recognized value is a
+        # misconfiguration (e.g. a "denyy" typo) — fail closed rather than
+        # silently treating it as allow.
+        if default_policy not in ("allow", ""):
+            return _deny(
+                "Access denied by governance: default_file_policy is set to an "
+                f"unrecognized value {raw_default!r} (expected 'allow' or 'deny'); "
+                f"failing closed for {op} on {path!r}.",
             )
         return True, ""
 

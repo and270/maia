@@ -867,6 +867,15 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         import re as _re
         for _m in _re.finditer(r'^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$', patch, _re.MULTILINE):
             _paths_to_check.append(_m.group(1).strip())
+        # Move File writes BOTH the destination and (by deletion) the source,
+        # so both must clear the write policy. The old regex omitted Move
+        # entirely, letting `*** Move File: governed -> /tmp/exfil` skip the
+        # governance pre-check. Mirror the parser's `src -> dst` grammar.
+        for _m in _re.finditer(
+            r'^\*\*\*\s+Move\s+File:\s*(.+?)\s*->\s*(.+)$', patch, _re.MULTILINE
+        ):
+            _paths_to_check.append(_m.group(1).strip())
+            _paths_to_check.append(_m.group(2).strip())
     for _p in _paths_to_check:
         try:
             _governance_path = str(_resolve_path_for_task(_p, task_id))
