@@ -265,6 +265,20 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+  applyGovernanceBaseline: (body?: {
+    terminal_allowed_roles?: string[];
+    terminal_approver_roles?: string[];
+    smart_approvals?: boolean;
+  }) =>
+    fetchJSON<{
+      ok: boolean;
+      applied: Record<string, unknown>;
+      warnings: GovernanceWarning[];
+    }>("/api/onboarding/apply-governance-baseline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    }),
   getDiscordGatewayAccessUsers: () =>
     fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users"),
   saveDiscordGatewayAccessUsers: (body: { users: DiscordGatewayAccessUser[] }) =>
@@ -615,6 +629,12 @@ export interface PlatformStatus {
   updated_at: string;
 }
 
+export interface GovernanceWarning {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+}
+
 export interface StatusResponse {
   active_sessions: number;
   config_path: string;
@@ -631,6 +651,7 @@ export interface StatusResponse {
   latest_config_version: number;
   release_date: string;
   version: string;
+  governance_warnings?: GovernanceWarning[];
 }
 
 export interface SessionInfo {

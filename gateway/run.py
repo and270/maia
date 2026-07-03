@@ -3435,7 +3435,20 @@ class GatewayRunner:
         
         if connected_count > 0:
             logger.info("Gateway running with %s platform(s)", connected_count)
-        
+
+        # Governance posture: warn loudly when governance is enabled but
+        # weakly configured, so a half-set-up tenant is not silent.
+        try:
+            from agent.governance import governance_posture_warnings
+
+            for _gw in governance_posture_warnings():
+                _log_fn = (
+                    logger.error if _gw.get("severity") == "error" else logger.warning
+                )
+                _log_fn("Governance posture: %s", _gw.get("message", ""))
+        except Exception:
+            pass
+
         # Build initial channel directory for send_message name resolution
         try:
             from gateway.channel_directory import build_channel_directory

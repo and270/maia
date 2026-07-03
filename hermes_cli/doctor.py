@@ -815,6 +815,35 @@ def run_doctor(args):
     _check_gateway_service_linger(issues)
 
     # =========================================================================
+    # Check: Governance posture
+    # =========================================================================
+    print()
+    print(color("◆ Governance Posture", Colors.CYAN, Colors.BOLD))
+    try:
+        from agent.governance import (
+            governance_posture_warnings,
+            load_governance_config,
+        )
+
+        _gov_cfg = load_governance_config()
+        if not _gov_cfg.get("enabled"):
+            check_info("Governance disabled (personal mode — no posture checks)")
+        else:
+            _gov_warnings = governance_posture_warnings(config=_gov_cfg)
+            if not _gov_warnings:
+                check_ok("Governance enabled and configured for least privilege")
+            else:
+                for _gw in _gov_warnings:
+                    _msg = _gw.get("message", "")
+                    if _gw.get("severity") == "error":
+                        check_fail(_msg)
+                    else:
+                        check_warn(_msg)
+                    issues.append(f"Governance: {_msg}")
+    except Exception as _gov_exc:
+        check_warn("Could not check governance posture", f"({_gov_exc})")
+
+    # =========================================================================
     # Check: Command installation (hermes bin symlink)
     # =========================================================================
     if sys.platform != "win32":

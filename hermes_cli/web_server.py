@@ -1942,6 +1942,14 @@ async def get_status():
     except Exception:
         pass
 
+    governance_warnings: list = []
+    try:
+        from agent.governance import governance_posture_warnings
+
+        governance_warnings = governance_posture_warnings()
+    except Exception:
+        governance_warnings = []
+
     return {
         "version": __version__,
         "release_date": __release_date__,
@@ -1958,6 +1966,7 @@ async def get_status():
         "gateway_exit_reason": gateway_exit_reason,
         "gateway_updated_at": gateway_updated_at,
         "active_sessions": active_sessions,
+        "governance_warnings": governance_warnings,
     }
 
 
@@ -2598,6 +2607,99 @@ async def update_config(body: ConfigUpdate):
     except Exception:
         _log.exception("PUT /api/config failed")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class GovernanceBaseline(BaseModel):
+    terminal_allowed_roles: List[str] = ["operator"]
+    terminal_approver_roles: List[str] = ["manager"]
+    smart_approvals: bool = True
+
+
+@app.post("/api/onboarding/apply-governance-baseline")
+async def apply_governance_baseline(body: GovernanceBaseline, request: Request):
+    """Apply the recommended corporate governance defaults in one action.
+
+    Admin-gated (the auth middleware routes non-GET, non-whitelisted API paths
+    to admin_roles). Sets the least-privilege posture the health check looks
+    for, PRESERVING existing users, folder policies, roles, and team roots.
+    Returns the resulting posture warnings so the admin immediately sees what
+    is still missing (e.g. no folder policies yet under default deny).
+    """
+    # When dashboard auth is on, the middleware already routes this POST to
+    # admin_roles; the explicit check is defense-in-depth. When auth is off
+    # (loopback local mode) the operator is the trust authority — mirror the
+    # config/folder-policy endpoints and allow it.
+    if _dashboard_auth_enabled() and not _dashboard_actor_is_admin(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Applying the governance baseline requires an admin dashboard role.",
+        )
+
+    cfg = load_config()
+    governance = cfg.get("governance", {})
+    governance = dict(governance) if isinstance(governance, dict) else {}
+
+    governance["enabled"] = True
+    governance["default_file_policy"] = "deny"
+
+    terminal = governance.get("terminal", {})
+    terminal = dict(terminal) if isinstance(terminal, dict) else {}
+    terminal["allowed_roles"] = list(body.terminal_allowed_roles or [])
+    terminal["approver_roles"] = list(body.terminal_approver_roles or [])
+    governance["terminal"] = terminal
+    cfg["governance"] = governance
+
+    observability = cfg.get("observability", {})
+    observability = dict(observability) if isinstance(observability, dict) else {}
+    observability["enabled"] = True
+    observability["audit_log_enabled"] = True
+    cfg["observability"] = observability
+
+    if body.smart_approvals:
+        approvals = cfg.get("approvals", {})
+        approvals = dict(approvals) if isinstance(approvals, dict) else {}
+        approvals["mode"] = "smart"
+        cfg["approvals"] = approvals
+
+    try:
+        save_config(cfg)
+    except Exception:
+        _log.exception("POST /api/onboarding/apply-governance-baseline failed")
+        raise HTTPException(status_code=500, detail="Could not save the governance baseline.")
+
+    _audit_dashboard_event(
+        "governance.baseline_applied",
+        request=request,
+        action="onboarding.apply_governance_baseline",
+        resource="governance",
+        outcome="success",
+        metadata={
+            "terminal_allowed_roles": terminal["allowed_roles"],
+            "terminal_approver_roles": terminal["approver_roles"],
+            "smart_approvals": bool(body.smart_approvals),
+        },
+    )
+
+    warnings: list = []
+    try:
+        from agent.governance import governance_posture_warnings
+
+        warnings = governance_posture_warnings()
+    except Exception:
+        warnings = []
+
+    return {
+        "ok": True,
+        "applied": {
+            "governance.enabled": True,
+            "governance.default_file_policy": "deny",
+            "governance.terminal.allowed_roles": terminal["allowed_roles"],
+            "governance.terminal.approver_roles": terminal["approver_roles"],
+            "observability.audit_log_enabled": True,
+            "approvals.mode": "smart" if body.smart_approvals else None,
+        },
+        "warnings": warnings,
+    }
 
 
 @app.get("/api/governance/folder-policies")

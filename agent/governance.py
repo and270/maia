@@ -741,6 +741,118 @@ def terminal_approval_requirement(
     return requirement
 
 
+def governance_posture_warnings(
+    *,
+    config: Optional[dict[str, Any]] = None,
+    full_config: Optional[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
+    """Return posture warnings when governance is ENABLED but weak.
+
+    A single source of truth shared by ``maia doctor``, the dashboard status
+    endpoint, and the gateway startup log, so all three agree on what "weakly
+    configured" means. Each item is
+    ``{"severity": "warning"|"error", "code": str, "message": str}``.
+
+    An empty list means either governance is disabled (personal mode — no
+    opinion) or the posture is solid. A config-load error surfaces as one
+    error item, because sensitive checks fail closed until it is fixed.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    full = _load_config_document() if full_config is None else full_config
+    full = full if isinstance(full, dict) else {}
+
+    config_error = _governance_config_error(cfg)
+    if config_error:
+        return [{
+            "severity": "error",
+            "code": "config_error",
+            "message": (
+                "Governance config could not be loaded; file and cron checks "
+                f"fail closed until it is fixed. {config_error}"
+            ),
+        }]
+
+    if not is_enabled(cfg):
+        return []
+
+    warnings: list[dict[str, Any]] = []
+
+    default_policy = str(
+        cfg.get("default_file_policy", "allow") or "allow"
+    ).strip().lower()
+    if default_policy != "deny":
+        warnings.append({
+            "severity": "warning",
+            "code": "default_file_policy_allow",
+            "message": (
+                "default_file_policy is not 'deny': paths with no matching "
+                "folder policy are allowed. Set it to 'deny' for least "
+                "privilege."
+            ),
+        })
+
+    policies = cfg.get("folder_policies")
+    has_policies = isinstance(policies, list) and len(policies) > 0
+    roots = cfg.get("team_file_roots")
+    has_roots = isinstance(roots, dict) and len(roots) > 0
+    if not has_policies and not has_roots:
+        warnings.append({
+            "severity": "warning",
+            "code": "no_folder_policies",
+            "message": (
+                "No folder policies or delegated team roots are configured, "
+                "so file access is not actually scoped. Add policies in the "
+                "File Access panel."
+            ),
+        })
+
+    terminal_cfg = _terminal_config(cfg)
+    terminal_allowed = _coerce_list(terminal_cfg.get("allowed_roles")) or _coerce_list(
+        terminal_cfg.get("allowed_users")
+    )
+    terminal_approver = _coerce_list(terminal_cfg.get("approver_roles")) or _coerce_list(
+        terminal_cfg.get("approver_users")
+    )
+    if not terminal_allowed and not terminal_approver:
+        warnings.append({
+            "severity": "warning",
+            "code": "terminal_ungoverned",
+            "message": (
+                "Terminal and code execution are ungated and flagged commands "
+                "are self-approved by the requester. Set "
+                "governance.terminal.allowed_roles and/or approver_roles."
+            ),
+        })
+
+    approvals = full.get("approvals", {})
+    approvals = approvals if isinstance(approvals, dict) else {}
+    mode = str(approvals.get("mode", "manual") or "manual").strip().lower()
+    if mode == "off":
+        warnings.append({
+            "severity": "warning",
+            "code": "approvals_off",
+            "message": (
+                "approvals.mode is 'off', so dangerous commands run without "
+                "prompting. Use 'manual' or 'smart'."
+            ),
+        })
+
+    observability = full.get("observability", {})
+    observability = observability if isinstance(observability, dict) else {}
+    if not observability.get("audit_log_enabled"):
+        warnings.append({
+            "severity": "warning",
+            "code": "audit_disabled",
+            "message": (
+                "Audit logging is disabled, so governance decisions leave no "
+                "trail. Set observability.audit_log_enabled: true."
+            ),
+        })
+
+    return warnings
+
+
 def _roles_allow(
     config: dict[str, Any],
     granted_roles: list[str],

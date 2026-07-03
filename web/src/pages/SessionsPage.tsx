@@ -5,7 +5,7 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -658,6 +658,38 @@ export default function SessionsPage() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(status?.governance_warnings?.length ?? 0) > 0 && (
+        <div className="border border-warning/40 bg-warning/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-2 min-w-0">
+              <p className="text-sm font-semibold text-warning">
+                Governance is enabled but weakly configured
+              </p>
+              {status?.governance_warnings?.map((warning) => (
+                <p
+                  key={warning.code}
+                  className="text-xs leading-5 text-warning/80 normal-case"
+                >
+                  {warning.message}
+                </p>
+              ))}
+              <p className="text-xs leading-5 text-muted-foreground normal-case">
+                Review{" "}
+                <Link to="/file-access" className="underline">
+                  File Access
+                </Link>{" "}
+                and{" "}
+                <Link to="/config?search=governance" className="underline">
+                  Config
+                </Link>
+                , or run <code>maia doctor</code>.
+              </p>
             </div>
           </div>
         </div>

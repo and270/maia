@@ -1,4 +1,6 @@
+import { useState } from "react";
 import {
+  AlertTriangle,
   BookOpen,
   CheckCircle2,
   Clock,
@@ -9,13 +11,143 @@ import {
   MessageSquare,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@nous-research/ui/ui/components/badge";
+import { Button } from "@nous-research/ui/ui/components/button";
 import { H2 } from "@/components/NouiTypography";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Toast } from "@/components/Toast";
+import { api, type GovernanceWarning } from "@/lib/api";
+import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
+
+function BaselineCard() {
+  const { toast, showToast } = useToast();
+  const [allowedRoles, setAllowedRoles] = useState("operator");
+  const [approverRoles, setApproverRoles] = useState("manager");
+  const [smart, setSmart] = useState(true);
+  const [applying, setApplying] = useState(false);
+  const [warnings, setWarnings] = useState<GovernanceWarning[] | null>(null);
+
+  const toList = (value: string) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const apply = async () => {
+    setApplying(true);
+    try {
+      const result = await api.applyGovernanceBaseline({
+        terminal_allowed_roles: toList(allowedRoles),
+        terminal_approver_roles: toList(approverRoles),
+        smart_approvals: smart,
+      });
+      setWarnings(result.warnings ?? []);
+      showToast("Corporate governance baseline applied", "success");
+    } catch (err) {
+      showToast(`Could not apply baseline: ${err}`, "error");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Card>
+      <Toast toast={toast} />
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Sparkles className="h-4 w-4" />
+          Apply corporate security baseline
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 normal-case">
+        <p className="text-sm leading-6 text-muted-foreground">
+          Sets the recommended least-privilege posture in one step:
+          governance enabled, <code>default_file_policy: deny</code>, terminal
+          access restricted by role, flagged commands routed to an approver
+          role, audit logging on, and (optionally) smart command approvals.
+          Existing users, folder policies, teams, and roles are preserved.
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Terminal allowed roles</Label>
+            <Input
+              value={allowedRoles}
+              onChange={(event) => setAllowedRoles(event.target.value)}
+              placeholder="operator"
+            />
+            <p className="text-xs text-muted-foreground">
+              Who may run terminal/code at all. Comma-separated. Leave empty for
+              no restriction.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Command approver roles</Label>
+            <Input
+              value={approverRoles}
+              onChange={(event) => setApproverRoles(event.target.value)}
+              placeholder="manager"
+            />
+            <p className="text-xs text-muted-foreground">
+              Who must approve flagged commands from non-approvers. The
+              requester can no longer self-approve.
+            </p>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={smart}
+            onChange={(event) => setSmart(event.target.checked)}
+          />
+          Enable smart command approvals (auxiliary model auto-clears false
+          positives; requires a working model)
+        </label>
+        <Button onClick={apply} disabled={applying} size="sm" className="w-fit">
+          <Sparkles className="h-4 w-4" />
+          Apply baseline
+        </Button>
+
+        {warnings !== null && warnings.length === 0 && (
+          <div className="flex items-start gap-2 border border-success/40 bg-success/[0.06] p-3">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+            <p className="text-sm leading-6 text-success">
+              Baseline applied and no posture gaps remain.
+            </p>
+          </div>
+        )}
+        {warnings !== null && warnings.length > 0 && (
+          <div className="flex items-start gap-2 border border-warning/40 bg-warning/[0.06] p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="flex flex-col gap-1 min-w-0">
+              <p className="text-sm font-semibold text-warning">
+                Applied — but finish these to close the gaps:
+              </p>
+              {warnings.map((warning) => (
+                <p key={warning.code} className="text-xs leading-5 text-warning/80">
+                  {warning.message}
+                </p>
+              ))}
+              <p className="text-xs leading-5 text-muted-foreground">
+                Add scoped grants in{" "}
+                <Link to="/file-access" className="underline">
+                  File Access
+                </Link>
+                .
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const STEPS = [
   {
@@ -111,6 +243,8 @@ export default function OnboardingPage() {
           Admin Onboarding
         </H2>
       </section>
+
+      <BaselineCard />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {STEPS.map(({ action, icon: Icon, text, title, to }) => (
