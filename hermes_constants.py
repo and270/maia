@@ -25,14 +25,25 @@ def bridge_maia_env_aliases() -> None:
     HERMES_* compatibility for old deployments. If both spellings are set, the
     MAIA_* value wins for the legacy alias.
     """
+    # Under the test harness, skip bridging the HOME vars specifically. This
+    # bridge runs at import; if it mirrors HERMES_HOME<->MAIA_HOME here it pins
+    # the home the first time any module is imported, which races with — and
+    # silently shadows — per-test HERMES_HOME overrides (get_hermes_home reads
+    # MAIA_HOME first). Every other alias still bridges normally.
+    skip_home = bool(os.environ.get("MAIA_SKIP_IMPORT_PROFILE_OVERRIDE"))
+
     for key, value in list(os.environ.items()):
         if key.startswith("MAIA_"):
             legacy_key = "HERMES_" + key[len("MAIA_"):]
+            if skip_home and legacy_key == "HERMES_HOME":
+                continue
             os.environ[legacy_key] = value
 
     for key, value in list(os.environ.items()):
         if key.startswith("HERMES_"):
             maia_key = "MAIA_" + key[len("HERMES_"):]
+            if skip_home and maia_key == "MAIA_HOME":
+                continue
             os.environ.setdefault(maia_key, value)
 
 

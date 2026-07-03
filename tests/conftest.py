@@ -28,6 +28,13 @@ import signal
 import sys
 import tempfile
 from pathlib import Path
+
+# Disable hermes_cli.main's import-time HERMES_HOME<->MAIA_HOME mirroring so it
+# can't pin the home env before per-test overrides take effect (that mirroring
+# is a CLI-startup concern, irrelevant to unit tests, and was the root cause of
+# ~40 tests silently running against the wrong home dir). Set at module import
+# — before any test imports hermes_cli.main.
+os.environ.setdefault("MAIA_SKIP_IMPORT_PROFILE_OVERRIDE", "1")
 from unittest.mock import patch
 
 import pytest
@@ -265,8 +272,19 @@ def _hermetic_environment(tmp_path, monkeypatch):
     for name in _HERMES_BEHAVIORAL_VARS | _MAIA_BEHAVIORAL_VARS:
         monkeypatch.delenv(name, raising=False)
 
-    # 3. Redirect MAIA_HOME + HERMES_HOME to a per-test tempdir. Code that reads
-    #    persistent state via ``get_hermes_home()`` now gets the tempdir.
+    # 3. Redirect Maia home to a per-test tempdir. Code that reads persistent
+    #    state via ``get_hermes_home()`` now gets the tempdir.
+    #
+    #    We set HERMES_HOME as the single test knob and CLEAR MAIA_HOME. This
+    #    matters because ``get_hermes_home()`` reads MAIA_HOME *first*: if
+    #    conftest set both here, any test that later overrides only HERMES_HOME
+    #    (the historical knob, used by dozens of suites) would be silently
+    #    shadowed by conftest's MAIA_HOME and run against the wrong dir — i.e.
+    #    against empty config, making the test a no-op that passes regardless of
+    #    the code under test. Clearing MAIA_HOME makes HERMES_HOME authoritative
+    #    for every test; a test that specifically needs MAIA_HOME can still
+    #    setenv it itself (it wins by precedence). The MAIA_HOME-first
+    #    resolution itself is covered by tests/test_hermes_constants.py.
     #
     #    NOTE: We do NOT also redirect HOME. Doing so broke CI because
     #    some tests (and their transitive deps) spawn subprocesses that
@@ -281,7 +299,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     (fake_hermes_home / "cron").mkdir()
     (fake_hermes_home / "memories").mkdir()
     (fake_hermes_home / "skills").mkdir()
-    monkeypatch.setenv("MAIA_HOME", str(fake_hermes_home))
+    monkeypatch.delenv("MAIA_HOME", raising=False)
     monkeypatch.setenv("HERMES_HOME", str(fake_hermes_home))
 
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with

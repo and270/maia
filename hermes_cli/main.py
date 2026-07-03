@@ -169,7 +169,12 @@ def _apply_profile_override() -> None:
                     break
 
 
-_apply_profile_override()
+# Skippable under tests: this import-time call mirrors HERMES_HOME->MAIA_HOME
+# (and vice-versa) as a module side-effect, which pins the home env the first
+# time anything imports this module. In the test harness that races with
+# per-test HERMES_HOME overrides and shadows them. Production always runs it.
+if not os.environ.get("MAIA_SKIP_IMPORT_PROFILE_OVERRIDE"):
+    _apply_profile_override()
 
 # Load .env from ~/.hermes/.env first, then project root as dev fallback.
 # User-managed env files should override stale shell exports on restart.
