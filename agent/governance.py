@@ -486,6 +486,16 @@ def can_authorize(
             f"{config_error}",
         )
 
+    # When governance is disabled there is no role hierarchy to enforce and the
+    # local operator is the trust authority (mirrors check_file_access). Allow
+    # approval so an authorization checkpoint set on a job WITHOUT full
+    # governance configured can still be approved by a human via the tool/CLI,
+    # instead of wedging in awaiting_authorization forever. This does NOT
+    # auto-approve — the job still pauses and waits for an explicit authorize
+    # action; this only lets that action succeed.
+    if not is_enabled(cfg):
+        return True, ""
+
     users = _coerce_list(authorization.get("users") or authorization.get("user"))
     if users and _actor_matches_any(who, users):
         return True, ""

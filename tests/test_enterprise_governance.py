@@ -542,3 +542,20 @@ governance:
         actor=Actor(platform="slack", user_id="U_OK"),
     )
     assert ok is True
+
+
+def test_cron_authorization_approvable_when_governance_disabled(tmp_path, monkeypatch):
+    """With governance disabled there is no role hierarchy to enforce, so a
+    local operator can approve an authorization checkpoint via the tool/CLI
+    instead of the job wedging in awaiting_authorization forever."""
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(tmp_path, "governance:\n  enabled: false\n")
+
+    from agent.governance import Actor, can_authorize
+
+    allowed, _ = can_authorize(
+        {"required": True, "roles": ["admin"]},
+        actor=Actor(platform="local", user_id=""),
+    )
+    assert allowed is True
