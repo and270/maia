@@ -664,7 +664,7 @@ export default function App() {
                 >
                   Maia
                   <br />
-                  Hermes
+                  AmpliIA
                 </Typography>
               </div>
 
