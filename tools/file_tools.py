@@ -798,6 +798,55 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
     return None
 
 
+def _write_approval_requirement(display_path: str, governance_path: str):
+    """Resolve the staged-approval requirement for a governed write.
+
+    Returns ``(requirement_or_None, error_json_or_None)``. Evaluation failures
+    fail closed: a folder policy declared approval intent, so a crash here
+    must not silently skip the approval gate.
+    """
+    try:
+        from agent.governance import file_write_approval_requirement
+
+        return file_write_approval_requirement(governance_path), None
+    except Exception as exc:
+        return None, tool_error(
+            "Write blocked: could not evaluate the write-approval policy "
+            f"for {display_path}: {exc}"
+        )
+
+
+def _stage_governed_write(governance_path: str, display_path: str,
+                          content: str, requirement) -> str:
+    """Stage *content* for approval instead of writing it. Returns tool JSON.
+
+    Staged changes are captured from and applied to the HOST filesystem. When
+    the terminal backend is remote (docker/ssh/...), the reviewed diff would
+    not describe the file the tools actually write — fail closed instead.
+    """
+    try:
+        from tools.terminal_tool import _get_env_config
+
+        env_type = str(_get_env_config().get("env_type", "local") or "local")
+    except Exception:
+        env_type = "local"
+    if env_type != "local":
+        return tool_error(
+            f"Writes to {display_path} require human approval (folder policy: "
+            f"{requirement.get('policy_path')}), which is only supported for "
+            f"the local terminal environment (current: {env_type})."
+        )
+    from agent.file_change_approvals import stage_file_change
+
+    staged = stage_file_change(
+        path=governance_path,
+        content=content,
+        requirement=requirement,
+        display_path=display_path,
+    )
+    return json.dumps(staged, ensure_ascii=False)
+
+
 def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
     """Write content to a file."""
     try:
@@ -816,6 +865,11 @@ def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
             "Refusing to write internal read_file status text as file content. "
             "Re-read the file or reconstruct the intended file contents before writing."
         )
+    _approval_req, _approval_err = _write_approval_requirement(path, _resolved or path)
+    if _approval_err is not None:
+        return _approval_err
+    if _approval_req:
+        return _stage_governed_write(_resolved or path, path, content, _approval_req)
     try:
         if _resolved is None:
             stale_warning = _check_file_staleness(path, task_id)
@@ -876,6 +930,7 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         ):
             _paths_to_check.append(_m.group(1).strip())
             _paths_to_check.append(_m.group(2).strip())
+    _approval_gated: list[tuple[str, str, dict]] = []
     for _p in _paths_to_check:
         try:
             _governance_path = str(_resolve_path_for_task(_p, task_id))
@@ -887,6 +942,48 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
+        _approval_req, _approval_err = _write_approval_requirement(_p, _governance_path)
+        if _approval_err is not None:
+            return _approval_err
+        if _approval_req:
+            _approval_gated.append((_p, _governance_path, _approval_req))
+
+    if _approval_gated:
+        if mode != "replace":
+            _gated_names = ", ".join(entry[0] for entry in _approval_gated)
+            return tool_error(
+                "These files require human approval before writes: "
+                f"{_gated_names}. V4A patches cannot be staged for approval — "
+                "apply the change per file with write_file or patch "
+                "mode='replace' so each change can be reviewed."
+            )
+        # replace mode touches exactly one file: compute the final content in
+        # memory with the same fuzzy matcher patch_replace uses, then stage it.
+        if not path:
+            return tool_error("path required")
+        if old_string is None or new_string is None:
+            return tool_error("old_string and new_string required")
+        _display_path, _gov_path, _requirement = _approval_gated[0]
+        try:
+            _current = Path(_gov_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return tool_error(f"File not found: {path}")
+        except UnicodeDecodeError:
+            return tool_error(
+                f"Cannot stage {path} for approval: the file is not UTF-8 text."
+            )
+        except OSError as _exc:
+            return tool_error(f"Failed to read file: {path}: {_exc}")
+        from tools.fuzzy_match import fuzzy_find_and_replace
+
+        _new_content, _match_count, _strategy, _match_error = fuzzy_find_and_replace(
+            _current, old_string, new_string, replace_all
+        )
+        if _match_error or _match_count == 0:
+            return tool_error(
+                _match_error or f"Could not find match for old_string in {path}"
+            )
+        return _stage_governed_write(_gov_path, _display_path, _new_content, _requirement)
     try:
         # Resolve paths for locking.  Ordered + deduplicated so concurrent
         # callers lock in the same order — prevents deadlock on overlapping

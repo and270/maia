@@ -25,6 +25,7 @@ import {
   Database,
   Download,
   Eye,
+  FileCheck,
   FileText,
   FolderTree,
   Globe,
@@ -70,6 +71,7 @@ import GatewayPage from "@/pages/GatewayPage";
 import DashboardAccessPage from "@/pages/DashboardAccessPage";
 import KnowledgePage from "@/pages/KnowledgePage";
 import FileAccessPage from "@/pages/FileAccessPage";
+import FileApprovalsPage from "@/pages/FileApprovalsPage";
 import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
@@ -255,6 +257,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/dashboard-access": DashboardAccessPage,
   "/knowledge": KnowledgePage,
   "/file-access": FileAccessPage,
+  "/file-approvals": FileApprovalsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -308,6 +311,11 @@ const BUILTIN_NAV_REST: NavItem[] = [
     path: "/file-access",
     label: "File Access",
     icon: FolderTree,
+  },
+  {
+    path: "/file-approvals",
+    label: "File Approvals",
+    icon: FileCheck,
   },
   {
     path: "/analytics",

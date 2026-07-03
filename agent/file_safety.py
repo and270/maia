@@ -104,8 +104,16 @@ def get_safe_write_roots() -> set[str]:
     return roots
 
 
-def is_write_denied(path: str) -> bool:
-    """Return True if path is blocked by the write denylist or safe root."""
+def is_write_denied_static(path: str) -> bool:
+    """Return True if *path* is blocked by the static write denylist.
+
+    Covers the exact/prefix denylists, Maia control-plane files, and the
+    HERMES_WRITE_SAFE_ROOT fence — everything in ``is_write_denied`` except
+    governance folder policies. For callers that enforce governance
+    separately against a specific actor (staged file-change approvals check
+    the requester's access at staging time and the approver's role at
+    decision time, so the ambient actor here would be the wrong identity).
+    """
     home = os.path.realpath(os.path.expanduser("~"))
     resolved = os.path.realpath(os.path.expanduser(str(path)))
 
@@ -162,11 +170,20 @@ def is_write_denied(path: str) -> bool:
         if not allowed:
             return True
 
+    return False
+
+
+def is_write_denied(path: str) -> bool:
+    """Return True if path is blocked by the write denylist, safe root, or governance."""
+    if is_write_denied_static(path):
+        return True
+
     # Maia governance: folder policies from governance config apply on top of
     # the static denylist and safe roots.
     try:
         from agent.governance import check_file_access
 
+        resolved = os.path.realpath(os.path.expanduser(str(path)))
         allowed, _ = check_file_access(resolved, "write")
         if not allowed:
             return True

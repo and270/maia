@@ -660,6 +660,11 @@ class SlackAdapter(BasePlatformAdapter):
             ):
                 self._app.action(_action_id)(self._handle_slash_confirm_action)
 
+            # Register Block Kit action handlers for staged file-change
+            # approval cards (governance-gated; see _handle_file_approval_action).
+            for _action_id in ("hermes_file_approve", "hermes_file_deny"):
+                self._app.action(_action_id)(self._handle_file_approval_action)
+
             # Start Socket Mode handler in background
             self._handler = AsyncSocketModeHandler(self._app, app_token, proxy=proxy_url)
             _apply_slack_proxy(self._handler.client, proxy_url)
@@ -2243,6 +2248,87 @@ class SlackAdapter(BasePlatformAdapter):
             logger.error("[Slack] send_exec_approval failed: %s", e, exc_info=True)
             return SendResult(success=False, error=str(e))
 
+    def format_user_mention(self, user_id: str) -> str:
+        """Slack inline mention markup."""
+        uid = str(user_id or "").strip()
+        return f"<@{uid}>" if uid else ""
+
+    async def send_file_approval(
+        self, chat_id: str, approval_id: str, path: str,
+        requested_by: str = "", diff: str = "",
+        mention_text: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Block Kit card for a staged file-change approval.
+
+        Unlike exec approvals, the staged change is durable — the buttons call
+        ``decide_from_platform_click`` which enforces governance approver
+        roles, so any channel member can see the card but only approvers can
+        resolve it.
+        """
+        if not self._app:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            diff_preview = diff[:2500] + "\n..." if len(diff) > 2500 else diff
+            thread_ts = self._resolve_thread_ts(None, metadata)
+
+            header = (
+                f":page_facing_up: *File Change Approval Required*\n"
+                f"Path: `{path}`\n"
+                f"Requested by: {requested_by or 'unknown'}"
+            )
+            if mention_text:
+                header = f"{mention_text} — a file change needs your approval.\n{header}"
+
+            blocks: list = [
+                {"type": "section", "text": {"type": "mrkdwn", "text": header}},
+            ]
+            if diff_preview.strip():
+                blocks.append(
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"```{diff_preview}```"},
+                    }
+                )
+            blocks.append(
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Approve"},
+                            "style": "primary",
+                            "action_id": "hermes_file_approve",
+                            "value": approval_id,
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Deny"},
+                            "style": "danger",
+                            "action_id": "hermes_file_deny",
+                            "value": approval_id,
+                        },
+                    ],
+                }
+            )
+
+            kwargs: Dict[str, Any] = {
+                "channel": chat_id,
+                "text": f"📄 File change approval required: {path}",
+                "blocks": blocks,
+            }
+            if thread_ts:
+                kwargs["thread_ts"] = thread_ts
+
+            result = await self._get_client(chat_id).chat_postMessage(**kwargs)
+            return SendResult(
+                success=True, message_id=result.get("ts", ""), raw_response=result
+            )
+        except Exception as e:
+            logger.error("[Slack] send_file_approval failed: %s", e, exc_info=True)
+            return SendResult(success=False, error=str(e))
+
     async def send_slash_confirm(
         self, chat_id: str, title: str, message: str, session_key: str,
         confirm_id: str, metadata: Optional[Dict[str, Any]] = None,
@@ -2497,6 +2583,91 @@ class SlackAdapter(BasePlatformAdapter):
             logger.error("Failed to resolve gateway approval from Slack button: %s", exc)
 
         # (approval state already consumed by atomic pop above)
+
+    async def _handle_file_approval_action(self, ack, body, action) -> None:
+        """Handle a staged file-change approval button click.
+
+        The platform allowlist gates who may interact at all (mirrors exec
+        approvals); the governance approver requirement is enforced by
+        ``decide_from_platform_click``, which resolves the clicker's actor
+        key (``slack:<user_id>``) against the staged requirement.
+        """
+        await ack()
+
+        action_id = action.get("action_id", "")
+        approval_id = action.get("value", "")
+        message = body.get("message", {})
+        msg_ts = message.get("ts", "")
+        channel_id = body.get("channel", {}).get("id", "")
+        user_name = body.get("user", {}).get("name", "unknown")
+        user_id = body.get("user", {}).get("id", "")
+
+        allowed_csv = os.getenv("SLACK_ALLOWED_USERS", "").strip()
+        if allowed_csv:
+            allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
+            if "*" not in allowed_ids and user_id not in allowed_ids:
+                logger.warning(
+                    "[Slack] Unauthorized file-approval click by %s (%s) — ignoring",
+                    user_name, user_id,
+                )
+                return
+
+        approve = action_id == "hermes_file_approve"
+        try:
+            from agent.file_change_approvals import decide_from_platform_click
+
+            result = decide_from_platform_click(
+                approval_id,
+                approve=approve,
+                platform="slack",
+                user_id=user_id,
+                user_name=user_name,
+            )
+        except Exception as exc:
+            logger.error("[Slack] File-approval decision failed: %s", exc, exc_info=True)
+            result = {"success": False, "error": str(exc)}
+
+        if not result.get("success"):
+            err = str(result.get("error") or "Decision failed.")
+            try:
+                await self._get_client(channel_id).chat_postEphemeral(
+                    channel=channel_id, user=user_id, text=f"⛔ {err}"
+                )
+            except Exception:
+                pass
+            return
+
+        decision_text = ("✅ Approved" if approve else "❌ Denied") + f" by {user_name}"
+
+        original_text = ""
+        for block in message.get("blocks", []):
+            if block.get("type") == "section":
+                original_text = block.get("text", {}).get("text", "")
+                break
+
+        updated_blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": original_text or "File change approval request",
+                },
+            },
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": decision_text}],
+            },
+        ]
+
+        try:
+            await self._get_client(channel_id).chat_update(
+                channel=channel_id,
+                ts=msg_ts,
+                text=decision_text,
+                blocks=updated_blocks,
+            )
+        except Exception as e:
+            logger.warning("[Slack] Failed to update file-approval message: %s", e)
 
     # ----- Thread context fetching -----
 

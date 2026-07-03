@@ -1556,6 +1556,124 @@ class GatewayRunner:
             thread_sessions_per_user=getattr(config, "thread_sessions_per_user", False),
         )
 
+    def _register_file_approval_notifier(self) -> None:
+        """Register the staged file-change approval notifier.
+
+        Staging happens on the agent's worker thread, so the callback bridges
+        onto the gateway loop and routes the approval card to the chat the
+        request originated from. Best-effort: the staged request is durable
+        and visible in the dashboard whether or not this delivery succeeds.
+        """
+        try:
+            from agent.file_change_approvals import set_file_approval_notifier
+        except Exception:
+            return
+        try:
+            _loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        def _notify(request: dict) -> None:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._send_file_approval_card(request), _loop
+                )
+            except Exception as exc:
+                logger.warning(
+                    "File-approval notification failed to schedule: %s", exc
+                )
+
+        set_file_approval_notifier(_notify)
+
+    def _file_approval_mentions(self, platform_value: str, requirement: dict, adapter) -> str:
+        """Build @mention markup for approvers reachable on this platform.
+
+        Eligible approvers come from the governance role map as actor keys
+        (e.g. ``slack:U123``); only keys on the origin platform can be
+        mentioned there. Others still see the request in the dashboard.
+        """
+        try:
+            from agent.governance import eligible_file_change_approvers
+
+            approvers = eligible_file_change_approvers(requirement or {})
+        except Exception:
+            approvers = []
+        prefix = f"{platform_value}:"
+        mentions = []
+        for key in approvers:
+            if not str(key).lower().startswith(prefix):
+                continue
+            user_id = str(key)[len(prefix):]
+            try:
+                mention = adapter.format_user_mention(user_id)
+            except Exception:
+                mention = ""
+            if mention:
+                mentions.append(mention)
+        return " ".join(dict.fromkeys(mentions))
+
+    async def _send_file_approval_card(self, request: dict) -> None:
+        """Deliver a staged file-change approval card to its origin chat."""
+        origin = request.get("origin") or {}
+        platform_value = str(origin.get("platform") or "").strip().lower()
+        chat_id = str(origin.get("chat_id") or "").strip()
+        if not platform_value or not chat_id:
+            return  # request didn't come from a gateway chat (CLI, dashboard)
+        try:
+            platform = Platform(platform_value)
+        except ValueError:
+            return
+        adapter = self.adapters.get(platform)
+        if adapter is None:
+            return
+
+        requirement = request.get("requirement") or {}
+        mention_text = self._file_approval_mentions(platform_value, requirement, adapter)
+        path = str(request.get("display_path") or request.get("path") or "")
+        requested_by = str((request.get("requested_by") or {}).get("id") or "unknown")
+        thread_id = str(origin.get("thread_id") or "").strip()
+        metadata = {"thread_id": thread_id} if thread_id else None
+
+        # Prefer a button-based card when the adapter supports it. Check the
+        # class, not the instance, to avoid MagicMock auto-attributes in tests.
+        if getattr(type(adapter), "send_file_approval", None) is not None:
+            try:
+                result = await adapter.send_file_approval(
+                    chat_id=chat_id,
+                    approval_id=str(request.get("id") or ""),
+                    path=path,
+                    requested_by=requested_by,
+                    diff=str(request.get("diff") or ""),
+                    mention_text=mention_text,
+                    metadata=metadata,
+                )
+                if result and getattr(result, "success", False):
+                    return
+                logger.warning(
+                    "File-approval card failed (send returned error), "
+                    "falling back to text: %s",
+                    getattr(result, "error", None),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "File-approval card failed, falling back to text: %s", exc
+                )
+
+        roles = requirement.get("roles") or []
+        users = requirement.get("users") or []
+        who = ", ".join([f"role {r}" for r in roles] + list(users)) or "an approver"
+        text = (
+            (f"{mention_text}\n" if mention_text else "")
+            + f"📄 **File change awaiting approval**\n"
+            + f"Path: `{path}`\nRequested by: {requested_by}\n"
+            + f"Needs approval from: {who}.\n"
+            + "Review it in the dashboard File Approvals panel."
+        )
+        try:
+            await adapter.send(chat_id, text, metadata=metadata)
+        except Exception as exc:
+            logger.warning("File-approval text notification failed: %s", exc)
+
     def _telegram_topic_mode_enabled(self, source: SessionSource) -> bool:
         """Return whether Telegram DM topic mode is active for this chat."""
         if source.platform != Platform.TELEGRAM or source.chat_type != "dm":
@@ -3299,7 +3417,11 @@ class GatewayRunner:
         
         # Update delivery router with adapters
         self.delivery_router.adapters = self.adapters
-        
+
+        # Route staged file-change approvals to the origin chat with
+        # approver mentions (see agent/file_change_approvals.py).
+        self._register_file_approval_notifier()
+
         self._running = True
         self._update_runtime_status("running")
         

@@ -800,6 +800,8 @@ def _dashboard_required_roles(path: str, method: str) -> List[str]:
         return manage_roles
     if path.startswith("/api/knowledge/approvals/") and path.endswith("/decide"):
         return manage_roles
+    if path.startswith("/api/files/approvals/") and path.endswith("/decide"):
+        return manage_roles
     if path.startswith("/api/cron/jobs/") and path.endswith("/authorize"):
         return manage_roles
     if verb in {"GET", "HEAD", "OPTIONS"}:
@@ -812,6 +814,7 @@ def _dashboard_required_roles(path: str, method: str) -> List[str]:
             "/api/analytics",
             "/api/model",
             "/api/knowledge",
+            "/api/files/approvals",
             "/api/cron/jobs",
             "/api/dashboard/themes",
             "/api/dashboard/plugins",
@@ -4027,6 +4030,50 @@ async def decide_knowledge_approval_endpoint(
         raise HTTPException(
             status_code=int(result.get("status_code") or 400),
             detail=result.get("error") or "Knowledge approval failed",
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Staged file-change approval endpoints
+# ---------------------------------------------------------------------------
+
+
+class FileChangeApprovalDecision(BaseModel):
+    approve: bool = True
+    note: str = ""
+
+
+@app.get("/api/files/approvals")
+async def get_file_change_approvals(status: str = "pending"):
+    from agent.file_change_approvals import list_file_change_approvals
+
+    if status not in {"pending", "approved", "denied", "stale", "all"}:
+        raise HTTPException(
+            status_code=400,
+            detail="status must be pending, approved, denied, stale, or all",
+        )
+    return {"approvals": list_file_change_approvals(status)}
+
+
+@app.post("/api/files/approvals/{approval_id}/decide")
+async def decide_file_change_approval_endpoint(
+    approval_id: str,
+    body: FileChangeApprovalDecision,
+    request: Request,
+):
+    from agent.file_change_approvals import decide_file_change_approval
+
+    result = decide_file_change_approval(
+        approval_id,
+        approve=bool(body.approve),
+        note=body.note or None,
+        actor=_request_dashboard_actor(request),
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=int(result.get("status_code") or 400),
+            detail=result.get("error") or "File-change approval failed",
         )
     return result
 

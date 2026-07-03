@@ -512,6 +512,138 @@ def can_authorize(
     )
 
 
+def can_approve_file_change(
+    requirement: dict[str, Any],
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> tuple[bool, str]:
+    """Return whether *actor* can approve/deny a staged file change.
+
+    *requirement* is the dict produced by ``file_write_approval_requirement``
+    (``roles`` / ``users`` lists). Mirrors ``can_authorize`` semantics: config
+    errors fail closed; with governance disabled the local operator is the
+    trust authority, so an explicit human decision may proceed.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    who = current_actor() if actor is None else actor
+    config_error = _governance_config_error(cfg)
+    if config_error:
+        return (
+            False,
+            "File-change approval denied by governance: config.yaml could not "
+            "be loaded until the governance configuration is fixed. "
+            f"{config_error}",
+        )
+    if not is_enabled(cfg):
+        return True, ""
+
+    users = _coerce_list(requirement.get("users"))
+    if users and _actor_matches_any(who, users):
+        return True, ""
+    roles = _coerce_list(requirement.get("roles"))
+    if roles and actor_has_any_role(roles, actor=who, config=cfg):
+        return True, ""
+    return (
+        False,
+        f"{actor_display(who)} cannot approve this file change. "
+        f"Required roles: {roles or 'none'}; allowed users: {users or 'none'}.",
+    )
+
+
+def file_write_approval_requirement(
+    path: str,
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
+    """Return the staged-approval requirement for a write to *path*, if any.
+
+    Folder policies may declare ``write_approval_roles`` and/or
+    ``write_approval_users``. When they do, writes by actors who hold a write
+    grant are STAGED for human approval instead of applied directly. The
+    nearest (most specific) matching policy that declares either key wins;
+    declaring both keys empty on a child policy explicitly opts its subtree
+    out of an ancestor's requirement.
+
+    Returns ``None`` when no approval is needed: governance disabled or
+    misconfigured (``check_file_access`` already fails closed on config
+    errors, so this helper stays quiet), no matching policy declares a
+    requirement, or *actor* satisfies the requirement themselves —
+    self-approval would be a no-op, so approvers write directly.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg) or not is_enabled(cfg):
+        return None
+    if _folder_policies_malformed(cfg):
+        return None
+
+    who = current_actor() if actor is None else actor
+    for policy in _all_matching_folder_policies(path, cfg):
+        if (
+            "write_approval_roles" not in policy
+            and "write_approval_users" not in policy
+        ):
+            continue
+        roles = _coerce_list(policy.get("write_approval_roles"))
+        users = _coerce_list(policy.get("write_approval_users"))
+        if not roles and not users:
+            return None
+        requirement = {
+            "roles": roles,
+            "users": users,
+            "policy_path": str(_resolve_policy_path(policy.get("path"))),
+        }
+        allowed, _reason = can_approve_file_change(
+            requirement, actor=who, config=cfg
+        )
+        if allowed:
+            return None
+        return requirement
+    return None
+
+
+def eligible_file_change_approvers(
+    requirement: dict[str, Any],
+    *,
+    config: Optional[dict[str, Any]] = None,
+) -> list[str]:
+    """Return actor keys that satisfy *requirement*, for notification routing.
+
+    Combines the requirement's explicit ``users`` with every entry in
+    ``governance.users`` whose roles satisfy one of the required roles.
+    Keys keep their configured form (e.g. ``slack:U123``) so callers can
+    filter by platform prefix when formatting mentions.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg):
+        return []
+    req_users = _coerce_list(requirement.get("users"))
+    req_roles = _coerce_list(requirement.get("roles"))
+    result: list[str] = list(req_users)
+
+    users = cfg.get("users", {})
+    if isinstance(users, dict) and req_roles:
+        for key, record in users.items():
+            key_str = str(key).strip()
+            if not key_str or key_str in result:
+                continue
+            if isinstance(record, dict):
+                granted = _coerce_list(record.get("roles"))
+            else:
+                granted = _coerce_list(record)
+            if any(
+                role_satisfies(cfg, granted_role, required_role)
+                for granted_role in granted
+                for required_role in req_roles
+            ):
+                result.append(key_str)
+    return result
+
+
 def _roles_allow(
     config: dict[str, Any],
     granted_roles: list[str],
@@ -740,6 +872,12 @@ def render_self_configuration_context(
         (
             "- A prompt or skill instruction cannot grant itself a folder. "
             "Ask for a File Access policy change when access is denied."
+        ),
+        (
+            "- Folders whose policy declares write_approval_roles/"
+            "write_approval_users stage writes as pending file changes; the "
+            "change applies only after an approver accepts it (dashboard "
+            "File Approvals panel or the approval card in chat)."
         ),
         f"- Delegated team file roots this actor can manage: {managed_roots_text}",
         (

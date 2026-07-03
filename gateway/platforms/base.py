@@ -1457,6 +1457,16 @@ class BasePlatformAdapter(ABC):
         """
         pass
 
+    def format_user_mention(self, user_id: str) -> str:
+        """Return the platform's inline @mention markup for *user_id*.
+
+        Used by proactive notifications (e.g. staged file-change approval
+        cards) to ping the responsible approvers. The default is empty —
+        platforms without reliable mention-by-id semantics simply don't
+        mention, and callers fall back to plain text.
+        """
+        return ""
+
     # Default: the adapter treats ``finalize=True`` on edit_message as a
     # no-op and is happy to have the stream consumer skip redundant final
     # edits.  Subclasses that *require* an explicit finalize call to close

@@ -386,6 +386,19 @@ export const api = {
       },
     ),
 
+  // Staged file-change approvals
+  getFileChangeApprovals: (status = "pending") =>
+    fetchJSON<FileChangeApprovalsResponse>(`/api/files/approvals?status=${status}`),
+  decideFileChangeApproval: (id: string, body: { approve: boolean; note?: string }) =>
+    fetchJSON<FileChangeApprovalDecisionResponse>(
+      `/api/files/approvals/${encodeURIComponent(id)}/decide`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+
   // Profiles (minimal)
   getProfiles: () =>
     fetchJSON<{ profiles: ProfileInfo[] }>("/api/profiles"),
@@ -866,6 +879,51 @@ export interface KnowledgeApprovalsResponse {
 export interface KnowledgeApprovalDecisionResponse {
   success: boolean;
   approval: KnowledgeApproval;
+}
+
+export interface FileChangeApproval {
+  id: string;
+  status: "pending" | "approved" | "denied" | "stale";
+  created_at: string;
+  requested_by?: {
+    id?: string;
+    platform?: string | null;
+    user_id?: string | null;
+    user_name?: string | null;
+  };
+  origin?: {
+    platform?: string;
+    chat_id?: string;
+    chat_name?: string;
+    thread_id?: string;
+    session_key?: string;
+  };
+  path: string;
+  display_path?: string;
+  operation: string;
+  content?: string | null;
+  base_exists?: boolean;
+  diff?: string;
+  requirement?: {
+    roles?: string[];
+    users?: string[];
+    policy_path?: string | null;
+  };
+  note?: string | null;
+  decided_at?: string | null;
+  decided_by?: {
+    id?: string;
+  } | null;
+  decision_note?: string | null;
+}
+
+export interface FileChangeApprovalsResponse {
+  approvals: FileChangeApproval[];
+}
+
+export interface FileChangeApprovalDecisionResponse {
+  success: boolean;
+  approval: FileChangeApproval;
 }
 
 export interface SkillInfo {

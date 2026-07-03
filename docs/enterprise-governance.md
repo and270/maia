@@ -355,6 +355,43 @@ governance:
 5. For reads/searches, the actor must match `read_users`, `read_teams`, or `read_roles`.
 6. For writes/patches/deletes, the actor must match `write_users`, `write_teams`, or `write_roles`.
 7. If no policy matches and `default_file_policy` is `deny`, access is denied and audited.
+8. If the nearest matching policy that declares `write_approval_roles` / `write_approval_users` has a non-empty requirement, a write by a grant-holder is **staged for approval** instead of applied (see below). Actors who satisfy the requirement themselves write directly.
+
+### Staged Write Approvals (`write_approval_roles` / `write_approval_users`)
+
+Folder policies can require a human sign-off on every modification, on top of the
+write grant itself:
+
+```yaml
+governance:
+  folder_policies:
+    - path: "/srv/company/finance"
+      write_users: ["sso:felipe@company.com"]   # Felipe MAY write...
+      write_approval_roles: [manager]           # ...but each change needs a manager
+```
+
+How it works:
+
+1. When a grant-holding actor writes (write/patch) to such a path, the file tools
+   stage the FINAL proposed content — nothing touches disk. The staged request
+   (with a unified diff and the requester's identity) lands in
+   `<MAIA_HOME>/file_changes/approvals.json`.
+2. Approvers see it in the dashboard **File Approvals** panel. If the request
+   came from a chat session, an approval card is also posted to that channel,
+   @mentioning eligible approvers on that platform (Slack, Discord, Telegram get
+   Approve/Deny buttons; other platforms get a text notice). Button clicks are
+   validated against the approver requirement — a non-approver clicking gets a
+   private error.
+3. Approving applies the exact reviewed content atomically and audits it. If the
+   file changed on disk after staging, the request is marked `stale` instead of
+   applied and must be re-staged. Denying discards the change. The requester's
+   write grant is re-checked at apply time, so revoking access also invalidates
+   pending requests.
+4. A child policy can opt its subtree out of an ancestor's requirement by
+   declaring the keys empty (`write_approval_roles: []`).
+
+Unlike dangerous-command prompts, staged approvals are asynchronous and durable:
+the agent finishes its turn immediately and nothing expires.
 
 ### Field Guide
 
@@ -371,6 +408,7 @@ governance:
 | Read users / Write users | `read_users`, `write_users` | Grant named actor keys such as `sso:ana@company.com` or `slack:U123`. | Admin; team leader only for users in managed team. |
 | Deny users / Deny teams | `deny_users`, `deny_teams` | Block a specific user or team even if a broader rule would allow them. | Admin; team leader only inside managed team. |
 | Read roles / Write roles | `read_roles`, `write_roles` | Broad tenant-wide grants by role. | System admin only. |
+| Write approval roles / users | `write_approval_roles`, `write_approval_users` | Stage every write by a grant-holder for approval by these roles/users before it applies. Empty lists on a child policy opt out of an ancestor's requirement. | Admin; team leader only inside managed team. |
 
 ## Gateway Threads
 

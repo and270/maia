@@ -1572,6 +1572,77 @@ class TelegramAdapter(BasePlatformAdapter):
             logger.warning("[%s] send_exec_approval failed: %s", self.name, e)
             return SendResult(success=False, error=str(e))
 
+    def format_user_mention(self, user_id: str) -> str:
+        """Telegram mention markup for the HTML-mode approval card.
+
+        Numeric ids get a ``tg://user`` deep link (pings members of the
+        chat); ``@username`` handles pass through as-is.
+        """
+        uid = str(user_id or "").strip()
+        if not uid:
+            return ""
+        if uid.lstrip("@").isdigit():
+            clean = uid.lstrip("@")
+            return f'<a href="tg://user?id={clean}">approver</a>'
+        return uid if uid.startswith("@") else f"@{uid}"
+
+    async def send_file_approval(
+        self, chat_id: str, approval_id: str, path: str,
+        requested_by: str = "", diff: str = "",
+        mention_text: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send an inline-keyboard card for a staged file-change approval.
+
+        The callback carries the durable approval id (``fa:choice:id``), so
+        no in-memory state is needed and the card survives gateway restarts.
+        Governance approver roles are enforced by ``decide_from_platform_click``.
+        """
+        if not self._bot:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            diff_preview = diff[:3000] + "\n..." if len(diff) > 3000 else diff
+            header = (
+                f"📄 <b>File Change Approval Required</b>\n\n"
+                f"Path: <code>{_html.escape(path)}</code>\n"
+                f"Requested by: {_html.escape(requested_by or 'unknown')}"
+            )
+            if mention_text:
+                header = f"{mention_text} — a file change needs your approval.\n{header}"
+            text = header
+            if diff_preview.strip():
+                text += f"\n\n<pre>{_html.escape(diff_preview)}</pre>"
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✅ Approve", callback_data=f"fa:approve:{approval_id}"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Deny", callback_data=f"fa:deny:{approval_id}"
+                    ),
+                ],
+            ])
+
+            thread_id = self._metadata_thread_id(metadata)
+            kwargs: Dict[str, Any] = {
+                "chat_id": int(chat_id),
+                "text": text,
+                "parse_mode": ParseMode.HTML,
+                "reply_markup": keyboard,
+                **self._link_preview_kwargs(),
+            }
+            message_thread_id = self._message_thread_id_for_send(thread_id)
+            if message_thread_id is not None:
+                kwargs["message_thread_id"] = message_thread_id
+
+            msg = await self._bot.send_message(**kwargs)
+            return SendResult(success=True, message_id=str(msg.message_id))
+        except Exception as e:
+            logger.warning("[%s] send_file_approval failed: %s", self.name, e)
+            return SendResult(success=False, error=str(e))
+
     async def send_slash_confirm(
         self, chat_id: str, title: str, message: str, session_key: str,
         confirm_id: str, metadata: Optional[Dict[str, Any]] = None,
@@ -1992,6 +2063,61 @@ class TelegramAdapter(BasePlatformAdapter):
                     )
                 except Exception as exc:
                     logger.error("Failed to resolve gateway approval from Telegram button: %s", exc)
+            return
+
+        # --- File-change approval callbacks (fa:choice:approval_id) ---
+        if data.startswith("fa:"):
+            parts = data.split(":", 2)
+            if len(parts) == 3:
+                choice, approval_id = parts[1], parts[2]
+
+                # Platform allowlist gates interaction; the governance
+                # approver requirement is enforced by decide_from_platform_click.
+                caller_id = str(getattr(query.from_user, "id", ""))
+                if not self._is_callback_user_authorized(
+                    caller_id,
+                    chat_id=query_chat_id,
+                    chat_type=str(query_chat_type) if query_chat_type is not None else None,
+                    thread_id=str(query_thread_id) if query_thread_id is not None else None,
+                    user_name=query_user_name,
+                ):
+                    await query.answer(text="⛔ You are not authorized to approve file changes.")
+                    return
+
+                approve = choice == "approve"
+                try:
+                    from agent.file_change_approvals import decide_from_platform_click
+
+                    result = decide_from_platform_click(
+                        approval_id,
+                        approve=approve,
+                        platform="telegram",
+                        user_id=caller_id,
+                        user_name=query_user_name or "",
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Telegram file-approval decision failed: %s", exc
+                    )
+                    result = {"success": False, "error": str(exc)}
+
+                if not result.get("success"):
+                    err = str(result.get("error") or "Decision failed.")
+                    await query.answer(text=f"⛔ {err[:190]}", show_alert=True)
+                    return
+
+                user_display = query_user_name or "User"
+                label = "✅ Approved" if approve else "❌ Denied"
+                await query.answer(text=label)
+
+                # Edit message to show decision, remove buttons
+                try:
+                    await query.edit_message_text(
+                        text=f"{label} by {user_display}",
+                        reply_markup=None,
+                    )
+                except Exception:
+                    pass  # non-fatal if edit fails
             return
 
         # --- Slash-confirm callbacks (sc:choice:confirm_id) ---

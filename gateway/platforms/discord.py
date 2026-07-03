@@ -3735,6 +3735,65 @@ class DiscordAdapter(BasePlatformAdapter):
         except Exception as e:
             return SendResult(success=False, error=str(e))
 
+    def format_user_mention(self, user_id: str) -> str:
+        """Discord inline mention markup (pings when sent in message content)."""
+        uid = str(user_id or "").strip()
+        return f"<@{uid}>" if uid else ""
+
+    async def send_file_approval(
+        self, chat_id: str, approval_id: str, path: str,
+        requested_by: str = "", diff: str = "",
+        mention_text: str = "",
+        metadata: Optional[dict] = None,
+    ) -> SendResult:
+        """Send a button-based card for a staged file-change approval.
+
+        Mentions go in the message content (embeds don't ping); the buttons
+        resolve via ``decide_from_platform_click``, which enforces the
+        governance approver requirement for the clicking user.
+        """
+        if not self._client or not DISCORD_AVAILABLE:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            target_id = chat_id
+            if metadata and metadata.get("thread_id"):
+                target_id = metadata["thread_id"]
+
+            channel = self._client.get_channel(int(target_id))
+            if not channel:
+                channel = await self._client.fetch_channel(int(target_id))
+
+            max_desc = 4000
+            diff_display = diff if len(diff) <= max_desc else diff[: max_desc - 3] + "..."
+            embed = discord.Embed(
+                title="📄 File Change Approval Required",
+                description=f"```diff\n{diff_display}\n```" if diff_display.strip() else None,
+                color=discord.Color.orange(),
+            )
+            embed.add_field(name="Path", value=path[:1024] or "unknown", inline=False)
+            embed.add_field(
+                name="Requested by", value=requested_by or "unknown", inline=False
+            )
+            embed.set_footer(text="Also available in the dashboard File Approvals panel.")
+
+            view = FileApprovalView(
+                approval_id=approval_id,
+                allowed_user_ids=self._allowed_user_ids,
+                allowed_role_ids=self._allowed_role_ids,
+            )
+
+            content = (
+                f"{mention_text} — a file change needs your approval."
+                if mention_text
+                else None
+            )
+            msg = await channel.send(content=content, embed=embed, view=view)
+            return SendResult(success=True, message_id=str(msg.id))
+
+        except Exception as e:
+            return SendResult(success=False, error=str(e))
+
     async def send_slash_confirm(
         self, chat_id: str, title: str, message: str, session_key: str,
         confirm_id: str, metadata: Optional[dict] = None,
@@ -4581,6 +4640,82 @@ if DISCORD_AVAILABLE:
             self.resolved = True
             for child in self.children:
                 child.disabled = True
+
+    class FileApprovalView(discord.ui.View):
+        """Two-button view for staged file-change approvals.
+
+        Unlike exec approvals, the staged change is durable, so the view has
+        no timeout — after a gateway restart the buttons stop responding but
+        the request stays decidable in the dashboard. The platform allowlist
+        gates interaction; the governance approver requirement is enforced by
+        ``decide_from_platform_click`` (clicker actor key ``discord:<id>``).
+        """
+
+        def __init__(
+            self,
+            approval_id: str,
+            allowed_user_ids: set,
+            allowed_role_ids: Optional[set] = None,
+        ):
+            super().__init__(timeout=None)
+            self.approval_id = approval_id
+            self.allowed_user_ids = allowed_user_ids
+            self.allowed_role_ids = allowed_role_ids or set()
+
+        def _check_auth(self, interaction: discord.Interaction) -> bool:
+            return _component_check_auth(
+                interaction, self.allowed_user_ids, self.allowed_role_ids,
+            )
+
+        async def _resolve(self, interaction: discord.Interaction, approve: bool):
+            if not self._check_auth(interaction):
+                await interaction.response.send_message(
+                    "You're not authorized to interact with this approval~",
+                    ephemeral=True,
+                )
+                return
+
+            try:
+                from agent.file_change_approvals import decide_from_platform_click
+
+                result = decide_from_platform_click(
+                    self.approval_id,
+                    approve=approve,
+                    platform="discord",
+                    user_id=str(interaction.user.id),
+                    user_name=getattr(interaction.user, "display_name", "") or "",
+                )
+            except Exception as exc:
+                logger.error("Discord file-approval decision failed: %s", exc)
+                result = {"success": False, "error": str(exc)}
+
+            if not result.get("success"):
+                err = str(result.get("error") or "Decision failed.")
+                await interaction.response.send_message(f"⛔ {err}", ephemeral=True)
+                return
+
+            label = "Approved" if approve else "Denied"
+            embed = interaction.message.embeds[0] if interaction.message.embeds else None
+            if embed:
+                embed.color = discord.Color.green() if approve else discord.Color.red()
+                embed.set_footer(
+                    text=f"{label} by {interaction.user.display_name}"
+                )
+            for child in self.children:
+                child.disabled = True
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
+        async def approve(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+        ):
+            await self._resolve(interaction, True)
+
+        @discord.ui.button(label="Deny", style=discord.ButtonStyle.red)
+        async def deny(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+        ):
+            await self._resolve(interaction, False)
 
     class SlashConfirmView(discord.ui.View):
         """Three-button view for generic slash-command confirmations.
