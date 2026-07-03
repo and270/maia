@@ -838,6 +838,21 @@ class TestSharedBoardPaths:
         )
         assert env["HERMES_KANBAN_TASK"] == "t_dispatch_env"
 
+        # Regression: the worker must NOT be spawned via a bare ``hermes``
+        # command — no such command exists on a Maia install, which broke
+        # worker dispatch with FileNotFoundError. It must resolve to a real
+        # maia/coorporate binary or the ``-m hermes_cli.main`` module form.
+        cmd = captured["cmd"]
+        assert cmd[0] != "hermes"
+        first = os.path.basename(cmd[0]).lower()
+        assert (
+            first.startswith("maia")
+            or first.startswith("coorporate")
+            or (first.startswith("python") and cmd[1:3] == ["-m", "hermes_cli.main"])
+        ), f"unexpected worker spawn command: {cmd[:3]}"
+        # And it still carries the profile + chat invocation.
+        assert "-p" in cmd and "chat" in cmd
+
 
 # ---------------------------------------------------------------------------
 # latest_summary / latest_summaries — surface task_runs.summary handoffs

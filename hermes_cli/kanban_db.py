@@ -3566,13 +3566,47 @@ def _rotate_worker_log(log_path: Path, max_bytes: int) -> None:
         pass
 
 
+def _worker_cli_base_cmd() -> list[str]:
+    """Resolve the base command used to spawn a kanban worker.
+
+    The renamed console script is ``maia`` (with a legacy ``coorporate``
+    alias); there is NO ``hermes`` command on a Maia install, so the old
+    hard-coded ``["hermes", ...]`` broke worker spawning with
+    ``FileNotFoundError`` on every clean deployment. Resolve robustly:
+
+      1. an explicit override via ``MAIA_CLI`` / ``HERMES_CLI`` (space-split),
+      2. a ``maia`` / ``coorporate`` console script next to the running
+         interpreter (venv ``Scripts``/``bin``) or on ``PATH``,
+      3. fall back to ``python -m hermes_cli.main`` — always importable
+         because it is this very package's entry point.
+    """
+    import shutil
+
+    override = os.environ.get("MAIA_CLI") or os.environ.get("HERMES_CLI")
+    if override and override.strip():
+        return override.split()
+
+    exe_dir = Path(sys.executable).resolve().parent
+    for name in ("maia", "coorporate"):
+        for cand in (exe_dir / name, exe_dir / f"{name}.exe"):
+            if cand.is_file() and os.access(cand, os.X_OK):
+                return [str(cand)]
+        found = shutil.which(name)
+        if found:
+            return [found]
+
+    # Last resort: invoke the package entry point directly. Works in any
+    # venv/layout because the module is guaranteed present.
+    return [sys.executable, "-m", "hermes_cli.main"]
+
+
 def _default_spawn(
     task: Task,
     workspace: str,
     *,
     board: Optional[str] = None,
 ) -> Optional[int]:
-    """Fire-and-forget ``hermes -p <profile> chat -q ...`` subprocess.
+    """Fire-and-forget ``maia -p <profile> chat -q ...`` subprocess.
 
     Returns the spawned child's PID so the dispatcher can detect crashes
     before the claim TTL expires. The child's completion is still observed
@@ -3622,7 +3656,7 @@ def _default_spawn(
     env["HERMES_PROFILE"] = profile_arg
 
     cmd = [
-        "hermes",
+        *_worker_cli_base_cmd(),
         "-p", profile_arg,
         # Auto-load the kanban-worker skill so every dispatched worker
         # has the pattern library (good summary/metadata shapes, retry

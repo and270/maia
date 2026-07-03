@@ -912,20 +912,27 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
 
 
 def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Resolve the Hermes update command as argv parts.
+    """Resolve the Maia CLI command as argv parts.
 
     Tries in order:
-    1. ``shutil.which("hermes")`` — standard PATH lookup
-    2. ``sys.executable -m hermes_cli.main`` — fallback when Hermes is running
-       from a venv/module invocation and the ``hermes`` shim is not on PATH
+    1. the ``maia`` / ``coorporate`` console script next to the running
+       interpreter (venv) or on ``PATH`` — the renamed entry points
+       (there is no ``hermes`` command on a Maia install)
+    2. ``sys.executable -m hermes_cli.main`` — fallback when running from a
+       module invocation and no console script is on PATH
 
     Returns argv parts ready for quoting/joining, or ``None`` if neither works.
     """
     import shutil
 
-    hermes_bin = shutil.which("hermes")
-    if hermes_bin:
-        return [hermes_bin]
+    exe_dir = Path(sys.executable).resolve().parent
+    for name in ("maia", "coorporate"):
+        for cand in (exe_dir / name, exe_dir / f"{name}.exe"):
+            if cand.is_file() and os.access(cand, os.X_OK):
+                return [str(cand)]
+        found = shutil.which(name)
+        if found:
+            return [found]
 
     try:
         import importlib.util
