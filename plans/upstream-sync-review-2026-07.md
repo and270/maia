@@ -14,6 +14,25 @@ of the dashboard we forked. The strategy is selective porting, security first.
 
 ---
 
+## Audit-driven fixes (health check, 2026-07-02, on `main`)
+
+A full 6-subsystem audit surfaced these, now fixed + tested on main:
+- [x] Kanban worker spawn hardcoded `hermes` → broke every clean install; resolve the real `maia` binary
+- [x] Import-time `HERMES_HOME`↔`MAIA_HOME` bridge shadowed ~40 tests into no-ops; gated behind a test flag
+- [x] `skill_manage` default `scope="user"` could rewrite corporate/team skills with no approval
+- [x] Governance failed **open** on malformed `folder_policies` / bad `default_file_policy`; Move File skipped the write check
+- [x] Governance parent-folder `deny_users` was re-granted by child policies (no cascade)
+- [x] Cron `base_url` credential exfiltration (see Tier 1 below)
+- [x] Dashboard `GET /api/config` leaked the governance role map + inline secrets to read-role auditors
+- [x] Dashboard module unimportable on native Windows (`pty_bridge` top-level `fcntl`)
+- [x] Gateway `[sender]` prefix spoofable; `/title` collision leaked another session's id
+- [x] Branding: banner/skin label/WhatsApp/email/dashboard title still said "Hermes Agent"
+- [ ] Kanban: `unblock_task` retry-budget bug + no per-user/tenant authorization (task chip)
+- [ ] Dashboard: plugin API routes unauthenticated in local/`--insecure` mode (needs per-route analysis)
+- [ ] Cron: jobs run as the local/service actor, not the scheduling user's governance role
+- [ ] Cron: `can_authorize` wedges a job permanently when governance is disabled (needs decision)
+- [ ] ~400 `Run 'hermes …'` command hints point at a dead command (task chip)
+
 ## Progress (branch `feature/upstream-security-ports`, 2026-07-02)
 
 - [x] Approval hardening + threat-pattern engine (`tools/approval.py`, `tools/threat_patterns.py`) — wholesale adoption, 347 tests pass
@@ -23,7 +42,8 @@ of the dashboard we forked. The strategy is selective porting, security first.
 - [ ] threat_patterns consumers: upstream wires scanning into `agent/prompt_builder.py`, `tools/memory_tool.py`, `tools/cronjob_tools.py` (all fork-modified) — engine is ported, integration pending
 - [ ] file_tools cross-profile/sandbox-mirror soft-guard wiring (`_check_cross_profile_path`, `cross_profile=True` override) — classifiers ported, wiring pending
 - [ ] Credential/env isolation for spawned processes (`agent/auxiliary_client.py` — fork-modified)
-- [ ] Cron fail-closed validator + base_url exfil block (`cron/scheduler.py` — fork-modified)
+- [x] Cron base_url credential-exfil block (tool-boundary `_validate_cron_base_url` + runtime `_guard_job_credential_exfil`) — ported from `b24708eda`, 9 tests
+- [ ] Cron fail-closed model-config validator (`1b7e781d2`) — still pending
 - [ ] Browser SSRF guards (`tools/browser_tool.py` — fork-modified)
 - [ ] Plugin tool-override consent (`hermes_cli/tools_config.py` — fork-modified)
 - [ ] ACP editor-edit approval + provenance (`acp_adapter/` — fork-modified)
