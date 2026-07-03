@@ -26,15 +26,25 @@ Design constraints:
 from __future__ import annotations
 
 import errno
-import fcntl
 import os
 import select
 import signal
 import struct
 import sys
-import termios
 import time
 from typing import Optional, Sequence
+
+# POSIX-only modules. PTY is unavailable on native Windows anyway (see
+# _PTY_AVAILABLE below), so guard these imports rather than letting a top-level
+# ImportError make the ENTIRE dashboard module (hermes_cli.web_server, which
+# imports this) unimportable on native Windows. They're only dereferenced from
+# code paths that require a live PTY, which never run without _PTY_AVAILABLE.
+try:
+    import fcntl
+    import termios
+except ImportError:  # pragma: no cover - native Windows
+    fcntl = None  # type: ignore
+    termios = None  # type: ignore
 
 try:
     import ptyprocess  # type: ignore
