@@ -594,7 +594,11 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
             [sys.executable, "-c",
              "import json; from tools.skills_sync import sync_skills; "
              "r = sync_skills(quiet=True); print(json.dumps(r))"],
-            env={**os.environ, "HERMES_HOME": str(profile_dir)},
+            # Set BOTH: get_hermes_home() reads MAIA_HOME first, so passing
+            # only HERMES_HOME while the parent env has MAIA_HOME set would
+            # make the child ignore this override and seed skills into the
+            # wrong profile.
+            env={**os.environ, "MAIA_HOME": str(profile_dir), "HERMES_HOME": str(profile_dir)},
             cwd=str(project_root),
             capture_output=True, text=True, timeout=60,
         )
@@ -712,10 +716,15 @@ def _cleanup_gateway_service(name: str, profile_dir: Path) -> None:
     """Disable and remove systemd/launchd service for a profile."""
     import platform as _platform
 
-    # Derive service name for this profile
-    # Temporarily set HERMES_HOME so _profile_suffix resolves correctly
+    # Derive service name for this profile. Temporarily set the home env so
+    # _profile_suffix (via get_hermes_home) resolves to this profile. Must set
+    # MAIA_HOME too: get_hermes_home reads it FIRST, so setting only HERMES_HOME
+    # while MAIA_HOME is present in the process env leaves the override inert and
+    # cleanup targets the wrong (or no) profile's service.
+    old_maia_home = os.environ.get("MAIA_HOME")
     old_home = os.environ.get("HERMES_HOME")
     try:
+        os.environ["MAIA_HOME"] = str(profile_dir)
         os.environ["HERMES_HOME"] = str(profile_dir)
         from hermes_cli.gateway import get_service_name, get_launchd_plist_path
 
@@ -750,6 +759,10 @@ def _cleanup_gateway_service(name: str, profile_dir: Path) -> None:
     except Exception as e:
         print(f"⚠ Service cleanup: {e}")
     finally:
+        if old_maia_home is not None:
+            os.environ["MAIA_HOME"] = old_maia_home
+        elif "MAIA_HOME" in os.environ:
+            del os.environ["MAIA_HOME"]
         if old_home is not None:
             os.environ["HERMES_HOME"] = old_home
         elif "HERMES_HOME" in os.environ:
