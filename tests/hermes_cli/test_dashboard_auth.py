@@ -311,3 +311,49 @@ def test_non_loopback_bind_allows_channel_dashboard_tokens(monkeypatch, _isolate
     web_server.start_server(host="0.0.0.0", port=9124, open_browser=False)
 
     assert calls == [{"host": "0.0.0.0", "port": 9124, "log_level": "warning"}]
+
+
+def test_read_role_config_redacts_governance_and_secrets(monkeypatch, _isolate_hermes_home):
+    """GET /api/config must not expose the governance role map or inline
+    secrets to a non-admin (read-role) caller in protected mode."""
+    client, web_server = _client(monkeypatch)
+    monkeypatch.setenv("MAIA_DASHBOARD_TOKEN", "test-dashboard-token-12345")
+    _write_config(
+        {
+            "governance": {
+                "enabled": True,
+                "users": {"slack:U_SECRET": {"roles": ["admin"]}},
+                "folder_policies": [{"path": "/company/hr", "read_roles": ["admin"]}],
+            },
+            "dashboard": {
+                "auth": {
+                    "enabled": True,
+                    "token_env": "MAIA_DASHBOARD_TOKEN",
+                    "token_hash": "deadbeefsecret",
+                    "local_token_roles": ["auditor"],
+                    "read_roles": ["auditor", "manager", "admin"],
+                    "manage_roles": ["manager", "admin"],
+                    "admin_roles": ["admin"],
+                },
+            },
+        },
+    )
+
+    login = client.post(
+        "/api/dashboard/auth/login",
+        json={"token": "test-dashboard-token-12345"},
+    )
+    assert login.status_code == 200
+    headers = {web_server._SESSION_HEADER_NAME: login.json()["token"]}
+
+    resp = client.get("/api/config", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # The auditor (read-role, not admin) must not see who has which role,
+    # the folder-policy layout, or the inline token hash.
+    gov = body.get("governance", {})
+    assert "users" not in gov
+    assert "folder_policies" not in gov
+    assert "U_SECRET" not in resp.text
+    assert "deadbeefsecret" not in resp.text

@@ -2178,11 +2178,47 @@ def _normalize_config_for_web(config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def _redact_config_for_non_admin(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove admin-only sections from a config payload for read-role callers.
+
+    ``GET /api/config`` is gated at read_roles, but the raw config carries the
+    governance user->role/team map, folder-policy filesystem layout, and any
+    inline-configured secrets (e.g. dashboard.auth.token_hash). A read-only
+    auditor should not enumerate who has which role or read stored secrets.
+    Admins (and local single-user mode) still get the full document.
+    """
+    redacted = dict(config)
+    # Governance identity/authorization surface.
+    gov = redacted.get("governance")
+    if isinstance(gov, dict):
+        gov = dict(gov)
+        for key in ("users", "folder_policies", "team_file_roots", "role_hierarchy"):
+            gov.pop(key, None)
+        gov["_redacted"] = "admin-only fields hidden for your role"
+        redacted["governance"] = gov
+    # Dashboard auth block may hold token hashes / shared secrets inline.
+    dash = redacted.get("dashboard")
+    if isinstance(dash, dict) and isinstance(dash.get("auth"), dict):
+        dash = dict(dash)
+        auth = {
+            k: v for k, v in dash["auth"].items()
+            if k not in ("token_hash", "token", "shared_secret", "trusted_user_header")
+        }
+        dash["auth"] = auth
+        redacted["dashboard"] = dash
+    return redacted
+
+
 @app.get("/api/config")
-async def get_config():
+async def get_config(request: Request):
     config = _normalize_config_for_web(load_config())
     # Strip internal keys that the frontend shouldn't see or send back
-    return {k: v for k, v in config.items() if not k.startswith("_")}
+    payload = {k: v for k, v in config.items() if not k.startswith("_")}
+    # In protected mode, hide the governance role map + inline secrets from
+    # non-admin (read-role) callers. Local single-user mode is admin-trusted.
+    if _dashboard_auth_enabled() and not _dashboard_actor_is_admin(request):
+        payload = _redact_config_for_non_admin(payload)
+    return payload
 
 
 @app.get("/api/config/defaults")
