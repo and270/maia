@@ -295,6 +295,52 @@ def _find_skill(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _shared_skill_scope_error(name: str) -> Optional[str]:
+    """Return an error when a skill *name* exists under the corporate/team roots.
+
+    Mutating a shared skill must go through the approval pipeline
+    (``scope="team"`` / ``scope="corporate"``), never the in-place user path.
+    Returns None when no shared skill by that name exists.
+
+    This searches the shared roots DIRECTLY rather than via ``_find_skill``,
+    so the guard holds even if the enterprise-knowledge layer is momentarily
+    disabled (which would otherwise hide corporate skills from discovery while
+    still leaving their files writable on disk).
+    """
+    try:
+        from agent.enterprise_knowledge import corporate_skills_dir, team_skills_dir
+        from hermes_constants import get_hermes_home
+
+        shared_roots = [(corporate_skills_dir(), "corporate")]
+        teams_root = get_hermes_home() / "teams"
+        if teams_root.exists():
+            for team_dir in teams_root.iterdir():
+                if team_dir.is_dir():
+                    shared_roots.append((team_skills_dir(team_dir.name), "team"))
+    except Exception:
+        return None
+
+    for root, scope in shared_roots:
+        try:
+            if not root.exists():
+                continue
+        except OSError:
+            continue
+        # A skill "lives" at <root>/<name>/SKILL.md.
+        if (root / name / "SKILL.md").is_file():
+            hint = (
+                'scope="corporate"' if scope == "corporate"
+                else 'scope="team", team="<name>"'
+            )
+            return (
+                f"'{name}' is a {scope} skill and is shared across the "
+                f"organization. It cannot be changed directly; changes to shared "
+                f"knowledge require approval. Re-run with {hint} to stage the "
+                f"change for an authorized approver."
+            )
+    return None
+
+
 def _validate_file_path(file_path: str) -> Optional[str]:
     """
     Validate a file path for write_file/remove_file.
@@ -771,6 +817,18 @@ def skill_manage(
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
             return tool_error(f"Failed to stage shared skill approval: {exc}", success=False)
+
+    # Shared-knowledge guard: an operation on the default user scope must not
+    # mutate a skill that actually lives under the corporate/team roots. Those
+    # mutating actions resolve the skill across ALL skill dirs (_find_skill ->
+    # get_all_skills_dirs), so without this a `scope="user"` edit/patch/delete
+    # of a name that collides with a shared skill would rewrite the shared copy
+    # in place, bypassing the approval pipeline entirely. Creates target the
+    # user dir and are unaffected.
+    if action in ("edit", "patch", "delete", "write_file", "remove_file"):
+        shared_err = _shared_skill_scope_error(name)
+        if shared_err:
+            return tool_error(shared_err, success=False)
 
     if action == "create":
         if not content:
