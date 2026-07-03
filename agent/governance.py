@@ -644,6 +644,103 @@ def eligible_file_change_approvers(
     return result
 
 
+def _terminal_config(config: dict[str, Any]) -> dict[str, Any]:
+    terminal = config.get("terminal", {})
+    return terminal if isinstance(terminal, dict) else {}
+
+
+def terminal_access_error(
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
+    """Return a denial reason when *actor* may not run shell commands at all.
+
+    Folder policies only gate the file tools; shell and sandboxed-code
+    execution run with the host process's OS permissions. When
+    ``governance.terminal.allowed_roles`` / ``allowed_users`` is configured,
+    actors outside it cannot use the terminal or execute_code tools. Unset
+    means no restriction (backward compatible).
+    """
+
+    cfg = load_governance_config() if config is None else config
+    who = current_actor() if actor is None else actor
+
+    def _deny(reason: str) -> str:
+        try:
+            from agent.audit_log import record_audit_event
+
+            record_audit_event(
+                "governance.terminal_access",
+                actor=who,
+                action="terminal.execute",
+                resource="terminal",
+                outcome="denied",
+                reason=reason,
+            )
+        except Exception:
+            pass
+        return reason
+
+    config_error = _governance_config_error(cfg)
+    if config_error:
+        return _deny(
+            "Terminal access denied by governance: config.yaml could not be "
+            "loaded, so command execution is blocked until the governance "
+            f"configuration is fixed. {config_error}"
+        )
+    if not is_enabled(cfg):
+        return None
+
+    terminal_cfg = _terminal_config(cfg)
+    allowed_roles = _coerce_list(terminal_cfg.get("allowed_roles"))
+    allowed_users = _coerce_list(terminal_cfg.get("allowed_users"))
+    if not allowed_roles and not allowed_users:
+        return None
+    if allowed_users and _actor_matches_any(who, allowed_users):
+        return None
+    if allowed_roles and actor_has_any_role(allowed_roles, actor=who, config=cfg):
+        return None
+    return _deny(
+        f"Terminal access denied by governance: {actor_display(who)} is not "
+        "permitted to run commands. "
+        f"Required roles: {allowed_roles or 'none'}; "
+        f"allowed users: {allowed_users or 'none'}."
+    )
+
+
+def terminal_approval_requirement(
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
+    """Return the approver requirement for *actor*'s flagged commands, if any.
+
+    When ``governance.terminal.approver_roles`` / ``approver_users`` is set,
+    dangerous-command approvals raised in gateway sessions must be decided by
+    an actor satisfying the requirement — the requesting user can no longer
+    self-approve. Returns ``None`` when governance is disabled/misconfigured
+    (the terminal access gate handles config errors), when no requirement is
+    configured, or when *actor* satisfies it themselves (managers and admins
+    keep the existing self-approval flow).
+    """
+
+    cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg) or not is_enabled(cfg):
+        return None
+    terminal_cfg = _terminal_config(cfg)
+    roles = _coerce_list(terminal_cfg.get("approver_roles"))
+    users = _coerce_list(terminal_cfg.get("approver_users"))
+    if not roles and not users:
+        return None
+    who = current_actor() if actor is None else actor
+    requirement = {"roles": roles, "users": users}
+    allowed, _reason = can_approve_file_change(requirement, actor=who, config=cfg)
+    if allowed:
+        return None
+    return requirement
+
+
 def _roles_allow(
     config: dict[str, Any],
     granted_roles: list[str],
@@ -878,6 +975,13 @@ def render_self_configuration_context(
             "write_approval_users stage writes as pending file changes; the "
             "change applies only after an approver accepts it (dashboard "
             "File Approvals panel or the approval card in chat)."
+        ),
+        (
+            "- Terminal and code execution can be restricted by "
+            "governance.terminal.allowed_roles/allowed_users, and flagged "
+            "commands may require an approver decision "
+            "(governance.terminal.approver_roles/approver_users) — the "
+            "requesting user cannot self-approve those."
         ),
         f"- Delegated team file roots this actor can manage: {managed_roots_text}",
         (

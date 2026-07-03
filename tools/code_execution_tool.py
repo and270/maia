@@ -960,6 +960,17 @@ def execute_code(
     if not code or not code.strip():
         return tool_error("No code provided.")
 
+    # Governance: sandboxed scripts can call tools and touch the host
+    # filesystem, so the terminal role restriction applies here too.
+    try:
+        from agent.governance import terminal_access_error
+
+        _gov_error = terminal_access_error()
+    except Exception:
+        _gov_error = None
+    if _gov_error:
+        return tool_error(_gov_error)
+
     # Dispatch: remote backends use file-based RPC, local uses UDS
     from tools.terminal_tool import _get_env_config
     env_type = _get_env_config()["env_type"]

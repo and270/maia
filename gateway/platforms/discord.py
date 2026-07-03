@@ -4586,6 +4586,40 @@ if DISCORD_AVAILABLE:
                 )
                 return
 
+            # Resolve FIRST — governance.terminal.approver_roles may restrict
+            # who can approve this command. A rejected click leaves the view
+            # active so a real approver can still decide.
+            try:
+                from tools.approval import resolve_gateway_approval_detailed
+                _resolution = resolve_gateway_approval_detailed(
+                    self.session_key, choice,
+                    platform="discord",
+                    user_id=str(interaction.user.id),
+                    user_name=getattr(interaction.user, "display_name", "") or "",
+                )
+            except Exception as exc:
+                logger.error("Failed to resolve gateway approval from button: %s", exc)
+                await interaction.response.send_message(
+                    "Approval resolution failed — try /approve or /deny.",
+                    ephemeral=True,
+                )
+                return
+            if _resolution["resolved"] == 0 and _resolution["rejected"] > 0:
+                await interaction.response.send_message(
+                    "⛔ "
+                    + (
+                        _resolution["reason"]
+                        or "You are not authorized to approve this command."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            logger.info(
+                "Discord button resolved %d approval(s) for session %s (choice=%s, user=%s)",
+                _resolution["resolved"], self.session_key, choice,
+                interaction.user.display_name,
+            )
+
             self.resolved = True
 
             # Update the embed with the decision
@@ -4599,17 +4633,6 @@ if DISCORD_AVAILABLE:
                 child.disabled = True
 
             await interaction.response.edit_message(embed=embed, view=self)
-
-            # Unblock the waiting agent thread via the gateway approval queue
-            try:
-                from tools.approval import resolve_gateway_approval
-                count = resolve_gateway_approval(self.session_key, choice)
-                logger.info(
-                    "Discord button resolved %d approval(s) for session %s (choice=%s, user=%s)",
-                    count, self.session_key, choice, interaction.user.display_name,
-                )
-            except Exception as exc:
-                logger.error("Failed to resolve gateway approval from button: %s", exc)
 
         @discord.ui.button(label="Allow Once", style=discord.ButtonStyle.green)
         async def allow_once(

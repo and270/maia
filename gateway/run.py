@@ -11766,7 +11766,7 @@ class GatewayRunner:
         session_key = self._session_key_for_source(source)
 
         from tools.approval import (
-            resolve_gateway_approval, has_blocking_approval,
+            resolve_gateway_approval_detailed, has_blocking_approval,
         )
 
         if not has_blocking_approval(session_key):
@@ -11790,8 +11790,16 @@ class GatewayRunner:
             choice = "once"
             scope_msg = ""
 
-        count = resolve_gateway_approval(session_key, choice, resolve_all=resolve_all)
+        _result = resolve_gateway_approval_detailed(
+            session_key, choice, resolve_all=resolve_all,
+            platform=source.platform.value,
+            user_id=str(source.user_id or ""),
+            user_name=str(source.user_name or ""),
+        )
+        count = _result["resolved"]
         if not count:
+            if _result["rejected"]:
+                return f"⛔ {_result['reason'] or 'You are not authorized to approve this command.'}"
             return "No pending command to approve."
 
         # Resume typing indicator — agent is about to continue processing.
@@ -11815,7 +11823,7 @@ class GatewayRunner:
         session_key = self._session_key_for_source(source)
 
         from tools.approval import (
-            resolve_gateway_approval, has_blocking_approval,
+            resolve_gateway_approval_detailed, has_blocking_approval,
         )
 
         if not has_blocking_approval(session_key):
@@ -11827,8 +11835,16 @@ class GatewayRunner:
         args = event.get_command_args().strip().lower()
         resolve_all = "all" in args
 
-        count = resolve_gateway_approval(session_key, "deny", resolve_all=resolve_all)
+        _result = resolve_gateway_approval_detailed(
+            session_key, "deny", resolve_all=resolve_all,
+            platform=source.platform.value,
+            user_id=str(source.user_id or ""),
+            user_name=str(source.user_name or ""),
+        )
+        count = _result["resolved"]
         if not count:
+            if _result["rejected"]:
+                return f"⛔ {_result['reason'] or 'You are not authorized to decide on this command.'}"
             return "No pending command to deny."
 
         # Resume typing indicator — agent continues (with BLOCKED result).
@@ -14602,6 +14618,43 @@ class GatewayRunner:
 
                 cmd = approval_data.get("command", "")
                 desc = approval_data.get("description", "dangerous command")
+
+                # Governance approver requirement: the requester cannot
+                # self-approve, so ping the eligible approvers in-channel
+                # before the approval prompt lands.
+                _requirement = approval_data.get("approval_requirement")
+                if _requirement:
+                    try:
+                        _platform_value = str(
+                            getattr(getattr(_status_adapter, "platform", None), "value", "")
+                        ).lower()
+                        _mention_text = self._file_approval_mentions(
+                            _platform_value, _requirement, _status_adapter
+                        )
+                        _requester = approval_data.get("requested_by") or "a user"
+                        _req_roles = _requirement.get("roles") or []
+                        _who_can = ", ".join(
+                            [f"role {r}" for r in _req_roles]
+                            + list(_requirement.get("users") or [])
+                        ) or "an approver"
+                        _notice = (
+                            (f"{_mention_text} — " if _mention_text else "")
+                            + f"🔐 A flagged command from {_requester} needs an "
+                            f"approver decision ({_who_can}). The requester "
+                            "cannot approve it."
+                        )
+                        asyncio.run_coroutine_threadsafe(
+                            _status_adapter.send(
+                                _status_chat_id,
+                                _notice,
+                                metadata=_status_thread_metadata,
+                            ),
+                            _loop_for_step,
+                        ).result(timeout=15)
+                    except Exception as _e:
+                        logger.warning(
+                            "Approver mention notice failed: %s", _e
+                        )
 
                 # Prefer button-based approval when the adapter supports it.
                 # Check the *class* for the method, not the instance — avoids

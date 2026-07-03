@@ -2529,6 +2529,41 @@ class SlackAdapter(BasePlatformAdapter):
         if self._approval_resolved.pop(msg_ts, True):
             return
 
+        # Resolve FIRST — governance.terminal.approver_roles may restrict who
+        # can approve this command. A rejected click restores the double-click
+        # guard so a real approver can still use the buttons.
+        try:
+            from tools.approval import resolve_gateway_approval_detailed
+            _resolution = resolve_gateway_approval_detailed(
+                session_key, choice,
+                platform="slack", user_id=user_id, user_name=user_name,
+            )
+        except Exception as exc:
+            logger.error("Failed to resolve gateway approval from Slack button: %s", exc)
+            self._approval_resolved[msg_ts] = False
+            return
+        if _resolution["resolved"] == 0 and _resolution["rejected"] > 0:
+            self._approval_resolved[msg_ts] = False
+            try:
+                await self._get_client(channel_id).chat_postEphemeral(
+                    channel=channel_id,
+                    user=user_id,
+                    text=(
+                        "⛔ "
+                        + (
+                            _resolution["reason"]
+                            or "You are not authorized to approve this command."
+                        )
+                    ),
+                )
+            except Exception:
+                pass
+            return
+        logger.info(
+            "Slack button resolved %d approval(s) for session %s (choice=%s, user=%s)",
+            _resolution["resolved"], session_key, choice, user_name,
+        )
+
         # Update the message to show the decision and remove buttons
         label_map = {
             "once": f"✅ Approved once by {user_name}",
@@ -2570,19 +2605,6 @@ class SlackAdapter(BasePlatformAdapter):
             )
         except Exception as e:
             logger.warning("[Slack] Failed to update approval message: %s", e)
-
-        # Resolve the approval — this unblocks the agent thread
-        try:
-            from tools.approval import resolve_gateway_approval
-            count = resolve_gateway_approval(session_key, choice)
-            logger.info(
-                "Slack button resolved %d approval(s) for session %s (choice=%s, user=%s)",
-                count, session_key, choice, user_name,
-            )
-        except Exception as exc:
-            logger.error("Failed to resolve gateway approval from Slack button: %s", exc)
-
-        # (approval state already consumed by atomic pop above)
 
     async def _handle_file_approval_action(self, ack, body, action) -> None:
         """Handle a staged file-change approval button click.

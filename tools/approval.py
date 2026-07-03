@@ -1407,6 +1407,93 @@ def unregister_gateway_notify(session_key: str) -> None:
         entry.event.set()
 
 
+def _requirement_allows(requirement: dict, actor) -> tuple[bool, str]:
+    """Check whether *actor* satisfies a terminal approver requirement.
+
+    ``actor is None`` means the resolving surface did not provide the
+    clicker's identity (legacy platform handlers) — fail closed so a
+    governance requirement cannot be satisfied anonymously.
+    """
+    roles = requirement.get("roles") or []
+    users = requirement.get("users") or []
+    described = f"roles {roles or 'none'} / users {users or 'none'}"
+    if actor is None:
+        return False, (
+            "This command requires an approver decision "
+            f"({described}); this surface did not provide the identity of "
+            "the person responding, so the response was ignored."
+        )
+    try:
+        from agent.governance import can_approve_file_change
+
+        return can_approve_file_change(requirement, actor=actor)
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"Approver requirement check failed: {exc}"
+
+
+def resolve_gateway_approval_detailed(
+    session_key: str,
+    choice: str,
+    resolve_all: bool = False,
+    *,
+    platform: Optional[str] = None,
+    user_id: Optional[str] = None,
+    user_name: Optional[str] = None,
+) -> dict:
+    """Resolve pending approvals with the responder's identity.
+
+    Entries whose ``approval_requirement`` (set when
+    ``governance.terminal.approver_roles/users`` applies to the requester)
+    is not satisfied by the responder stay pending instead of resolving —
+    the requesting user cannot self-approve their own flagged command.
+
+    Returns ``{"resolved": int, "rejected": int, "reason": str}`` where
+    *rejected* counts entries the responder was not allowed to decide.
+    """
+    actor = None
+    if platform or user_id or user_name:
+        try:
+            from agent.governance import Actor
+
+            actor = Actor(
+                platform=str(platform or "local").strip().lower() or "local",
+                user_id=str(user_id or ""),
+                user_name=str(user_name or ""),
+            )
+        except Exception:  # pragma: no cover - defensive
+            actor = None
+
+    reason = ""
+    with _lock:
+        queue = _gateway_queues.get(session_key)
+        if not queue:
+            return {"resolved": 0, "rejected": 0, "reason": ""}
+        candidates = list(queue) if resolve_all else [queue[0]]
+        targets = []
+        rejected = 0
+        for entry in candidates:
+            requirement = (entry.data or {}).get("approval_requirement")
+            # Deny is the fail-safe direction and stays open to everyone in
+            # the session (a requester may cancel their own command); only
+            # APPROVING against a governance requirement needs the role.
+            if requirement and choice != "deny":
+                allowed, why = _requirement_allows(requirement, actor)
+                if not allowed:
+                    rejected += 1
+                    reason = why
+                    continue
+            targets.append(entry)
+        for entry in targets:
+            queue.remove(entry)
+        if not queue:
+            _gateway_queues.pop(session_key, None)
+
+    for entry in targets:
+        entry.result = choice
+        entry.event.set()
+    return {"resolved": len(targets), "rejected": rejected, "reason": reason}
+
+
 def resolve_gateway_approval(session_key: str, choice: str,
                              resolve_all: bool = False) -> int:
     """Called by the gateway's /approve or /deny handler to unblock
@@ -1417,23 +1504,14 @@ def resolve_gateway_approval(session_key: str, choice: str,
     is resolved (FIFO).
 
     Returns the number of approvals resolved (0 means nothing was pending).
-    """
-    with _lock:
-        queue = _gateway_queues.get(session_key)
-        if not queue:
-            return 0
-        if resolve_all:
-            targets = list(queue)
-            queue.clear()
-        else:
-            targets = [queue.pop(0)]
-        if not queue:
-            _gateway_queues.pop(session_key, None)
 
-    for entry in targets:
-        entry.result = choice
-        entry.event.set()
-    return len(targets)
+    Identity-blind compatibility wrapper: entries carrying a governance
+    approver requirement are NEVER resolved through this path (fail closed).
+    Surfaces that know who responded use ``resolve_gateway_approval_detailed``.
+    """
+    return resolve_gateway_approval_detailed(
+        session_key, choice, resolve_all=resolve_all
+    )["resolved"]
 
 
 def has_blocking_approval(session_key: str) -> bool:
@@ -2110,6 +2188,26 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
     description = approval_data.get("description", "")
     primary_key = approval_data.get("pattern_key", "")
     all_keys = approval_data.get("pattern_keys", [primary_key])
+
+    # Governance: when governance.terminal.approver_roles/users is configured
+    # and the requesting actor doesn't satisfy it, this approval may only be
+    # resolved by a qualifying approver (see resolve_gateway_approval_detailed).
+    # Captured at enqueue time, on the agent thread, where the session's actor
+    # context vars are live.
+    try:
+        from agent.governance import (
+            actor_display,
+            current_actor,
+            terminal_approval_requirement,
+        )
+
+        _requirement = terminal_approval_requirement()
+        if _requirement:
+            approval_data = dict(approval_data)
+            approval_data["approval_requirement"] = _requirement
+            approval_data["requested_by"] = actor_display(current_actor())
+    except Exception:
+        pass
 
     entry = _ApprovalEntry(approval_data)
     with _lock:

@@ -410,6 +410,43 @@ the agent finishes its turn immediately and nothing expires.
 | Read roles / Write roles | `read_roles`, `write_roles` | Broad tenant-wide grants by role. | System admin only. |
 | Write approval roles / users | `write_approval_roles`, `write_approval_users` | Stage every write by a grant-holder for approval by these roles/users before it applies. Empty lists on a child policy opt out of an ancestor's requirement. | Admin; team leader only inside managed team. |
 
+## Terminal Governance
+
+Folder policies gate the file tools, but shell commands and sandboxed code run
+with the host process's OS permissions — a terminal command can touch paths its
+requester holds no grant for. Two optional controls close that gap:
+
+```yaml
+governance:
+  terminal:
+    allowed_roles: [operator]      # who may run terminal/execute_code at all
+    allowed_users: []              # exact actor keys, additive to roles
+    approver_roles: [manager]      # who may APPROVE flagged commands
+    approver_users: []
+```
+
+- `allowed_roles` / `allowed_users` — actors outside the list cannot use the
+  terminal or execute_code tools at all. Denials are audited
+  (`governance.terminal_access`). Unset means no restriction (backward
+  compatible).
+- `approver_roles` / `approver_users` — when set, dangerous-command approvals
+  raised in gateway sessions by an actor who does not satisfy the requirement
+  can only be APPROVED by someone who does: the approval prompt pings the
+  eligible approvers in the channel with @mentions, and the requester's own
+  Approve clicks or `/approve` commands are rejected with an explanation.
+  Deny stays open to everyone in the session (fail-safe direction), timeouts
+  still deny, and actors who satisfy the requirement themselves keep the
+  normal self-approval flow.
+- Responder identity: the `/approve` and `/deny` text commands carry the
+  responder's identity on every platform; approval BUTTONS carry it on
+  Slack, Discord, and Telegram. Button surfaces that cannot identify the
+  responder fail closed under a requirement — an approver there decides via
+  `/approve` instead.
+
+Hardline commands (root filesystem wipes, mkfs, raw device writes, shutdown)
+remain blocked for everyone regardless of these settings, and containerized
+terminal backends keep bypassing the dangerous-command layer by design.
+
 ## Gateway Threads
 
 The gateway already supports multiple messaging platforms. Governance keeps the corporate defaults explicit:

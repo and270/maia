@@ -671,6 +671,16 @@ _FOLDER_POLICY_LIST_KEYS = (
     "read_users",
     "write_users",
     "deny_users",
+    "write_approval_roles",
+    "write_approval_users",
+)
+
+# Keys where a PRESENT-but-empty list is meaningful and must survive
+# normalisation: an explicit empty write-approval list on a child policy opts
+# its subtree out of an ancestor's staged-approval requirement (see
+# agent.governance.file_write_approval_requirement).
+_FOLDER_POLICY_KEEP_EMPTY_KEYS = frozenset(
+    ("write_approval_roles", "write_approval_users")
 )
 
 
@@ -689,6 +699,11 @@ def _normalise_folder_policy(raw: Dict[str, Any]) -> Dict[str, Any]:
         values = _coerce_role_list(raw.get(key))
         if values:
             policy[key] = values
+        elif (
+            key in _FOLDER_POLICY_KEEP_EMPTY_KEYS
+            and isinstance(raw.get(key), (list, tuple))
+        ):
+            policy[key] = []
     return policy
 
 
@@ -734,7 +749,7 @@ def _validate_team_managed_policy(
                 detail=f"{key} must stay inside the managed team root: {sorted(allowed_teams)}.",
             )
 
-    for key in ("users", "read_users", "write_users", "deny_users"):
+    for key in ("users", "read_users", "write_users", "deny_users", "write_approval_users"):
         requested_users = set(_coerce_role_list(policy.get(key)))
         if requested_users and not requested_users.issubset(allowed_user_keys):
             raise HTTPException(

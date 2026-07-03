@@ -2026,10 +2026,38 @@ class TelegramAdapter(BasePlatformAdapter):
                     await query.answer(text="⛔ You are not authorized to approve commands.")
                     return
 
-                session_key = self._approval_state.pop(approval_id, None)
+                # Peek (don't pop yet): a governance-rejected click must keep
+                # the buttons usable for a real approver.
+                session_key = self._approval_state.get(approval_id)
                 if not session_key:
                     await query.answer(text="This approval has already been resolved.")
                     return
+
+                user_display = getattr(query.from_user, "first_name", "User")
+
+                # Resolve FIRST — governance.terminal.approver_roles may
+                # restrict who can approve this command.
+                try:
+                    from tools.approval import resolve_gateway_approval_detailed
+                    _resolution = resolve_gateway_approval_detailed(
+                        session_key, choice,
+                        platform="telegram",
+                        user_id=caller_id,
+                        user_name=query_user_name or "",
+                    )
+                except Exception as exc:
+                    logger.error("Failed to resolve gateway approval from Telegram button: %s", exc)
+                    await query.answer(text="Approval resolution failed — try /approve or /deny.")
+                    return
+                if _resolution["resolved"] == 0 and _resolution["rejected"] > 0:
+                    _reason = _resolution["reason"] or "You are not authorized to approve this command."
+                    await query.answer(text=f"⛔ {_reason[:190]}", show_alert=True)
+                    return
+                logger.info(
+                    "Telegram button resolved %d approval(s) for session %s (choice=%s, user=%s)",
+                    _resolution["resolved"], session_key, choice, user_display,
+                )
+                self._approval_state.pop(approval_id, None)
 
                 # Map choice to human-readable label
                 label_map = {
@@ -2038,7 +2066,6 @@ class TelegramAdapter(BasePlatformAdapter):
                     "always": "✅ Approved permanently",
                     "deny": "❌ Denied",
                 }
-                user_display = getattr(query.from_user, "first_name", "User")
                 label = label_map.get(choice, "Resolved")
 
                 await query.answer(text=label)
@@ -2052,17 +2079,6 @@ class TelegramAdapter(BasePlatformAdapter):
                     )
                 except Exception:
                     pass  # non-fatal if edit fails
-
-                # Resolve the approval — unblocks the agent thread
-                try:
-                    from tools.approval import resolve_gateway_approval
-                    count = resolve_gateway_approval(session_key, choice)
-                    logger.info(
-                        "Telegram button resolved %d approval(s) for session %s (choice=%s, user=%s)",
-                        count, session_key, choice, user_display,
-                    )
-                except Exception as exc:
-                    logger.error("Failed to resolve gateway approval from Telegram button: %s", exc)
             return
 
         # --- File-change approval callbacks (fa:choice:approval_id) ---

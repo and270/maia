@@ -425,6 +425,52 @@ export default function FileAccessPage() {
                 onChange={(value) => updatePolicy(index, updateListField(policy, "deny_teams", value))}
                 placeholder="marketing"
               />
+              <Field
+                label="Write approval roles"
+                value={listToText(policy.write_approval_roles)}
+                onChange={(value) =>
+                  updatePolicy(index, updateListField(policy, "write_approval_roles", value))
+                }
+                placeholder="manager"
+              />
+              <Field
+                label="Write approval users"
+                value={listToText(policy.write_approval_users)}
+                onChange={(value) =>
+                  updatePolicy(index, updateListField(policy, "write_approval_users", value))
+                }
+                placeholder="slack:U_MANAGER"
+              />
+              <div className="space-y-2 lg:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={
+                      Array.isArray(policy.write_approval_roles) &&
+                      policy.write_approval_roles.length === 0 &&
+                      (policy.write_approval_users ?? []).length === 0
+                    }
+                    onChange={(event) => {
+                      const next = { ...policy } as Record<string, unknown>;
+                      if (event.target.checked) {
+                        next.write_approval_roles = [];
+                        delete next.write_approval_users;
+                      } else {
+                        delete next.write_approval_roles;
+                      }
+                      updatePolicy(index, next as FolderPolicy);
+                    }}
+                  />
+                  Opt out of inherited write approval (saves an explicit empty list)
+                </label>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Write approval roles/users stage every modification under this
+                  policy for human review before it is applied — even for users
+                  who hold a write grant. Leave both empty to inherit from a
+                  parent policy; use the opt-out to cancel an inherited
+                  requirement for this subtree.
+                </p>
+              </div>
               {canAdmin && (
                 <>
                   <Field

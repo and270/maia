@@ -1679,6 +1679,23 @@ def terminal_tool(
                 "status": "error",
             }, ensure_ascii=False)
 
+        # Governance: shell commands run with the host process's OS
+        # permissions, outside folder policies — so terminal access itself
+        # can be restricted by role (governance.terminal.allowed_roles/users).
+        try:
+            from agent.governance import terminal_access_error
+
+            _gov_error = terminal_access_error()
+        except Exception:
+            _gov_error = None
+        if _gov_error:
+            return json.dumps({
+                "output": "",
+                "exit_code": -1,
+                "error": _gov_error,
+                "status": "error",
+            }, ensure_ascii=False)
+
         # Get configuration
         config = _get_env_config()
         env_type = config["env_type"]

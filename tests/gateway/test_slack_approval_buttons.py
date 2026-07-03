@@ -167,7 +167,7 @@ class TestSlackApprovalAction:
                 ],
             },
             "channel": {"id": "C1"},
-            "user": {"name": "norbert"},
+            "user": {"name": "norbert", "id": "U_NORBERT"},
         }
         action = {
             "action_id": "hermes_approve_once",
@@ -177,16 +177,61 @@ class TestSlackApprovalAction:
         mock_client = adapter._team_clients["T1"]
         mock_client.chat_update = AsyncMock()
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch(
+            "tools.approval.resolve_gateway_approval_detailed",
+            return_value={"resolved": 1, "rejected": 0, "reason": ""},
+        ) as mock_resolve:
             await adapter._handle_approval_action(ack, body, action)
 
         ack.assert_called_once()
-        mock_resolve.assert_called_once_with("agent:main:slack:group:C1:1111", "once")
+        mock_resolve.assert_called_once_with(
+            "agent:main:slack:group:C1:1111", "once",
+            platform="slack", user_id="U_NORBERT", user_name="norbert",
+        )
 
         # Message should be updated with decision
         mock_client.chat_update.assert_called_once()
         update_kwargs = mock_client.chat_update.call_args[1]
         assert "Approved once by norbert" in update_kwargs["text"]
+
+    @pytest.mark.asyncio
+    async def test_governance_rejected_click_keeps_buttons(self):
+        """A click rejected by the governance approver requirement must keep
+        the message (and double-click guard) usable for a real approver."""
+        adapter = _make_adapter()
+        adapter._approval_resolved["1234.5678"] = False
+
+        ack = AsyncMock()
+        body = {
+            "message": {"ts": "1234.5678", "blocks": []},
+            "channel": {"id": "C1"},
+            "user": {"name": "operator", "id": "U_OPERATOR"},
+        }
+        action = {
+            "action_id": "hermes_approve_once",
+            "value": "session-key",
+        }
+
+        mock_client = adapter._team_clients["T1"]
+        mock_client.chat_update = AsyncMock()
+        mock_client.chat_postEphemeral = AsyncMock()
+
+        with patch(
+            "tools.approval.resolve_gateway_approval_detailed",
+            return_value={
+                "resolved": 0,
+                "rejected": 1,
+                "reason": "slack:U_OPERATOR cannot approve this file change.",
+            },
+        ):
+            await adapter._handle_approval_action(ack, body, action)
+
+        mock_client.chat_update.assert_not_called()
+        eph_kwargs = mock_client.chat_postEphemeral.call_args[1]
+        assert eph_kwargs["user"] == "U_OPERATOR"
+        assert "cannot approve" in eph_kwargs["text"]
+        # Guard restored so an approver's click still works.
+        assert adapter._approval_resolved["1234.5678"] is False
 
     @pytest.mark.asyncio
     async def test_prevents_double_click(self):
@@ -197,14 +242,14 @@ class TestSlackApprovalAction:
         body = {
             "message": {"ts": "1234.5678", "blocks": []},
             "channel": {"id": "C1"},
-            "user": {"name": "norbert"},
+            "user": {"name": "norbert", "id": "U_NORBERT"},
         }
         action = {
             "action_id": "hermes_approve_once",
             "value": "some-session",
         }
 
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
+        with patch("tools.approval.resolve_gateway_approval_detailed") as mock_resolve:
             await adapter._handle_approval_action(ack, body, action)
 
         # Should have acked but NOT resolved
@@ -222,17 +267,23 @@ class TestSlackApprovalAction:
                 {"type": "section", "text": {"type": "mrkdwn", "text": "cmd"}},
             ]},
             "channel": {"id": "C1"},
-            "user": {"name": "alice"},
+            "user": {"name": "alice", "id": "U_ALICE"},
         }
         action = {"action_id": "hermes_deny", "value": "session-key"}
 
         mock_client = adapter._team_clients["T1"]
         mock_client.chat_update = AsyncMock()
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch(
+            "tools.approval.resolve_gateway_approval_detailed",
+            return_value={"resolved": 1, "rejected": 0, "reason": ""},
+        ) as mock_resolve:
             await adapter._handle_approval_action(ack, body, action)
 
-        mock_resolve.assert_called_once_with("session-key", "deny")
+        mock_resolve.assert_called_once_with(
+            "session-key", "deny",
+            platform="slack", user_id="U_ALICE", user_name="alice",
+        )
         update_kwargs = mock_client.chat_update.call_args[1]
         assert "Denied by alice" in update_kwargs["text"]
 
