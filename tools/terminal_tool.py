@@ -1700,6 +1700,23 @@ def terminal_tool(
         config = _get_env_config()
         env_type = config["env_type"]
 
+        # Fail closed: if the per-user sandbox is enabled for a gateway actor
+        # but the backend is not Docker, commands cannot be isolated to the
+        # actor's granted folders — refuse rather than run unsandboxed.
+        try:
+            from agent.sandbox import sandbox_backend_error
+
+            _sandbox_error = sandbox_backend_error(env_type)
+        except Exception:
+            _sandbox_error = None
+        if _sandbox_error:
+            return json.dumps({
+                "output": "",
+                "exit_code": -1,
+                "error": _sandbox_error,
+                "status": "error",
+            }, ensure_ascii=False)
+
         # Use task_id for environment isolation. By default all subagent
         # task_ids collapse back to "default" so the top-level agent and
         # every delegate_task child share one container; only task_ids with
@@ -1803,7 +1820,9 @@ def terminal_tool(
                                 "container_persistent": config.get("container_persistent", True),
                                 "modal_mode": config.get("modal_mode", "auto"),
                                 "vercel_runtime": config.get("vercel_runtime", ""),
-                                "docker_volumes": config.get("docker_volumes", []),
+                                # Per-task override wins so a registered per-user
+                                # sandbox mount set takes effect (see agent/sandbox.py).
+                                "docker_volumes": overrides.get("docker_volumes") or config.get("docker_volumes", []),
                                 "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
                                 "docker_forward_env": config.get("docker_forward_env", []),
                                 "docker_env": config.get("docker_env", {}),

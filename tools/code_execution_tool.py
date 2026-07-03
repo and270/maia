@@ -517,7 +517,9 @@ def _get_or_create_env(task_id: str):
                 "container_disk": config.get("container_disk", 51200),
                 "container_persistent": config.get("container_persistent", True),
                 "vercel_runtime": config.get("vercel_runtime", ""),
-                "docker_volumes": config.get("docker_volumes", []),
+                # Per-task override wins so sandboxed scripts get the same
+                # per-user sandbox mount set as the shell (agent/sandbox.py).
+                "docker_volumes": overrides.get("docker_volumes") or config.get("docker_volumes", []),
                 "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
             }
 
@@ -974,6 +976,18 @@ def execute_code(
     # Dispatch: remote backends use file-based RPC, local uses UDS
     from tools.terminal_tool import _get_env_config
     env_type = _get_env_config()["env_type"]
+
+    # Fail closed: per-user sandbox enabled for a gateway actor but not on the
+    # Docker backend → cannot isolate, so refuse.
+    try:
+        from agent.sandbox import sandbox_backend_error
+
+        _sandbox_error = sandbox_backend_error(env_type)
+    except Exception:
+        _sandbox_error = None
+    if _sandbox_error:
+        return tool_error(_sandbox_error)
+
     if env_type != "local":
         return _execute_remote(code, task_id, enabled_tools)
 
