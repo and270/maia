@@ -267,15 +267,24 @@ def _folder_policies_malformed(config: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _all_matching_folder_policies(
+    path: str, config: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Return every folder policy whose root contains *path*, most-specific first.
+
+    Both the exact-path policy and every recursive ancestor policy match. The
+    caller reads grants from the most-specific entry (``[0]``) but must honor
+    ``deny_*`` from ALL entries so a broad parent-folder denial cannot be
+    re-granted by a narrower child policy (least privilege).
+    """
     try:
         target = Path(path).expanduser().resolve(strict=False)
     except (OSError, RuntimeError):
-        return None
+        return []
     matches: list[tuple[int, dict[str, Any]]] = []
     policies = config.get("folder_policies", [])
     if not isinstance(policies, list):
-        return None
+        return []
     for policy in policies:
         if not isinstance(policy, dict):
             continue
@@ -291,10 +300,13 @@ def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[
                 matches.append((len(str(root)), policy))
         except ValueError:
             continue
-    if not matches:
-        return None
     matches.sort(key=lambda item: item[0], reverse=True)
-    return matches[0][1]
+    return [policy for _, policy in matches]
+
+
+def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[str, Any]]:
+    matches = _all_matching_folder_policies(path, config)
+    return matches[0] if matches else None
 
 
 def _actor_matches_any(actor: Actor, allowed: list[str]) -> bool:
@@ -363,7 +375,28 @@ def check_file_access(
             f"configuration is fixed. {policies_error}",
         )
 
-    policy = _matching_folder_policy(path, cfg)
+    matching_policies = _all_matching_folder_policies(path, cfg)
+    policy = matching_policies[0] if matching_policies else None
+
+    # Ancestor-deny cascade: an explicit deny on ANY matching policy (the
+    # exact folder OR any recursive parent) wins, even when a narrower child
+    # policy would otherwise grant. Without this, "deny U on /company" is
+    # silently re-granted by a "/company/finance: read_roles [manager]" child
+    # policy for a manager U. Checked before grants; least privilege.
+    who_teams = actor_teams(who, cfg)
+    for ancestor in matching_policies:
+        anc_denied_users = _coerce_list(ancestor.get("deny_users"))
+        if anc_denied_users and _actor_matches_any(who, anc_denied_users):
+            return _deny(
+                f"Access denied by governance: {actor_display(who)} is explicitly "
+                f"denied for {path!r} (by a folder policy on this path or a parent).",
+            )
+        anc_denied_teams = _coerce_list(ancestor.get("deny_teams"))
+        if anc_denied_teams and set(who_teams).intersection(anc_denied_teams):
+            return _deny(
+                f"Access denied by governance: {actor_display(who)} is explicitly "
+                f"denied by team for {path!r} (by a folder policy on this path or a parent).",
+            )
 
     if policy is None:
         raw_default = cfg.get("default_file_policy", "allow")
@@ -383,19 +416,8 @@ def check_file_access(
             )
         return True, ""
 
-    denied_users = _coerce_list(policy.get("deny_users"))
-    if denied_users and _actor_matches_any(who, denied_users):
-        return _deny(
-            f"Access denied by governance: {actor_display(who)} is explicitly denied for {path!r}.",
-        )
-
-    denied_teams = _coerce_list(policy.get("deny_teams"))
-    who_teams = actor_teams(who, cfg)
-    if denied_teams and set(who_teams).intersection(denied_teams):
-        return _deny(
-            f"Access denied by governance: {actor_display(who)} is explicitly denied by team for {path!r}.",
-        )
-
+    # deny_users/deny_teams (incl. ancestor cascade) were already enforced
+    # above across all matching policies.
     user_keys = _coerce_list(policy.get(f"{op}_users")) or _coerce_list(policy.get("users"))
     if user_keys and _actor_matches_any(who, user_keys):
         return True, ""

@@ -501,3 +501,44 @@ governance:
         actor=Actor(platform="slack", user_id="U1"),
     )
     assert allowed is False
+
+
+def test_parent_deny_cascades_to_child_policy(tmp_path, monkeypatch):
+    """An explicit deny on a parent folder must not be re-granted by a child
+    folder's own policy (least privilege / ancestor-deny cascade)."""
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  role_hierarchy: [viewer, manager, admin]
+  users:
+    'slack:U_BAD':
+      roles: [manager]
+    'slack:U_OK':
+      roles: [manager]
+  folder_policies:
+    - path: /company
+      deny_users: ['slack:U_BAD']
+    - path: /company/finance
+      read_roles: [manager]
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    # Denied on the parent — must stay denied under the child policy.
+    bad, _ = check_file_access(
+        "/company/finance/ledger.csv", "read",
+        actor=Actor(platform="slack", user_id="U_BAD"),
+    )
+    assert bad is False
+
+    # A different manager (not denied) is still granted by the child policy.
+    ok, _ = check_file_access(
+        "/company/finance/ledger.csv", "read",
+        actor=Actor(platform="slack", user_id="U_OK"),
+    )
+    assert ok is True
