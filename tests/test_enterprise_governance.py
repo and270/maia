@@ -7,6 +7,7 @@ def _write_config(home, content: str) -> None:
 
 
 def test_folder_policy_uses_role_hierarchy(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     finance_dir = tmp_path / "finance"
     finance_dir.mkdir()
@@ -56,6 +57,7 @@ governance:
 
 
 def test_folder_policy_default_deny_blocks_unmatched_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     allowed_dir = tmp_path / "allowed"
     blocked_dir = tmp_path / "blocked"
@@ -93,6 +95,7 @@ governance:
 
 
 def test_malformed_governance_config_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(
         tmp_path,
@@ -117,6 +120,7 @@ def test_malformed_governance_config_fails_closed(tmp_path, monkeypatch):
 
 
 def test_folder_policy_designated_users_and_explicit_denies(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     legal_dir = tmp_path / "legal"
     legal_dir.mkdir()
@@ -159,6 +163,7 @@ governance:
 
 
 def test_folder_policy_supports_team_read_write_and_team_denies(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     marketing_dir = tmp_path / "marketing"
     marketing_dir.mkdir()
@@ -233,6 +238,7 @@ governance:
 
 
 def test_file_tool_governance_uses_resolved_task_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -262,6 +268,7 @@ governance:
 
 
 def test_cron_authorization_respects_governance_roles(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "slack")
     monkeypatch.setenv("HERMES_SESSION_USER_ID", "U_MANAGER")
@@ -301,6 +308,7 @@ governance:
 
 
 def test_cron_authorization_rejects_unauthorized_actor(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "slack")
     monkeypatch.setenv("HERMES_SESSION_USER_ID", "U_VIEWER")
@@ -341,6 +349,7 @@ governance:
 
 
 def test_cron_authorization_fails_closed_when_config_is_malformed(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "slack")
     monkeypatch.setenv("HERMES_SESSION_USER_ID", "U_MANAGER")
@@ -359,6 +368,7 @@ def test_cron_authorization_fails_closed_when_config_is_malformed(tmp_path, monk
 
 
 def test_self_configuration_context_is_actor_and_role_aware(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     marketing_dir = tmp_path / "marketing"
     marketing_dir.mkdir()

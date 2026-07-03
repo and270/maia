@@ -19,6 +19,7 @@ Use the approved operating procedure.
 
 
 def test_corporate_and_team_knowledge_are_injected_above_user_layer(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(
         tmp_path,
@@ -77,6 +78,7 @@ governance:
 
 
 def test_corporate_memory_write_requires_human_approval(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(
         tmp_path,
@@ -120,6 +122,7 @@ governance:
 
 
 def test_team_skill_write_requires_approval_and_becomes_viewable(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("MAIA_USER_ID", "manager")
     monkeypatch.setenv("MAIA_USER_PLATFORM", "local")
