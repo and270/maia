@@ -73,6 +73,15 @@ function StepStatus({ done }: { done: boolean }) {
   );
 }
 
+const EFFORT_LABELS: Record<string, string> = {
+  "": "Auto (provider default)",
+  minimal: "Minimal — fastest",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X-High — deepest reasoning",
+};
+
 function ProviderStepCard({
   state,
   onChanged,
@@ -84,27 +93,32 @@ function ProviderStepCard({
   const [slug, setSlug] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingEffort, setSavingEffort] = useState(false);
   const chatEnabled = isDashboardEmbeddedChatEnabled();
 
-  const keyProviders = useMemo(
-    () =>
-      (state?.providers_catalog ?? []).filter(
-        (p): p is OnboardingProviderEntry & { env_key: string } =>
-          Boolean(p.env_key) && p.auth_type === "api_key",
-      ),
-    [state],
-  );
+  const catalog = useMemo(() => state?.providers_catalog ?? [], [state]);
   const featured = FEATURED_PROVIDER_SLUGS.map((s) =>
-    keyProviders.find((p) => p.slug === s),
-  ).filter((p): p is OnboardingProviderEntry & { env_key: string } => Boolean(p));
-  const rest = keyProviders.filter(
-    (p) => !FEATURED_PROVIDER_SLUGS.includes(p.slug),
+    catalog.find((p) => p.slug === s),
+  ).filter((p): p is OnboardingProviderEntry => Boolean(p));
+  const restKey = catalog.filter(
+    (p) =>
+      !FEATURED_PROVIDER_SLUGS.includes(p.slug) &&
+      p.env_key &&
+      p.auth_type === "api_key",
   );
-  const selected = keyProviders.find((p) => p.slug === slug) ?? null;
+  const restOther = catalog.filter(
+    (p) =>
+      !FEATURED_PROVIDER_SLUGS.includes(p.slug) &&
+      !(p.env_key && p.auth_type === "api_key"),
+  );
+  const selected = catalog.find((p) => p.slug === slug) ?? null;
+  const selectedNeedsKey = Boolean(
+    selected && selected.env_key && selected.auth_type === "api_key",
+  );
   const done = Boolean(state?.provider_configured);
 
   const save = async () => {
-    if (!selected || !apiKey.trim()) return;
+    if (!selected?.env_key || !apiKey.trim()) return;
     setSaving(true);
     try {
       await api.setEnvVar(selected.env_key, apiKey.trim());
@@ -115,6 +129,22 @@ function ProviderStepCard({
       showToast(`Could not save key: ${err}`, "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveEffort = async (effort: string) => {
+    setSavingEffort(true);
+    try {
+      await api.setReasoningEffort(effort);
+      showToast(
+        effort ? `Reasoning effort set to ${effort}` : "Reasoning effort set to auto",
+        "success",
+      );
+      onChanged();
+    } catch (err) {
+      showToast(`Could not set effort: ${err}`, "error");
+    } finally {
+      setSavingEffort(false);
     }
   };
 
@@ -143,6 +173,27 @@ function ProviderStepCard({
                 {!state?.current_model &&
                   " No main model pinned yet, a recommended default is used until you pick one."}
               </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Reasoning effort</Label>
+                <select
+                  value={state?.current_effort ?? ""}
+                  onChange={(event) => void saveEffort(event.target.value)}
+                  disabled={savingEffort}
+                  className="h-9 w-full border border-border bg-background px-2 text-sm"
+                >
+                  {["", ...(state?.valid_efforts ?? [])].map((effort) => (
+                    <option key={effort || "auto"} value={effort}>
+                      {EFFORT_LABELS[effort] ?? effort}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  How hard reasoning models think before answering. Applies to
+                  new sessions; models without reasoning ignore it.
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm">
               {chatEnabled ? (
@@ -197,9 +248,18 @@ function ProviderStepCard({
                       ))}
                     </optgroup>
                   )}
-                  {rest.length > 0 && (
-                    <optgroup label="More providers">
-                      {rest.map((p) => (
+                  {restKey.length > 0 && (
+                    <optgroup label="More providers (API key)">
+                      {restKey.map((p) => (
+                        <option key={p.slug} value={p.slug}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {restOther.length > 0 && (
+                    <optgroup label="OAuth / local sign-in">
+                      {restOther.map((p) => (
                         <option key={p.slug} value={p.slug}>
                           {p.label}
                         </option>
@@ -209,38 +269,67 @@ function ProviderStepCard({
                 </select>
                 {selected && (
                   <p className="text-xs text-muted-foreground">
-                    {selected.description} (stored as{" "}
-                    <code>{selected.env_key}</code> in the managed .env)
+                    {selected.description}
+                    {selectedNeedsKey && (
+                      <>
+                        {" "}
+                        (stored as <code>{selected.env_key}</code> in the
+                        managed .env)
+                      </>
+                    )}
                   </p>
                 )}
               </div>
-              <div className="space-y-2">
-                <Label>API key</Label>
-                <Input
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={selected ? `${selected.env_key} value` : "Select a provider first"}
-                  disabled={!selected}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Keys live in the managed credential store, never in prompts,
-                  memories, or skills.
-                </p>
-              </div>
+              {selectedNeedsKey || !selected ? (
+                <div className="space-y-2">
+                  <Label>API key</Label>
+                  <Input
+                    type="password"
+                    value={apiKey}
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={
+                      selected ? `${selected.env_key} value` : "Select a provider first"
+                    }
+                    disabled={!selected}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Keys live in the managed credential store, never in
+                    prompts, memories, or skills.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Sign in</Label>
+                  <div className="flex items-start gap-2 border border-border bg-background p-3">
+                    <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-xs leading-5 normal-case text-muted-foreground">
+                      {selected?.label} signs in without a pasted key (OAuth,
+                      device login, or a local server). In a terminal run{" "}
+                      <code>maia model</code>, pick {selected?.label}, complete
+                      the sign-in, then click Refresh here.
+                    </p>
+                  </div>
+                  <Button onClick={onChanged} size="sm" className="w-fit">
+                    Refresh status
+                  </Button>
+                </div>
+              )}
             </div>
-            <Button
-              onClick={save}
-              disabled={!selected || !apiKey.trim() || saving}
-              size="sm"
-              className="w-fit"
-            >
-              <KeyRound className="h-4 w-4" />
-              {saving ? "Saving…" : "Save key"}
-            </Button>
+            {(selectedNeedsKey || !selected) && (
+              <Button
+                onClick={save}
+                disabled={!selected || !apiKey.trim() || saving}
+                size="sm"
+                className="w-fit"
+              >
+                <KeyRound className="h-4 w-4" />
+                {saving ? "Saving…" : "Save key"}
+              </Button>
+            )}
             <p className="text-xs leading-5 text-muted-foreground">
-              Prefer OAuth (Nous Portal, Google, MiniMax), a local model
-              (Ollama, LM Studio), or a custom endpoint? Run{" "}
+              OpenAI GPT models: pick <strong>OpenAI Codex</strong> above
+              (ChatGPT/Codex OAuth sign-in) or use OpenRouter with an API key.
+              Local models (Ollama, LM Studio) and custom endpoints:{" "}
               <code>maia model</code> in a terminal or open{" "}
               <Link to="/models" className="underline">
                 Models

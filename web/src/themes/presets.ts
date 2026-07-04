@@ -215,8 +215,26 @@ body {
   background-color: var(--ampliia-ink) !important;
 }
 
-[data-layout-variant="standard"] button.bg-midground:hover,
-[data-layout-variant="standard"] button.bg-foreground:hover {
+/* Solid (ink) buttons must keep light text — the global .text-* overrides
+   above would otherwise paint ink-on-ink. */
+[data-layout-variant="standard"] button.bg-midground,
+[data-layout-variant="standard"] button.bg-foreground,
+[data-layout-variant="standard"] a.bg-midground,
+[data-layout-variant="standard"] a.bg-foreground {
+  color: var(--ampliia-paper) !important;
+}
+
+/* Disabled buttons: the !important ink background above swallowed the
+   bg-midground/15 disabled variant, leaving black-on-black. Restore a
+   light disabled look. */
+[data-layout-variant="standard"] button.bg-midground:disabled,
+[data-layout-variant="standard"] button.bg-foreground:disabled {
+  background-color: rgba(5, 5, 5, 0.12) !important;
+  color: var(--ampliia-muted) !important;
+}
+
+[data-layout-variant="standard"] button.bg-midground:hover:not(:disabled),
+[data-layout-variant="standard"] button.bg-foreground:hover:not(:disabled) {
   background-color: var(--ampliia-brand) !important;
   border-color: var(--ampliia-brand) !important;
   color: #ffffff !important;
@@ -240,6 +258,8 @@ export const defaultTheme: DashboardTheme = {
     fontMono: SYSTEM_MONO,
     fontUrl:
       "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
+    baseSize: "16.5px",
+    lineHeight: "1.6",
     letterSpacing: "0",
   },
   layout: {

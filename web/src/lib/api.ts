@@ -280,6 +280,12 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   getOnboardingState: () => fetchJSON<OnboardingState>("/api/onboarding/state"),
+  setReasoningEffort: (effort: string) =>
+    fetchJSON<{ ok: boolean; effort: string }>("/api/model/effort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ effort }),
+    }),
   getDiscordGatewayAccessUsers: () =>
     fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users"),
   saveDiscordGatewayAccessUsers: (body: { users: DiscordGatewayAccessUser[] }) =>
@@ -648,6 +654,8 @@ export interface OnboardingState {
   provider_configured: boolean;
   current_provider: string;
   current_model: string;
+  current_effort: string;
+  valid_efforts: string[];
   gateway_configured: boolean;
   governance_configured: boolean;
   dashboard_auth_configured: boolean;

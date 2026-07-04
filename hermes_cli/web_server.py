@@ -2786,6 +2786,7 @@ def get_onboarding_state():
             if isinstance(dashboard_cfg.get("auth"), dict)
             else {}
         )
+        agent_cfg = cfg.get("agent", {}) if isinstance(cfg.get("agent"), dict) else {}
 
         # Catalog for the inline provider step: canonical picker order, with
         # the primary API-key env var when the provider authenticates by key.
@@ -2806,10 +2807,14 @@ def get_onboarding_state():
                 "auth_type": auth_type,
             })
 
+        from hermes_constants import VALID_REASONING_EFFORTS
+
         return {
             "provider_configured": bool(authenticated),
             "current_provider": current_provider,
             "current_model": current_model,
+            "current_effort": str(agent_cfg.get("reasoning_effort", "") or ""),
+            "valid_efforts": list(VALID_REASONING_EFFORTS),
             "gateway_configured": bool(gateway_configured),
             "governance_configured": bool(governance_cfg.get("enabled")),
             "dashboard_auth_configured": bool(auth_cfg.get("enabled")),
@@ -2818,6 +2823,40 @@ def get_onboarding_state():
     except Exception:
         _log.exception("GET /api/onboarding/state failed")
         raise HTTPException(status_code=500, detail="Failed to read onboarding state")
+
+
+class ReasoningEffortBody(BaseModel):
+    effort: str = ""
+
+
+@app.post("/api/model/effort")
+async def set_reasoning_effort(body: ReasoningEffortBody):
+    """Set agent.reasoning_effort. Empty string clears it (provider default)."""
+    from hermes_constants import VALID_REASONING_EFFORTS
+
+    effort = (body.effort or "").strip().lower()
+    if effort and effort not in VALID_REASONING_EFFORTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"effort must be empty (auto) or one of: "
+                f"{', '.join(VALID_REASONING_EFFORTS)}"
+            ),
+        )
+    cfg = load_config()
+    agent_cfg = cfg.get("agent", {})
+    agent_cfg = dict(agent_cfg) if isinstance(agent_cfg, dict) else {}
+    if effort:
+        agent_cfg["reasoning_effort"] = effort
+    else:
+        agent_cfg.pop("reasoning_effort", None)
+    cfg["agent"] = agent_cfg
+    try:
+        save_config(cfg)
+    except Exception:
+        _log.exception("POST /api/model/effort failed")
+        raise HTTPException(status_code=500, detail="Could not save reasoning effort")
+    return {"ok": True, "effort": effort}
 
 
 @app.get("/api/governance/folder-policies")
