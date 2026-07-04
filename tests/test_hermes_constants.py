@@ -30,14 +30,16 @@ class TestGetDefaultHermesRoot:
 
         assert get_default_hermes_root() == tmp_path / ".maia"
 
-    def test_existing_legacy_home_is_preserved(self, tmp_path, monkeypatch):
-        """Existing ~/.hermes installs keep using ~/.hermes until migrated."""
+    def test_existing_hermes_dir_is_never_adopted(self, tmp_path, monkeypatch):
+        """An existing ~/.hermes belongs to upstream Hermes — Maia must NOT
+        adopt it implicitly. Sharing it mixed both products' config, secrets,
+        skills, and services; migration is an explicit copy instead."""
         self._clear_home_env(monkeypatch)
         legacy = tmp_path / ".hermes"
         legacy.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        assert get_default_hermes_root() == legacy
+        assert get_default_hermes_root() == tmp_path / ".maia"
 
     def test_maia_home_is_native(self, tmp_path, monkeypatch):
         """When MAIA_HOME = ~/.maia, returns ~/.maia."""

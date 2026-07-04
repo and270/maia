@@ -45,17 +45,18 @@ BOLD='\033[1m'
 REPO_URL_SSH="git@github.com:and270/maia.git"
 REPO_URL_HTTPS="https://github.com/and270/maia.git"
 
-# Data home resolution mirrors hermes_constants._default_data_root():
-#   - MAIA_HOME env wins, then legacy HERMES_HOME env,
-#   - otherwise fresh installs use ~/.maia, but an existing legacy ~/.hermes
-#     (without ~/.maia) keeps being used so upgrades don't lose config.
+# Data home: always ~/.maia unless MAIA_HOME (or --maia-home) says otherwise.
+# Maia NEVER uses ~/.hermes — that directory belongs to upstream Hermes Agent
+# on machines that have it, and sharing it mixes both products' config,
+# secrets, skills, and gateway services. Bring Hermes data into Maia only
+# through the guarded migration:  maia import <export.tar.gz> --from-hermes-export
 if [ -n "${MAIA_HOME:-}" ]; then
     MAIA_HOME="$MAIA_HOME"
-elif [ -n "${HERMES_HOME:-}" ]; then
-    MAIA_HOME="$HERMES_HOME"
-elif [ -d "$HOME/.hermes" ] && [ ! -d "$HOME/.maia" ]; then
-    MAIA_HOME="$HOME/.hermes"
 else
+    if [ -n "${HERMES_HOME:-}" ]; then
+        echo "⚠ HERMES_HOME is set in your environment (upstream Hermes?). The Maia"
+        echo "  installer ignores it and uses ~/.maia. Set MAIA_HOME to override."
+    fi
     MAIA_HOME="$HOME/.maia"
 fi
 
@@ -85,6 +86,7 @@ ROOT_FHS_LAYOUT=false
 USE_VENV=true
 RUN_SETUP=true
 BRANCH="main"
+MIGRATE_HERMES=""   # ""=offer interactively, "yes"=copy, "no"=skip
 
 # Detect non-interactive mode (e.g. curl | bash)
 # When stdin is not a terminal, read -p will fail with EOF,
@@ -119,6 +121,14 @@ while [[ $# -gt 0 ]]; do
             MAIA_HOME="$2"
             shift 2
             ;;
+        --migrate-hermes)
+            MIGRATE_HERMES="yes"
+            shift
+            ;;
+        --no-migrate-hermes)
+            MIGRATE_HERMES="no"
+            shift
+            ;;
         -h|--help)
             echo "Maia Installer"
             echo ""
@@ -132,6 +142,8 @@ while [[ $# -gt 0 ]]; do
             echo "                   default (non-root):  ~/.maia/maia"
             echo "                   default (root, Linux): /usr/local/lib/maia"
             echo "  --maia-home PATH  Data directory (default: ~/.maia, or \$MAIA_HOME)"
+            echo "  --migrate-hermes     Copy skills/crons/memories from ~/.hermes without asking"
+            echo "  --no-migrate-hermes  Never offer the Hermes data copy"
             echo "  -h, --help     Show this help"
             echo ""
             echo "Environment:"
@@ -1466,6 +1478,82 @@ install_node_deps() {
     fi
 }
 
+offer_hermes_migration() {
+    local hermes_dir="$HOME/.hermes"
+
+    # Nothing to migrate, or Maia was explicitly pointed at that directory.
+    if [ ! -d "$hermes_dir" ] || [ "$MAIA_HOME" = "$hermes_dir" ]; then
+        return 0
+    fi
+
+    if [ "$MIGRATE_HERMES" = "no" ]; then
+        log_info "Skipping Hermes data copy (--no-migrate-hermes). ~/.hermes stays untouched."
+        return 0
+    fi
+
+    local do_copy="no"
+    if [ "$MIGRATE_HERMES" = "yes" ]; then
+        do_copy="yes"
+    else
+        # Interactive offer only. Probe by actually opening /dev/tty (see
+        # #16746): in Docker/CI builds the device node can exist but not
+        # open, and unattended installs must never copy data silently.
+        if [ "$IS_INTERACTIVE" = true ] || (: </dev/tty) 2>/dev/null; then
+            echo ""
+            log_info "Hermes Agent data detected at ~/.hermes."
+            log_info "Maia keeps its own data in $MAIA_HOME_DISPLAY and never touches ~/.hermes."
+            log_info "It can copy your personal Hermes data into Maia now:"
+            log_info "  skills, cron jobs, memories, and SOUL.md (persona)."
+            log_info "Not copied: API keys, config.yaml, sessions (the dashboard onboarding sets up the provider)."
+            if prompt_yes_no "Copy Hermes skills, crons, and memories into Maia?" "yes"; then
+                do_copy="yes"
+            fi
+        else
+            log_info "Hermes data detected at ~/.hermes — not copied in non-interactive installs."
+            log_info "Copy it later by re-running the installer with:  --migrate-hermes"
+        fi
+    fi
+
+    if [ "$do_copy" != "yes" ]; then
+        log_info "Skipped. ~/.hermes stays untouched either way."
+        return 0
+    fi
+
+    log_info "Copying Hermes data into $MAIA_HOME_DISPLAY (originals are never modified)..."
+    local copied=0
+
+    # Directories: copy without overwriting anything Maia already has, so
+    # bundled Maia skills that share a name keep the fork's version and the
+    # user's custom Hermes skills come across intact.
+    local dir
+    for dir in skills cron memories; do
+        if [ -d "$hermes_dir/$dir" ]; then
+            mkdir -p "$MAIA_HOME/$dir"
+            if cp -Rn "$hermes_dir/$dir/." "$MAIA_HOME/$dir/" 2>/dev/null; then
+                log_success "Copied $dir/ from ~/.hermes"
+                copied=1
+            else
+                log_warn "Some entries in $dir/ could not be copied"
+            fi
+        fi
+    done
+
+    # SOUL.md: the user's real persona beats the template we just wrote.
+    if [ -f "$hermes_dir/SOUL.md" ]; then
+        if cp "$hermes_dir/SOUL.md" "$MAIA_HOME/SOUL.md" 2>/dev/null; then
+            log_success "Copied SOUL.md (persona)"
+            copied=1
+        fi
+    fi
+
+    if [ "$copied" = 1 ]; then
+        log_success "Hermes data copied. The copies are independent from now on."
+        log_warn "Copied cron jobs will also run in Maia once its gateway is active — disable duplicates on one side if you run both products."
+    else
+        log_info "Nothing to copy (no skills/, cron/, memories/, or SOUL.md found in ~/.hermes)."
+    fi
+}
+
 run_setup_wizard() {
     if [ "$RUN_SETUP" = false ]; then
         log_info "Skipping setup (--skip-setup). Finish later with: maia dashboard  (or: maia setup)"
@@ -1717,14 +1805,13 @@ main() {
     detect_os
     resolve_install_layout
 
-    # Legacy-home adoption notice: existing ~/.hermes data (from upstream
-    # Hermes or an earlier Maia) is reused so upgrades keep config, keys,
-    # sessions, and skills — which also means provider and theme choices
-    # carry over. Make that visible instead of surprising.
-    if [ "$MAIA_HOME" = "$HOME/.hermes" ]; then
-        log_info "Existing Hermes data found — reusing $MAIA_HOME_DISPLAY (config, API keys, sessions, skills)."
-        log_info "  Your existing model/provider and dashboard theme carry over; review them in the dashboard onboarding."
-        log_info "  Prefer a separate, fresh Maia instead? Re-run with: MAIA_HOME=\$HOME/.maia"
+    # Upstream Hermes coexistence: never touch ~/.hermes; just say so.
+    # (After install, offer_hermes_migration offers an optional COPY of
+    # skills/crons/memories into Maia's own home.)
+    if [ -d "$HOME/.hermes" ] && [ "$MAIA_HOME" != "$HOME/.hermes" ]; then
+        log_info "Upstream Hermes data detected at ~/.hermes — Maia will NOT touch it."
+        log_info "  Maia keeps its own data in $MAIA_HOME_DISPLAY; you'll be offered a copy of"
+        log_info "  your Hermes skills, crons, and memories at the end of the install."
     fi
     install_uv
     check_python
@@ -1738,6 +1825,7 @@ main() {
     install_node_deps
     setup_path
     copy_config_templates
+    offer_hermes_migration
     maybe_start_gateway
 
     # Success banner first, then hand over to the dashboard onboarding —

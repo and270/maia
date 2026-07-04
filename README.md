@@ -102,6 +102,17 @@ If the repository requires authorization (private repo or corporate mirror), poi
 curl -fsSL https://ampliia.com/maia/install.sh | MAIA_REPO_URL=git@github.com:and270/maia.git bash
 ```
 
+### Coming from upstream Hermes
+
+Maia keeps its data strictly in `~/.maia` and never touches an existing `~/.hermes`: the two products stay fully independent (separate config, API keys, skills, gateway services), so installing, updating, or uninstalling Maia cannot affect a Hermes install on the same machine. When the installer detects `~/.hermes`, it offers to copy your personal Hermes data into Maia: skills, cron jobs, memories, and `SOUL.md`. API keys, config, and sessions are not copied; the dashboard onboarding sets up the provider. Non-interactive installs never copy silently; use the flags:
+
+```bash
+curl -fsSL https://ampliia.com/maia/install.sh | bash -s -- --migrate-hermes     # copy without asking
+curl -fsSL https://ampliia.com/maia/install.sh | bash -s -- --no-migrate-hermes  # never offer
+```
+
+For a governed, review-first import of a Hermes export archive, use [`maia import --from-hermes-export`](#migrating-from-upstream-hermes) instead.
+
 ### Windows (WSL)
 
 Maia runs on Windows through WSL2 (same recommendation as upstream Hermes).

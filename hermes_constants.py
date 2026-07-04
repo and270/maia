@@ -59,18 +59,17 @@ def _legacy_hermes_root() -> Path:
 
 
 def _default_data_root() -> Path:
-    """Return the default data root, preserving existing legacy installs.
+    """Return the default data root: always ``~/.maia``.
 
-    Fresh Maia installs use ``~/.maia``. Existing installations that already
-    have ``~/.hermes`` and do not yet have ``~/.maia`` continue to use the
-    legacy directory so upgrades do not appear to lose config, sessions, or
-    credentials.
+    Maia NEVER adopts ``~/.hermes`` implicitly. That directory belongs to an
+    upstream Hermes Agent install on machines that have one, and sharing it
+    mixed the two products' config, secrets, skills, and services (and made
+    ``maia uninstall --full`` a threat to Hermes data). Users who really want
+    Maia to run on an existing directory can say so explicitly with
+    ``MAIA_HOME`` (or legacy ``HERMES_HOME``), and Hermes data is brought in
+    through the guarded ``maia import --from-hermes-export`` flow instead.
     """
-    maia_root = _standard_maia_root()
-    legacy_root = _legacy_hermes_root()
-    if maia_root.exists() or not legacy_root.exists():
-        return maia_root
-    return legacy_root
+    return _standard_maia_root()
 
 
 def _home_env_value() -> str:

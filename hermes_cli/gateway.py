@@ -78,11 +78,14 @@ def _get_service_pids() -> set:
     pids: set = set()
 
     # --- systemd (Linux): user and system scopes ---
+    # Scan maia-gateway* (ours) AND legacy/upstream hermes-gateway* units:
+    # the result feeds do-not-kill sets, so also protecting an upstream
+    # Hermes service's PID from stale-process sweeps is the safe direction.
     if supports_systemd_services():
         for scope_args in [["systemctl", "--user"], ["systemctl"]]:
             try:
                 result = subprocess.run(
-                    scope_args + ["list-units", "hermes-gateway*",
+                    scope_args + ["list-units", "maia-gateway*", "hermes-gateway*",
                                   "--plain", "--no-legend", "--no-pager"],
                     capture_output=True, text=True, timeout=5,
                 )
@@ -290,6 +293,20 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     current_home = str(get_hermes_home().resolve())
     current_profile_arg = _profile_arg(current_home)
     current_profile_name = current_profile_arg.split()[-1] if current_profile_arg else ""
+    project_root_s = str(PROJECT_ROOT)
+
+    def _belongs_to_other_install(command: str) -> bool:
+        """True when the cmdline names an interpreter/entry under a different
+        checkout — e.g. an upstream hermes-agent gateway running side by side
+        with Maia. Those processes are never ours to count or kill, in any
+        profile mode."""
+        for token in command.split():
+            if not token.startswith("/"):
+                continue
+            if "hermes_cli" in token or "/venv/bin/" in token:
+                if project_root_s not in token:
+                    return True
+        return False
 
     def _matches_current_profile(command: str) -> bool:
         if current_profile_name:
@@ -324,8 +341,10 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                     current_cmd = line[len("CommandLine="):]
                 elif line.startswith("ProcessId="):
                     pid_str = line[len("ProcessId="):]
-                    if any(p in current_cmd for p in patterns) and (
-                        all_profiles or _matches_current_profile(current_cmd)
+                    if (
+                        any(p in current_cmd for p in patterns)
+                        and not _belongs_to_other_install(current_cmd)
+                        and (all_profiles or _matches_current_profile(current_cmd))
                     ):
                         try:
                             _append_unique_pid(pids, int(pid_str), exclude_pids)
@@ -365,8 +384,10 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
 
                 if pid is None:
                     continue
-                if any(pattern in command for pattern in patterns) and (
-                    all_profiles or _matches_current_profile(command)
+                if (
+                    any(pattern in command for pattern in patterns)
+                    and not _belongs_to_other_install(command)
+                    and (all_profiles or _matches_current_profile(command))
                 ):
                     _append_unique_pid(pids, pid, exclude_pids)
     except (OSError, subprocess.TimeoutExpired):
@@ -1008,8 +1029,11 @@ def is_windows() -> bool:
 # Service Configuration
 # =============================================================================
 
-_SERVICE_BASE = "hermes-gateway"
-SERVICE_DESCRIPTION = "Hermes Agent Gateway - Messaging Platform Integration"
+# "maia-gateway", NOT "hermes-gateway": upstream Hermes Agent installs use
+# that unit name, and sharing it made a Maia install/uninstall overwrite or
+# remove the user's Hermes gateway service on machines running both.
+_SERVICE_BASE = "maia-gateway"
+SERVICE_DESCRIPTION = "Maia Gateway - Messaging Platform Integration"
 
 
 def _profile_suffix() -> str:
@@ -1834,28 +1858,30 @@ def _remap_path_for_user(path: str, target_home_dir: str) -> str:
 
 
 def _hermes_home_for_target_user(target_home_dir: str) -> str:
-    """Remap the current HERMES_HOME to the equivalent under a target user's home.
+    """Remap the current data home to the equivalent under a target user's home.
 
     When installing a system service via sudo, get_hermes_home() resolves to
     root's home.  This translates it to the target user's equivalent path:
-      /root/.hermes                    → /home/alice/.hermes
-      /root/.hermes/profiles/coder     → /home/alice/.hermes/profiles/coder
-      /opt/custom-hermes               → /opt/custom-hermes  (kept as-is)
+      /root/.maia                    → /home/alice/.maia
+      /root/.maia/profiles/coder     → /home/alice/.maia/profiles/coder
+      /opt/custom-maia               → /opt/custom-maia  (kept as-is)
     """
-    current_hermes = get_hermes_home().resolve()
-    current_default = (Path.home() / ".hermes").resolve()
-    target_default = Path(target_home_dir) / ".hermes"
+    from hermes_constants import MAIA_HOME_DIRNAME
 
-    # Default ~/.hermes → remap to target user's default
+    current_hermes = get_hermes_home().resolve()
+    current_default = (Path.home() / MAIA_HOME_DIRNAME).resolve()
+    target_default = Path(target_home_dir) / MAIA_HOME_DIRNAME
+
+    # Default ~/.maia → remap to target user's default
     if current_hermes == current_default:
         return str(target_default)
 
-    # Profile or subdir of ~/.hermes → preserve the relative structure
+    # Profile or subdir of ~/.maia → preserve the relative structure
     try:
         relative = current_hermes.relative_to(current_default)
         return str(target_default / relative)
     except ValueError:
-        # Completely custom path (not under ~/.hermes) — keep as-is
+        # Completely custom path (not under ~/.maia) — keep as-is
         return str(current_hermes)
 
 
@@ -2440,7 +2466,7 @@ def systemd_status(deep: bool = False, system: bool = False, full: bool = False)
 def get_launchd_label() -> str:
     """Return the launchd service label, scoped per profile."""
     suffix = _profile_suffix()
-    return f"ai.hermes.gateway-{suffix}" if suffix else "ai.hermes.gateway"
+    return f"ai.maia.gateway-{suffix}" if suffix else "ai.maia.gateway"
 
 
 def _launchd_domain() -> str:

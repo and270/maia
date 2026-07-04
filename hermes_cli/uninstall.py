@@ -58,14 +58,14 @@ def remove_path_from_shell_configs():
     configs = find_shell_configs()
     removed_from = []
 
-    # Marker comments written by scripts/install.sh and setup-maia.sh
-    # (plus the legacy upstream Hermes spellings).
-    marker_prefixes = ("# maia", "# hermes agent", "# hermes-agent")
+    # Marker comments written by scripts/install.sh and setup-maia.sh.
+    # Deliberately ONLY Maia's own markers: "# Hermes Agent" PATH lines
+    # belong to an upstream Hermes install and are never Maia's to remove.
+    marker_prefixes = ("# maia",)
     # Tokens that identify a PATH line as ours. Deliberately NOT bare
-    # "maia"/"hermes" so a user named maia (/home/maia/...) keeps their
-    # own PATH lines.
-    path_tokens = (".maia/bin", "maia/venv", "/lib/maia", "maia_home",
-                   ".hermes", "hermes-agent", "hermes_home")
+    # "maia" so a user named maia (/home/maia/...) keeps their own PATH
+    # lines, and no hermes tokens (see above).
+    path_tokens = (".maia/bin", "maia/venv", "/lib/maia", "maia_home")
 
     def _is_path_line(lowered: str) -> bool:
         return "path=" in lowered or "fish_add_path" in lowered
@@ -116,7 +116,17 @@ def remove_path_from_shell_configs():
 
 
 def remove_wrapper_script():
-    """Remove the maia/coorporate launchers (and legacy hermes ones)."""
+    """Remove launchers that point at THIS install — and nothing else.
+
+    A launcher is removed only when its shim body or symlink target
+    references this checkout (``get_project_root()``). Launchers belonging
+    to other installs — in particular an upstream Hermes Agent's
+    ``~/.local/bin/hermes`` on machines running both products — are never
+    touched. (An earlier version matched any hermes/maia-flavored content
+    and deleted the user's upstream Hermes launcher.)
+    """
+    project_root = str(get_project_root())
+
     bin_dirs = [
         Path.home() / ".local" / "bin",
         Path("/usr/local/bin"),
@@ -129,27 +139,30 @@ def remove_wrapper_script():
     if prefix:
         bin_dirs.append(Path(prefix) / "bin")
 
-    # Tokens that identify a launcher as ours, in either the shim body or a
-    # symlink target (venv entry points import hermes_cli; shim bodies embed
-    # the install path).
-    ours_tokens = ("hermes_cli", "hermes-agent", ".maia", "/maia", "maia/venv", ".hermes")
+    def _points_at_this_install(wrapper: Path) -> bool:
+        try:
+            if wrapper.is_symlink():
+                target = str(os.readlink(wrapper))
+                if project_root in target:
+                    return True
+                try:
+                    return str(wrapper.resolve()).startswith(project_root)
+                except OSError:
+                    return False
+            if not wrapper.is_file():
+                return False
+            return project_root in wrapper.read_text()
+        except (OSError, UnicodeDecodeError):
+            return False
 
     removed = []
     for bin_dir in bin_dirs:
         for name in ("maia", "coorporate", "hermes"):
             wrapper = bin_dir / name
             try:
-                if wrapper.is_symlink():
-                    target = str(os.readlink(wrapper))
-                    # Broken symlinks (venv already gone) are ours to clean too.
-                    if not wrapper.exists() or any(tok in target for tok in ours_tokens):
-                        wrapper.unlink()
-                        removed.append(wrapper)
+                if not wrapper.exists() and not wrapper.is_symlink():
                     continue
-                if not wrapper.exists():
-                    continue
-                content = wrapper.read_text()
-                if any(tok in content for tok in ours_tokens):
+                if _points_at_this_install(wrapper):
                     wrapper.unlink()
                     removed.append(wrapper)
             except Exception as e:
