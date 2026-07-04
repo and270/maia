@@ -527,18 +527,6 @@ export default function GatewayPage() {
                 </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
-                {platform.id === "discord" && (
-                  <DiscordAccessUsersEditor
-                    rows={discordAccessRows}
-                    busy={busy === "discord:access-users"}
-                    disabled={Boolean(busy)}
-                    onAdd={addDiscordAccessRow}
-                    onRemove={removeDiscordAccessRow}
-                    onSave={saveDiscordAccessUsers}
-                    onUpdate={updateDiscordAccessRow}
-                  />
-                )}
-
                 <div className="grid gap-3 md:grid-cols-2">
                   {platform.fields.map((field) => {
                     const info = env[field.key];
@@ -633,6 +621,21 @@ export default function GatewayPage() {
                   </div>
                 </div>
 
+                {platform.id === "discord" ? (
+                  <DiscordAccessUsersEditor
+                    rows={discordAccessRows}
+                    busy={busy === "discord:access-users"}
+                    disabled={Boolean(busy)}
+                    configured={configured}
+                    onAdd={addDiscordAccessRow}
+                    onRemove={removeDiscordAccessRow}
+                    onSave={saveDiscordAccessUsers}
+                    onUpdate={updateDiscordAccessRow}
+                  />
+                ) : (
+                  <PlatformUserAccessNote platform={platform} />
+                )}
+
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
                   <Button
                     size="sm"
@@ -682,10 +685,32 @@ maia logs gateway`}
 }
 
 
+function PlatformUserAccessNote({ platform }: { platform: GatewayPlatform }) {
+  return (
+    <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
+      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        <Users className="h-3.5 w-3.5" />
+        User access on {platform.name}
+      </div>
+      <p className="mt-2 text-xs normal-case leading-5 text-muted-foreground">
+        {platform.name} does not need a separate user table: the{" "}
+        <strong>allowed user IDs field above</strong> decides who can talk to
+        Maia on this platform. Names, governance roles, and teams for those
+        people are assigned where all identity lives, in{" "}
+        <code>governance.users</code>: approve their <code>/dashboard</code>{" "}
+        requests on the <em>Access</em> page, or edit the governance section in{" "}
+        <em>Config</em>. Users are identified as{" "}
+        <code>{platform.id}:&lt;user id&gt;</code>.
+      </p>
+    </div>
+  );
+}
+
 type DiscordAccessUsersEditorProps = {
   rows: DiscordAccessUserDraft[];
   busy: boolean;
   disabled: boolean;
+  configured: boolean;
   onAdd: (role?: string) => void;
   onRemove: (index: number) => void;
   onSave: () => void;
@@ -696,6 +721,7 @@ function DiscordAccessUsersEditor({
   rows,
   busy,
   disabled,
+  configured,
   onAdd,
   onRemove,
   onSave,
@@ -703,35 +729,35 @@ function DiscordAccessUsersEditor({
 }: DiscordAccessUsersEditorProps) {
   return (
     <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
-            <Users className="h-3.5 w-3.5" />
-            Discord users and governance roles
-          </div>
-          <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
-            Add the first admin here, then add normal users as the rollout grows. Saving this list writes
-            {" "}
-            <code>DISCORD_ALLOWED_USERS</code> for gateway access and stores names, roles, and teams under
-            {" "}
-            <code>governance.users</code>. Gateway access lets a user talk to the bot; governance roles decide
-            {" "}
-            what they can do inside configured policies. Dashboard access still uses the protected dashboard
-            {" "}
-            token/request flow.
+      <div>
+        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          Discord users and governance roles
+        </div>
+        <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
+          Add the first admin here, then add normal users as the rollout grows. Saving this list writes
+          {" "}
+          <code>DISCORD_ALLOWED_USERS</code> for gateway access and stores names, roles, and teams under
+          {" "}
+          <code>governance.users</code>. Gateway access lets a user talk to the bot; governance roles decide
+          {" "}
+          what they can do inside configured policies. Dashboard access still uses the protected dashboard
+          {" "}
+          token/request flow.
+        </p>
+        {!configured && (
+          <p className="mt-2 text-xs normal-case leading-5 text-warning">
+            Fill in and save the bot credentials above first — users added here
+            only take effect once the bot can connect.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="xs" outlined onClick={() => onAdd("operator")} disabled={disabled}>
-            <Plus className="h-3.5 w-3.5" />
-            Add user
-          </Button>
-          <Button size="xs" onClick={onSave} disabled={disabled}>
-            {busy ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-            Save users
-          </Button>
-        </div>
+        )}
       </div>
+
+      {rows.length === 0 && (
+        <p className="mt-4 text-xs normal-case leading-5 text-muted-foreground">
+          No users yet. Start by adding yourself as the first admin.
+        </p>
+      )}
 
       <div className="mt-4 grid gap-3">
         {rows.map((row, index) => (
@@ -790,6 +816,22 @@ function DiscordAccessUsersEditor({
         <div><strong>Multiple users:</strong> add one row per Discord ID; the saved env value is comma-separated automatically.</div>
         <div><strong>Normal users:</strong> use <code>operator</code> or <code>viewer</code> unless they need management abilities.</div>
         <div><strong>Admins:</strong> keep <code>admin</code> limited to people who can manage config, secrets, and access.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
+        <Button
+          size="sm"
+          outlined
+          onClick={() => onAdd(rows.length === 0 ? "admin" : "operator")}
+          disabled={disabled}
+        >
+          <Plus className="h-4 w-4" />
+          {rows.length === 0 ? "Add first admin" : "Add user"}
+        </Button>
+        <Button size="sm" onClick={onSave} disabled={disabled || rows.length === 0}>
+          {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+          Save users
+        </Button>
       </div>
     </div>
   );
