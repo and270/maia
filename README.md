@@ -62,22 +62,43 @@ maia gateway      # messaging gateway
 maia cron list    # scheduled workflows
 maia model        # model/provider selection
 maia doctor       # diagnostics
+maia update       # update to the latest version
+maia uninstall    # remove Maia (can keep configs/data)
 maia-acp          # ACP editor integration
 maia-agent        # direct agent runner
 ```
 
 ## Install
 
-### macOS / Linux
+### Quick install (macOS / Linux / WSL2)
 
 ```bash
-git clone https://github.com/and270/maia.git
-cd maia
-./setup-maia.sh
-# Only needed if setup says it added the command directory to your shell config.
-source ~/.zshrc
-maia setup
-maia
+curl -fsSL https://ampliia.com/maia/install.sh | bash
+```
+
+The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, builds the dashboard, and offers the interactive setup wizard when a terminal is available.
+
+After it finishes:
+
+```bash
+source ~/.bashrc   # or: source ~/.zshrc
+maia setup         # configure model provider and keys (if you skipped the wizard)
+maia               # start chatting
+```
+
+Useful installer options and environment variables:
+
+```bash
+curl -fsSL https://ampliia.com/maia/install.sh | bash -s -- --skip-setup   # no wizard
+curl -fsSL https://ampliia.com/maia/install.sh | bash -s -- --branch dev   # other branch
+MAIA_HOME=/srv/maia-data  # data directory override (default: ~/.maia)
+MAIA_REPO_URL=...         # corporate mirror or SSH clone URL (see below)
+```
+
+If the repository requires authorization (private repo or corporate mirror), point the installer at a clone URL you have access to:
+
+```bash
+curl -fsSL https://ampliia.com/maia/install.sh | MAIA_REPO_URL=git@github.com:and270/maia.git bash
 ```
 
 ### Windows (WSL)
@@ -92,30 +113,43 @@ wsl --install -d Ubuntu
 Then, inside the Ubuntu/WSL terminal:
 
 ```bash
-sudo apt update && sudo apt install -y git curl build-essential
-
-# IMPORTANT: clone into the Linux filesystem (your WSL home, "~"),
-# NOT into /mnt/c/...: installs on the Windows filesystem are slow
-# and are the most common cause of failed installs on WSL.
-git clone https://github.com/and270/maia.git ~/maia
-cd ~/maia
-./setup-maia.sh
+curl -fsSL https://ampliia.com/maia/install.sh | bash
 source ~/.bashrc
 maia setup
 maia
 ```
 
 Notes for WSL:
+- The installer keeps everything on the Linux filesystem (`~/.maia`), which avoids the slow `/mnt/c/...` installs that cause most WSL failures.
 - The `maia` command works from any directory once your shell is reloaded.
-- The dashboard build (`maia dashboard`) needs Node.js 20+:
-  `sudo apt install -y nodejs npm` (or use [nvm](https://github.com/nvm-sh/nvm) for a newer Node).
-- Keep company files you want Maia to govern inside WSL (e.g. `~/company-files`)
-  for the same filesystem-performance reason. Windows paths remain reachable
-  under `/mnt/c/...` when needed.
+- Keep company files you want Maia to govern inside WSL (e.g. `~/company-files`) for the same filesystem-performance reason. Windows paths remain reachable under `/mnt/c/...` when needed.
+
+### Update
+
+```bash
+maia update            # pull the latest version and reinstall dependencies
+maia update --check    # only check whether an update is available
+```
+
+`maia update` fetches the latest code from git, stashes and restores local changes safely, reinstalls dependencies, and clears stale bytecode. Options: `--backup` forces a pre-update backup to `<MAIA_HOME>/backups/`, `--yes` assumes yes for prompts (for scripts and cron), and re-running the install one-liner is always a safe repair path for broken checkouts.
+
+### Uninstall
+
+```bash
+maia uninstall               # interactive: keep data or remove everything
+maia uninstall --yes         # non-interactive, removes code but keeps configs/data
+maia uninstall --full --yes  # non-interactive, removes everything
+```
+
+Keep-data mode preserves `<MAIA_HOME>` (config, API keys, sessions, logs, skills), so reinstalling with the one-liner restores service with the same settings. Full mode also stops and removes the gateway service, PATH entries, and the data directory.
 
 ### Manual development install
 
 ```bash
+git clone https://github.com/and270/maia.git
+cd maia
+./setup-maia.sh
+# Or, inside an existing clone:
 uv venv .venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[all,dev]"

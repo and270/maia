@@ -1,9 +1,13 @@
 """
-Hermes Agent Uninstaller.
+Maia Uninstaller.
 
 Provides options for:
 - Full uninstall: Remove everything including configs and data
-- Keep data: Remove code but keep ~/.hermes/ (configs, sessions, logs)
+- Keep data: Remove code but keep the data home, ~/.maia/ or legacy
+  ~/.hermes/ (configs, sessions, logs)
+
+Non-interactive use: ``maia uninstall --yes`` (keep data) or
+``maia uninstall --full --yes`` (remove everything).
 """
 
 import os
@@ -50,33 +54,49 @@ def find_shell_configs() -> list:
 
 
 def remove_path_from_shell_configs():
-    """Remove Hermes PATH entries from shell configuration files."""
+    """Remove Maia PATH entries (and legacy Hermes ones) from shell configs."""
     configs = find_shell_configs()
     removed_from = []
-    
+
+    # Marker comments written by scripts/install.sh and setup-maia.sh
+    # (plus the legacy upstream Hermes spellings).
+    marker_prefixes = ("# maia", "# hermes agent", "# hermes-agent")
+    # Tokens that identify a PATH line as ours. Deliberately NOT bare
+    # "maia"/"hermes" so a user named maia (/home/maia/...) keeps their
+    # own PATH lines.
+    path_tokens = (".maia/bin", "maia/venv", "/lib/maia", "maia_home",
+                   ".hermes", "hermes-agent", "hermes_home")
+
+    def _is_path_line(lowered: str) -> bool:
+        return "path=" in lowered or "fish_add_path" in lowered
+
     for config_path in configs:
         try:
             content = config_path.read_text()
             original_content = content
-            
-            # Remove lines containing hermes-agent or hermes PATH entries
+
             new_lines = []
-            skip_next = False
-            
+            skip_path_line = False
+
             for line in content.split('\n'):
-                # Skip the "# Hermes Agent" comment and following line
-                if '# Hermes Agent' in line or '# hermes-agent' in line:
-                    skip_next = True
+                lowered = line.lower()
+                stripped = lowered.strip()
+
+                # Drop our marker comment and the PATH line right after it
+                # (the exported dir is generic ~/.local/bin, so only the
+                # marker tells us the line is ours).
+                if any(stripped.startswith(prefix) for prefix in marker_prefixes):
+                    skip_path_line = True
                     continue
-                if skip_next and ('hermes' in line.lower() and 'PATH' in line):
-                    skip_next = False
+                if skip_path_line:
+                    skip_path_line = False
+                    if _is_path_line(lowered):
+                        continue
+
+                # Remove any PATH line that points into a Maia/Hermes install.
+                if _is_path_line(lowered) and any(tok in lowered for tok in path_tokens):
                     continue
-                skip_next = False
-                
-                # Remove any PATH line containing hermes
-                if 'hermes' in line.lower() and ('PATH=' in line or 'path=' in line.lower()):
-                    continue
-                    
+
                 new_lines.append(line)
             
             new_content = '\n'.join(new_lines)
@@ -96,24 +116,45 @@ def remove_path_from_shell_configs():
 
 
 def remove_wrapper_script():
-    """Remove the hermes wrapper script if it exists."""
-    wrapper_paths = [
-        Path.home() / ".local" / "bin" / "hermes",
-        Path("/usr/local/bin/hermes"),
+    """Remove the maia/coorporate launchers (and legacy hermes ones)."""
+    bin_dirs = [
+        Path.home() / ".local" / "bin",
+        Path("/usr/local/bin"),
     ]
-    
+    try:
+        bin_dirs.append(Path(get_hermes_home()) / "bin")
+    except Exception:
+        pass
+    prefix = os.getenv("PREFIX")
+    if prefix:
+        bin_dirs.append(Path(prefix) / "bin")
+
+    # Tokens that identify a launcher as ours, in either the shim body or a
+    # symlink target (venv entry points import hermes_cli; shim bodies embed
+    # the install path).
+    ours_tokens = ("hermes_cli", "hermes-agent", ".maia", "/maia", "maia/venv", ".hermes")
+
     removed = []
-    for wrapper in wrapper_paths:
-        if wrapper.exists():
+    for bin_dir in bin_dirs:
+        for name in ("maia", "coorporate", "hermes"):
+            wrapper = bin_dir / name
             try:
-                # Check if it's our wrapper (contains hermes_cli reference)
+                if wrapper.is_symlink():
+                    target = str(os.readlink(wrapper))
+                    # Broken symlinks (venv already gone) are ours to clean too.
+                    if not wrapper.exists() or any(tok in target for tok in ours_tokens):
+                        wrapper.unlink()
+                        removed.append(wrapper)
+                    continue
+                if not wrapper.exists():
+                    continue
                 content = wrapper.read_text()
-                if 'hermes_cli' in content or 'hermes-agent' in content:
+                if any(tok in content for tok in ours_tokens):
                     wrapper.unlink()
                     removed.append(wrapper)
             except Exception as e:
                 log_warn(f"Could not remove {wrapper}: {e}")
-    
+
     return removed
 
 
@@ -281,13 +322,17 @@ def _uninstall_profile(profile) -> None:
 def run_uninstall(args):
     """
     Run the uninstall process.
-    
+
     Options:
-    - Full uninstall: removes code + ~/.hermes/ (configs, data, logs)
-    - Keep data: removes code but keeps ~/.hermes/ for future reinstall
+    - Full uninstall: removes code + data home (configs, data, logs)
+    - Keep data: removes code but keeps the data home for future reinstall
+
+    Flags: ``--full`` selects full uninstall, ``--yes`` skips all prompts.
     """
     project_root = get_project_root()
     hermes_home = get_hermes_home()
+    full_uninstall = bool(getattr(args, "full", False))
+    assume_yes = bool(getattr(args, "yes", False))
 
     # Detect named profiles when uninstalling from the default root —
     # offer to clean them up too instead of leaving zombie HERMES_HOMEs
@@ -297,7 +342,7 @@ def run_uninstall(args):
 
     print()
     print(color("┌─────────────────────────────────────────────────────────┐", Colors.MAGENTA, Colors.BOLD))
-    print(color("│            ⚕ Hermes Agent Uninstaller                  │", Colors.MAGENTA, Colors.BOLD))
+    print(color("│                 ◆ Maia Uninstaller                      │", Colors.MAGENTA, Colors.BOLD))
     print(color("└─────────────────────────────────────────────────────────┘", Colors.MAGENTA, Colors.BOLD))
     print()
     
@@ -316,31 +361,37 @@ def run_uninstall(args):
             print(f"  • {p.name}{running}: {p.path}")
         print()
     
-    # Ask for confirmation
-    print(color("Uninstall Options:", Colors.YELLOW, Colors.BOLD))
-    print()
-    print("  1) " + color("Keep data", Colors.GREEN) + " - Remove code only, keep configs/sessions/logs")
-    print("     (Recommended - you can reinstall later with your settings intact)")
-    print()
-    print("  2) " + color("Full uninstall", Colors.RED) + " - Remove everything including all data")
-    print("     (Warning: This deletes all configs, sessions, and logs permanently)")
-    print()
-    print("  3) " + color("Cancel", Colors.CYAN) + " - Don't uninstall")
-    print()
-    
-    try:
-        choice = input(color("Select option [1/2/3]: ", Colors.BOLD)).strip()
-    except (KeyboardInterrupt, EOFError):
+    # Resolve the uninstall mode: flags first, interactive menu otherwise.
+    if assume_yes:
+        mode = "Full uninstall" if full_uninstall else "Keep data"
+        print(color(f"--yes: proceeding without prompts ({mode}).", Colors.YELLOW))
+    elif full_uninstall:
+        print(color("--full: full uninstall selected.", Colors.YELLOW))
+    else:
+        print(color("Uninstall Options:", Colors.YELLOW, Colors.BOLD))
         print()
-        print("Cancelled.")
-        return
-    
-    if choice == "3" or choice.lower() in ("c", "cancel", "q", "quit", "n", "no"):
+        print("  1) " + color("Keep data", Colors.GREEN) + " - Remove code only, keep configs/sessions/logs")
+        print("     (Recommended - you can reinstall later with your settings intact)")
         print()
-        print("Uninstall cancelled.")
-        return
-    
-    full_uninstall = (choice == "2")
+        print("  2) " + color("Full uninstall", Colors.RED) + " - Remove everything including all data")
+        print("     (Warning: This deletes all configs, sessions, and logs permanently)")
+        print()
+        print("  3) " + color("Cancel", Colors.CYAN) + " - Don't uninstall")
+        print()
+
+        try:
+            choice = input(color("Select option [1/2/3]: ", Colors.BOLD)).strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            print("Cancelled.")
+            return
+
+        if choice == "3" or choice.lower() in ("c", "cancel", "q", "quit", "n", "no"):
+            print()
+            print("Uninstall cancelled.")
+            return
+
+        full_uninstall = (choice == "2")
 
     # When doing a full uninstall from the default profile, also offer to
     # remove any named profiles — stopping their gateway services, unlinking
@@ -348,26 +399,36 @@ def run_uninstall(args):
     # those leave zombie services and data behind.
     remove_profiles = False
     if full_uninstall and named_profiles:
-        print()
-        print(color("Other profiles will NOT be removed by default.", Colors.YELLOW))
-        print(f"Found {len(named_profiles)} named profile(s): " +
-              ", ".join(p.name for p in named_profiles))
-        print()
-        try:
-            resp = input(color(
-                f"Also stop and remove these {len(named_profiles)} profile(s)? [y/N]: ",
-                Colors.BOLD
-            )).strip().lower()
-        except (KeyboardInterrupt, EOFError):
+        if assume_yes:
+            # Never sweep other profiles implicitly — they may belong to
+            # other deployments. Require an interactive opt-in.
             print()
-            print("Cancelled.")
-            return
-        remove_profiles = resp in ("y", "yes")
+            print(color(
+                f"Keeping {len(named_profiles)} named profile(s) "
+                "(run without --yes to remove them interactively).",
+                Colors.YELLOW,
+            ))
+        else:
+            print()
+            print(color("Other profiles will NOT be removed by default.", Colors.YELLOW))
+            print(f"Found {len(named_profiles)} named profile(s): " +
+                  ", ".join(p.name for p in named_profiles))
+            print()
+            try:
+                resp = input(color(
+                    f"Also stop and remove these {len(named_profiles)} profile(s)? [y/N]: ",
+                    Colors.BOLD
+                )).strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                print()
+                print("Cancelled.")
+                return
+            remove_profiles = resp in ("y", "yes")
 
     # Final confirmation
     print()
     if full_uninstall:
-        print(color("⚠️  WARNING: This will permanently delete ALL Hermes data!", Colors.RED, Colors.BOLD))
+        print(color("⚠️  WARNING: This will permanently delete ALL Maia data!", Colors.RED, Colors.BOLD))
         print(color("   Including: configs, API keys, sessions, scheduled jobs, logs", Colors.RED))
         if remove_profiles:
             print(color(
@@ -376,20 +437,21 @@ def run_uninstall(args):
                 Colors.RED
             ))
     else:
-        print("This will remove the Hermes code but keep your configuration and data.")
-    
+        print("This will remove the Maia code but keep your configuration and data.")
+
     print()
-    try:
-        confirm = input(f"Type '{color('yes', Colors.YELLOW)}' to confirm: ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        print()
-        print("Cancelled.")
-        return
-    
-    if confirm != "yes":
-        print()
-        print("Uninstall cancelled.")
-        return
+    if not assume_yes:
+        try:
+            confirm = input(f"Type '{color('yes', Colors.YELLOW)}' to confirm: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            print("Cancelled.")
+            return
+
+        if confirm != "yes":
+            print()
+            print("Uninstall cancelled.")
+            return
     
     print()
     print(color("Uninstalling...", Colors.CYAN, Colors.BOLD))
@@ -410,7 +472,7 @@ def run_uninstall(args):
         log_info("No PATH entries found to remove")
     
     # 3. Remove wrapper script
-    log_info("Removing hermes command...")
+    log_info("Removing maia command...")
     removed_wrappers = remove_wrapper_script()
     if removed_wrappers:
         for wrapper in removed_wrappers:
@@ -471,11 +533,11 @@ def run_uninstall(args):
         print(f"  {hermes_home}/")
         print()
         print("To reinstall later with your existing settings:")
-        print(color("  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash", Colors.DIM))
+        print(color("  curl -fsSL https://ampliia.com/maia/install.sh | bash", Colors.DIM))
         print()
-    
+
     print(color("Reload your shell to complete the process:", Colors.YELLOW))
     print("  source ~/.bashrc  # or ~/.zshrc")
     print()
-    print("Thank you for using Hermes Agent! ⚕")
+    print("Thank you for using Maia! ◆")
     print()
