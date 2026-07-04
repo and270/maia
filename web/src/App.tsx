@@ -93,7 +93,30 @@ import {
 } from "@/lib/api";
 
 function RootRedirect() {
-  return <Navigate to="/sessions" replace />;
+  // First-run routing: land on Onboarding until a model provider works,
+  // then Sessions as before. Any error (older backend, auth gate) falls
+  // back to Sessions so this never blocks the dashboard.
+  const [target, setTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getOnboardingState()
+      .then((state) => {
+        if (!cancelled) {
+          setTarget(state.provider_configured ? "/sessions" : "/onboarding");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTarget("/sessions");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!target) return null;
+  return <Navigate to={target} replace />;
 }
 
 function DashboardAuthGate({ children }: { children: ReactNode }) {
@@ -280,16 +303,16 @@ function ChatRouteSink() {
 
 const BUILTIN_NAV_REST: NavItem[] = [
   {
-    path: "/sessions",
-    labelKey: "sessions",
-    label: "Sessions",
-    icon: MessageSquare,
-  },
-  {
     path: "/onboarding",
     labelKey: "onboarding",
     label: "Onboarding",
     icon: Shield,
+  },
+  {
+    path: "/sessions",
+    labelKey: "sessions",
+    label: "Sessions",
+    icon: MessageSquare,
   },
   {
     path: "/gateway",

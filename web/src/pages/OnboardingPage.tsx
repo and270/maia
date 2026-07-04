@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -12,6 +12,7 @@ import {
   ScrollText,
   ShieldCheck,
   Sparkles,
+  Terminal,
   Users,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -22,9 +23,279 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
-import { api, type GovernanceWarning } from "@/lib/api";
+import {
+  api,
+  type GovernanceWarning,
+  type OnboardingProviderEntry,
+  type OnboardingState,
+} from "@/lib/api";
+import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
 import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
+
+// Providers most corporate installs reach for first; the rest of the catalog
+// stays available under "More providers" in the same dropdown.
+const FEATURED_PROVIDER_SLUGS = [
+  "anthropic",
+  "openrouter",
+  "openai-codex",
+  "gemini",
+  "deepseek",
+  "xai",
+  "huggingface",
+  "nvidia",
+];
+
+function StepMarker({ n, done }: { n: number; done: boolean }) {
+  if (done) {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-success/50 bg-success/[0.08] text-success">
+        <CheckCircle2 className="h-4 w-4" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-current/25 text-sm font-bold">
+      {n}
+    </span>
+  );
+}
+
+function StepStatus({ done }: { done: boolean }) {
+  return done ? (
+    <Badge tone="outline" className="text-success border-success/40">
+      Done
+    </Badge>
+  ) : (
+    <Badge tone="outline" className="text-muted-foreground">
+      Pending
+    </Badge>
+  );
+}
+
+function ProviderStepCard({
+  state,
+  onChanged,
+}: {
+  state: OnboardingState | null;
+  onChanged: () => void;
+}) {
+  const { toast, showToast } = useToast();
+  const [slug, setSlug] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const chatEnabled = isDashboardEmbeddedChatEnabled();
+
+  const keyProviders = useMemo(
+    () =>
+      (state?.providers_catalog ?? []).filter(
+        (p): p is OnboardingProviderEntry & { env_key: string } =>
+          Boolean(p.env_key) && p.auth_type === "api_key",
+      ),
+    [state],
+  );
+  const featured = FEATURED_PROVIDER_SLUGS.map((s) =>
+    keyProviders.find((p) => p.slug === s),
+  ).filter((p): p is OnboardingProviderEntry & { env_key: string } => Boolean(p));
+  const rest = keyProviders.filter(
+    (p) => !FEATURED_PROVIDER_SLUGS.includes(p.slug),
+  );
+  const selected = keyProviders.find((p) => p.slug === slug) ?? null;
+  const done = Boolean(state?.provider_configured);
+
+  const save = async () => {
+    if (!selected || !apiKey.trim()) return;
+    setSaving(true);
+    try {
+      await api.setEnvVar(selected.env_key, apiKey.trim());
+      setApiKey("");
+      showToast(`${selected.label} key saved`, "success");
+      onChanged();
+    } catch (err) {
+      showToast(`Could not save key: ${err}`, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <Toast toast={toast} />
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-3">
+            <StepMarker n={1} done={done} />
+            <KeyRound className="h-4 w-4" />
+            Choose your model provider
+          </span>
+          <StepStatus done={done} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 normal-case">
+        {done ? (
+          <>
+            <div className="flex items-start gap-2 border border-success/40 bg-success/[0.06] p-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+              <p className="text-sm leading-6 text-success">
+                Provider ready
+                {state?.current_provider ? `: ${state.current_provider}` : ""}
+                {state?.current_model ? ` · ${state.current_model}` : ""}.
+                {!state?.current_model &&
+                  " No main model pinned yet, a recommended default is used until you pick one."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              {chatEnabled ? (
+                <Link
+                  to="/chat"
+                  className="inline-flex w-fit items-center gap-2 border border-current/25 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-midground transition-opacity hover:opacity-80"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Try it in Chat
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <Terminal className="h-3.5 w-3.5" />
+                  Test it now: run <code>maia</code> in your terminal
+                </span>
+              )}
+              <Link
+                to="/models"
+                className="inline-flex w-fit items-center gap-2 border border-current/25 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-midground transition-opacity hover:opacity-80"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Pick or change models
+              </Link>
+              <Link to="/env" className="text-muted-foreground underline">
+                Manage keys
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Maia needs one working model provider before anything else. Pick a
+              provider, paste its API key, and you can start chatting
+              immediately, everything later (gateway, governance, cron) builds
+              on this.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Provider</Label>
+                <select
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                  className="h-9 w-full border border-border bg-background px-2 text-sm"
+                >
+                  <option value="">Select a provider…</option>
+                  {featured.length > 0 && (
+                    <optgroup label="Popular">
+                      {featured.map((p) => (
+                        <option key={p.slug} value={p.slug}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {rest.length > 0 && (
+                    <optgroup label="More providers">
+                      {rest.map((p) => (
+                        <option key={p.slug} value={p.slug}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {selected && (
+                  <p className="text-xs text-muted-foreground">
+                    {selected.description} (stored as{" "}
+                    <code>{selected.env_key}</code> in the managed .env)
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>API key</Label>
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={selected ? `${selected.env_key} value` : "Select a provider first"}
+                  disabled={!selected}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Keys live in the managed credential store, never in prompts,
+                  memories, or skills.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={save}
+              disabled={!selected || !apiKey.trim() || saving}
+              size="sm"
+              className="w-fit"
+            >
+              <KeyRound className="h-4 w-4" />
+              {saving ? "Saving…" : "Save key"}
+            </Button>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Prefer OAuth (Nous Portal, Google, MiniMax), a local model
+              (Ollama, LM Studio), or a custom endpoint? Run{" "}
+              <code>maia model</code> in a terminal or open{" "}
+              <Link to="/models" className="underline">
+                Models
+              </Link>
+              .
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StepLinkCard({
+  n,
+  done,
+  icon: Icon,
+  title,
+  text,
+  to,
+  action,
+}: {
+  n: number;
+  done: boolean;
+  icon: typeof MessageSquare;
+  title: string;
+  text: string;
+  to: string;
+  action: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-3">
+            <StepMarker n={n} done={done} />
+            <Icon className="h-4 w-4" />
+            {title}
+          </span>
+          <StepStatus done={done} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 normal-case">
+        <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+        <Link
+          to={to}
+          className="inline-flex w-fit items-center gap-2 border border-current/25 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-midground transition-opacity hover:opacity-80"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          {action}
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
 
 function BaselineCard() {
   const { toast, showToast } = useToast();
@@ -149,27 +420,13 @@ function BaselineCard() {
   );
 }
 
-const STEPS = [
+const NEXT_STEPS = [
   {
     icon: ShieldCheck,
     title: "Tenant and governance",
-    text: "Set governance.enabled, tenant_id, role_hierarchy, default_role, and production default_file_policy.",
+    text: "Fine-tune governance.enabled, tenant_id, role_hierarchy, default_role, and production default_file_policy.",
     to: "/config?search=governance",
     action: "Open Config",
-  },
-  {
-    icon: MessageSquare,
-    title: "Messaging gateway",
-    text: "Configure Slack, Discord, Mattermost, or Matrix credentials so users can talk to Maia from company channels.",
-    to: "/gateway",
-    action: "Open Gateway",
-  },
-  {
-    icon: Users,
-    title: "Dashboard access",
-    text: "Approve /dashboard requests, assign roles and teams, and revoke dashboard login access from one operational page.",
-    to: "/dashboard-access",
-    action: "Open Access",
   },
   {
     icon: Database,
@@ -229,6 +486,19 @@ const CHECKLIST = [
 ];
 
 export default function OnboardingPage() {
+  const [state, setState] = useState<OnboardingState | null>(null);
+
+  const refresh = useCallback(() => {
+    api
+      .getOnboardingState()
+      .then(setState)
+      .catch(() => setState(null));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   return (
     <div className="flex flex-col gap-6">
       <PluginSlot name="onboarding:top" />
@@ -240,36 +510,69 @@ export default function OnboardingPage() {
         </div>
         <H2 variant="sm" className="flex items-center gap-2 text-muted-foreground">
           <ShieldCheck className="h-4 w-4" />
-          Admin Onboarding
+          Setup and Onboarding
         </H2>
+        <p className="text-sm normal-case leading-6 text-muted-foreground">
+          Work through the numbered steps in order: model provider first (so
+          Maia can answer at all), then the messaging gateway (so your team can
+          reach it), then governance and dashboard access (so it is safe to
+          share). Everything else can follow at your own pace.
+        </p>
       </section>
+
+      <ProviderStepCard state={state} onChanged={refresh} />
+
+      <StepLinkCard
+        n={2}
+        done={Boolean(state?.gateway_configured)}
+        icon={MessageSquare}
+        title="Connect a messaging gateway"
+        text="Configure Slack, Discord, Mattermost, Matrix, Telegram, or WhatsApp credentials so your team can talk to Maia from company channels. Then install the gateway service so it stays online."
+        to="/gateway"
+        action="Open Gateway"
+      />
+
+      <StepLinkCard
+        n={3}
+        done={Boolean(state?.governance_configured)}
+        icon={Users}
+        title="Set up governance and dashboard access"
+        text="Apply the security baseline below, then approve /dashboard requests, assign roles and teams, and keep admin access narrow. This is what makes Maia safe to share with the whole company."
+        to="/dashboard-access"
+        action="Open Access"
+      />
 
       <BaselineCard />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {STEPS.map(({ action, icon: Icon, text, title, to }) => (
-          <Card key={title}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Icon className="h-4 w-4" />
-                {title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex min-h-40 flex-col justify-between gap-4">
-              <p className="text-sm normal-case leading-6 text-muted-foreground">
-                {text}
-              </p>
-              <Link
-                to={to}
-                className="inline-flex w-fit items-center gap-2 border border-current/25 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-midground transition-opacity hover:opacity-80"
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                {action}
-              </Link>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <section className="flex flex-col gap-3">
+        <H2 variant="sm" className="text-muted-foreground">
+          Next steps
+        </H2>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {NEXT_STEPS.map(({ action, icon: Icon, text, title, to }) => (
+            <Card key={title}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Icon className="h-4 w-4" />
+                  {title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex min-h-40 flex-col justify-between gap-4">
+                <p className="text-sm normal-case leading-6 text-muted-foreground">
+                  {text}
+                </p>
+                <Link
+                  to={to}
+                  className="inline-flex w-fit items-center gap-2 border border-current/25 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-midground transition-opacity hover:opacity-80"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  {action}
+                </Link>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
 
       <Card>
         <CardHeader>

@@ -76,14 +76,15 @@ maia-agent        # direct agent runner
 curl -fsSL https://ampliia.com/maia/install.sh | bash
 ```
 
-The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, builds the dashboard, and offers the interactive setup wizard when a terminal is available.
+The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, and builds the dashboard. It then offers to open the dashboard in your browser, which walks you through setup in order: model provider and API key, messaging gateway, governance and dashboard access, with a chat tab to talk to Maia right away.
 
-After it finishes:
+If you skipped that step:
 
 ```bash
 source ~/.bashrc   # or: source ~/.zshrc
-maia setup         # configure model provider and keys (if you skipped the wizard)
-maia               # start chatting
+maia dashboard     # browser onboarding: provider, gateway, governance, chat
+maia setup         # or: terminal setup wizard
+maia               # start chatting in the terminal
 ```
 
 Useful installer options and environment variables:

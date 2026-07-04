@@ -126,7 +126,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --no-venv      Don't create virtual environment"
-            echo "  --skip-setup   Skip interactive setup wizard"
+            echo "  --skip-setup   Skip interactive setup (dashboard onboarding / wizard)"
             echo "  --branch NAME  Git branch to install (default: main)"
             echo "  --dir PATH     Installation directory"
             echo "                   default (non-root):  ~/.maia/maia"
@@ -1452,36 +1452,63 @@ install_node_deps() {
 
 run_setup_wizard() {
     if [ "$RUN_SETUP" = false ]; then
-        log_info "Skipping setup wizard (--skip-setup)"
+        log_info "Skipping setup (--skip-setup). Finish later with: maia dashboard  (or: maia setup)"
         return 0
     fi
 
-    # The setup wizard reads from /dev/tty, so it works even when the
-    # install script itself is piped (curl | bash). Only skip if no
-    # terminal is available at all (e.g. Docker build, CI).
+    # The dashboard launch and the terminal wizard both read from /dev/tty,
+    # so this works even when the install script itself is piped
+    # (curl | bash). Only skip if no terminal is available at all
+    # (e.g. Docker build, CI).
     #
     # Probe by actually opening /dev/tty: a bare existence test passes
     # in Docker builds where the device node is in the mount namespace
-    # but opening fails with ENXIO, so the wizard would proceed and
-    # then crash on `< /dev/tty` below.
+    # but opening fails with ENXIO, so setup would proceed and then
+    # crash on `< /dev/tty` below.
     if ! (: </dev/tty) 2>/dev/null; then
-        log_info "Setup wizard skipped (no terminal available). Run 'maia setup' after install."
+        log_info "Setup skipped (no terminal available)."
+        log_info "Next: run 'maia dashboard' to finish setup in the browser, or 'maia setup' for the terminal wizard."
         return 0
     fi
 
     echo ""
-    log_info "Starting setup wizard..."
+    log_info "Maia is installed. The dashboard walks you through the rest, in order:"
+    log_info "  1. Model provider and API key"
+    log_info "  2. Messaging gateway (Slack, Discord, WhatsApp, ...)"
+    log_info "  3. Governance and dashboard access"
+    log_info "It also includes a chat tab so you can talk to Maia right away."
     echo ""
 
-    cd "$INSTALL_DIR"
-
-    # Run maia setup using the venv Python directly (no activation needed).
-    # Redirect stdin from /dev/tty so interactive prompts work when piped from curl.
-    if [ "$USE_VENV" = true ]; then
-        "$INSTALL_DIR/venv/bin/python" -m hermes_cli.main setup < /dev/tty
-    else
-        python -m hermes_cli.main setup < /dev/tty
+    if prompt_yes_no "Open the Maia dashboard in your browser now?" "yes"; then
+        MAIA_CMD="$(get_maia_command_path)"
+        echo ""
+        log_info "Dashboard URL: http://127.0.0.1:9119  (copy it if the browser does not open)"
+        log_info "Ctrl+C stops the dashboard; restart it any time with: maia dashboard"
+        echo ""
+        cd "$INSTALL_DIR"
+        # --tui embeds the in-browser chat tab next to the setup pages.
+        # Redirect stdin from /dev/tty so it stays usable when piped from curl.
+        $MAIA_CMD dashboard --tui < /dev/tty || {
+            log_warn "Dashboard exited with an error. Retry with: maia dashboard"
+            log_info "Or configure from the terminal instead: maia setup"
+        }
+        return 0
     fi
+
+    if prompt_yes_no "Run the terminal setup wizard instead?" "no"; then
+        echo ""
+        cd "$INSTALL_DIR"
+        # Run maia setup using the venv Python directly (no activation needed).
+        # Redirect stdin from /dev/tty so prompts work when piped from curl.
+        if [ "$USE_VENV" = true ]; then
+            "$INSTALL_DIR/venv/bin/python" -m hermes_cli.main setup < /dev/tty
+        else
+            python -m hermes_cli.main setup < /dev/tty
+        fi
+        return 0
+    fi
+
+    log_info "Skipped. Finish setup any time with: maia dashboard  (or: maia setup)"
 }
 
 maybe_start_gateway() {
@@ -1684,10 +1711,12 @@ main() {
     install_node_deps
     setup_path
     copy_config_templates
-    run_setup_wizard
     maybe_start_gateway
 
+    # Success banner first, then hand over to the dashboard onboarding —
+    # the last thing the user sees is the browser opening on setup.
     print_success
+    run_setup_wizard
 }
 
 main

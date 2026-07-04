@@ -279,6 +279,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
     }),
+  getOnboardingState: () => fetchJSON<OnboardingState>("/api/onboarding/state"),
   getDiscordGatewayAccessUsers: () =>
     fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users"),
   saveDiscordGatewayAccessUsers: (body: { users: DiscordGatewayAccessUser[] }) =>
@@ -633,6 +634,24 @@ export interface GovernanceWarning {
   severity: "warning" | "error";
   code: string;
   message: string;
+}
+
+export interface OnboardingProviderEntry {
+  slug: string;
+  label: string;
+  description: string;
+  env_key: string | null;
+  auth_type: string;
+}
+
+export interface OnboardingState {
+  provider_configured: boolean;
+  current_provider: string;
+  current_model: string;
+  gateway_configured: boolean;
+  governance_configured: boolean;
+  dashboard_auth_configured: boolean;
+  providers_catalog: OnboardingProviderEntry[];
 }
 
 export interface StatusResponse {

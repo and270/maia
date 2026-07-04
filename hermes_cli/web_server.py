@@ -2702,6 +2702,124 @@ async def apply_governance_baseline(body: GovernanceBaseline, request: Request):
     }
 
 
+# Env vars that mean a messaging platform is wired up. Mirrors the token
+# detection in scripts/install.sh plus the Mattermost/Matrix forms on the
+# Gateway page.
+_GATEWAY_TOKEN_ENV_VARS = (
+    "TELEGRAM_BOT_TOKEN",
+    "DISCORD_BOT_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "SLACK_APP_TOKEN",
+    "MATTERMOST_TOKEN",
+    "MATRIX_ACCESS_TOKEN",
+    "MATRIX_PASSWORD",
+)
+
+
+@app.get("/api/onboarding/state")
+def get_onboarding_state():
+    """Aggregated first-run setup state for the dashboard onboarding flow.
+
+    The SPA root route calls this to decide whether to land on Onboarding
+    (no working model provider yet) or Sessions, and the Onboarding page
+    uses it to mark steps done/pending and to render the inline provider
+    step (providers_catalog).
+    """
+    try:
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        from hermes_cli.model_switch import list_authenticated_providers
+        from hermes_cli.models import CANONICAL_PROVIDERS
+
+        # Provider authentication checks read os.environ — refresh from .env
+        # so keys saved moments ago count without a server restart.
+        try:
+            from hermes_cli.config import reload_env
+
+            reload_env()
+        except Exception:
+            pass
+
+        cfg = load_config()
+        model_cfg = cfg.get("model", {})
+        if isinstance(model_cfg, dict):
+            current_model = model_cfg.get("default", model_cfg.get("name", "")) or ""
+            current_provider = model_cfg.get("provider", "") or ""
+            current_base_url = model_cfg.get("base_url", "") or ""
+        else:
+            current_model = str(model_cfg) if model_cfg else ""
+            current_provider = ""
+            current_base_url = ""
+
+        user_providers = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+        custom_providers = (
+            cfg.get("custom_providers")
+            if isinstance(cfg.get("custom_providers"), list)
+            else []
+        )
+        try:
+            authenticated = list_authenticated_providers(
+                current_provider=current_provider,
+                current_base_url=current_base_url,
+                current_model=current_model,
+                user_providers=user_providers,
+                custom_providers=custom_providers,
+                max_models=1,
+            )
+        except Exception:
+            authenticated = []
+
+        env_on_disk = load_env()
+        gateway_configured = any(env_on_disk.get(var) for var in _GATEWAY_TOKEN_ENV_VARS)
+        if not gateway_configured:
+            gateway_configured = (
+                str(env_on_disk.get("WHATSAPP_ENABLED", "")).strip().lower() == "true"
+            )
+
+        governance_cfg = (
+            cfg.get("governance", {}) if isinstance(cfg.get("governance"), dict) else {}
+        )
+        dashboard_cfg = (
+            cfg.get("dashboard", {}) if isinstance(cfg.get("dashboard"), dict) else {}
+        )
+        auth_cfg = (
+            dashboard_cfg.get("auth", {})
+            if isinstance(dashboard_cfg.get("auth"), dict)
+            else {}
+        )
+
+        # Catalog for the inline provider step: canonical picker order, with
+        # the primary API-key env var when the provider authenticates by key.
+        # openrouter predates PROVIDER_REGISTRY (legacy code path), so its
+        # env var is filled in explicitly.
+        registry_gaps = {"openrouter": "OPENROUTER_API_KEY"}
+        catalog = []
+        for entry in CANONICAL_PROVIDERS:
+            pcfg = PROVIDER_REGISTRY.get(entry.slug)
+            env_vars = tuple(getattr(pcfg, "api_key_env_vars", ()) or ()) if pcfg else ()
+            auth_type = getattr(pcfg, "auth_type", "api_key") if pcfg else "api_key"
+            env_key = env_vars[0] if env_vars else registry_gaps.get(entry.slug)
+            catalog.append({
+                "slug": entry.slug,
+                "label": entry.label,
+                "description": entry.tui_desc,
+                "env_key": env_key,
+                "auth_type": auth_type,
+            })
+
+        return {
+            "provider_configured": bool(authenticated),
+            "current_provider": current_provider,
+            "current_model": current_model,
+            "gateway_configured": bool(gateway_configured),
+            "governance_configured": bool(governance_cfg.get("enabled")),
+            "dashboard_auth_configured": bool(auth_cfg.get("enabled")),
+            "providers_catalog": catalog,
+        }
+    except Exception:
+        _log.exception("GET /api/onboarding/state failed")
+        raise HTTPException(status_code=500, detail="Failed to read onboarding state")
+
+
 @app.get("/api/governance/folder-policies")
 async def get_folder_policies(request: Request):
     cfg = load_config()
@@ -2854,6 +2972,14 @@ async def get_env_vars():
 async def set_env_var(body: EnvVarUpdate):
     try:
         save_env_value(body.key, body.value)
+        # Provider authentication checks read os.environ, so refresh it —
+        # otherwise a key saved here only counts after a server restart.
+        try:
+            from hermes_cli.config import reload_env
+
+            reload_env()
+        except Exception:
+            _log.warning("PUT /api/env: reload_env failed", exc_info=True)
         return {"ok": True, "key": body.key}
     except Exception:
         _log.exception("PUT /api/env failed")
@@ -2866,6 +2992,7 @@ async def remove_env_var(body: EnvVarDelete):
         removed = remove_env_value(body.key)
         if not removed:
             raise HTTPException(status_code=404, detail=f"{body.key} not found in .env")
+        os.environ.pop(body.key, None)
         return {"ok": True, "key": body.key}
     except HTTPException:
         raise
