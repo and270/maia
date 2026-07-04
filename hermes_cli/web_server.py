@@ -1377,13 +1377,54 @@ def _normalize_discord_user_id(value: Any) -> str:
     return text if re.fullmatch(r"\d+", text) else ""
 
 
-def _load_discord_gateway_access_users() -> List[Dict[str, Any]]:
+# Platforms with a managed access-users editor in the dashboard. Each maps
+# to the env allowlist variable the gateway reads and the governance
+# identity prefix (`<platform>:<user id>` keys under governance.users).
+_GATEWAY_ACCESS_PLATFORMS: Dict[str, str] = {
+    "discord": "DISCORD_ALLOWED_USERS",
+    "slack": "SLACK_ALLOWED_USERS",
+    "mattermost": "MATTERMOST_ALLOWED_USERS",
+    "matrix": "MATRIX_ALLOWED_USERS",
+}
+
+
+def _gateway_access_env_key(platform: str) -> str:
+    env_key = _GATEWAY_ACCESS_PLATFORMS.get(str(platform or "").lower())
+    if not env_key:
+        raise HTTPException(
+            status_code=404, detail=f"No managed access users for platform: {platform}"
+        )
+    return env_key
+
+
+def _normalize_gateway_user_id(platform: str, value: Any) -> str:
+    """Normalize one user id for a platform's allowlist.
+
+    Discord keeps its strict numeric/mention handling; other platforms trim
+    whitespace/quotes and accept a pasted `<platform>:<id>` governance key.
+    Matrix IDs legitimately contain ':' (@user:server), so only the leading
+    platform prefix is split off.
+    """
+    if platform == "discord":
+        return _normalize_discord_user_id(value)
+    text = str(value or "").strip().strip("\"'").strip()
+    prefix = f"{platform}:"
+    if text.lower().startswith(prefix):
+        text = text.split(":", 1)[1].strip()
+    if not text or "," in text or any(ch.isspace() for ch in text):
+        return ""
+    return text
+
+
+def _load_gateway_access_users(platform: str) -> List[Dict[str, Any]]:
+    platform = str(platform or "").lower()
+    env_key = _gateway_access_env_key(platform)
     env_on_disk = load_env()
-    raw_allowed = str(env_on_disk.get("DISCORD_ALLOWED_USERS") or "")
+    raw_allowed = str(env_on_disk.get(env_key) or "")
     ordered_ids: List[str] = []
     seen: set[str] = set()
     for part in raw_allowed.split(","):
-        user_id = _normalize_discord_user_id(part)
+        user_id = _normalize_gateway_user_id(platform, part)
         if user_id and user_id not in seen:
             ordered_ids.append(user_id)
             seen.add(user_id)
@@ -1395,7 +1436,7 @@ def _load_discord_gateway_access_users() -> List[Dict[str, Any]]:
 
     result: List[Dict[str, Any]] = []
     for user_id in ordered_ids:
-        record = users.get(f"discord:{user_id}") or users.get(user_id) or {}
+        record = users.get(f"{platform}:{user_id}") or users.get(user_id) or {}
         if not isinstance(record, dict):
             record = {"roles": _coerce_role_list(record)}
         result.append(
@@ -1409,7 +1450,11 @@ def _load_discord_gateway_access_users() -> List[Dict[str, Any]]:
     return result
 
 
-def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessUser]) -> List[Dict[str, Any]]:
+def _save_gateway_access_users(
+    platform: str, users_payload: List[DiscordGatewayAccessUser]
+) -> List[Dict[str, Any]]:
+    platform = str(platform or "").lower()
+    env_key = _gateway_access_env_key(platform)
     cfg = load_config()
     if not isinstance(cfg, dict):
         cfg = {}
@@ -1423,7 +1468,7 @@ def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessU
     allowed_ids: List[str] = []
     seen: set[str] = set()
     for item in users_payload:
-        user_id = _normalize_discord_user_id(item.user_id)
+        user_id = _normalize_gateway_user_id(platform, item.user_id)
         if not user_id:
             continue
         if user_id in seen:
@@ -1431,7 +1476,7 @@ def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessU
         seen.add(user_id)
         allowed_ids.append(user_id)
 
-        key = f"discord:{user_id}"
+        key = f"{platform}:{user_id}"
         existing = users.get(key)
         record = dict(existing) if isinstance(existing, dict) else {}
         name = str(item.name or "").strip()
@@ -1449,11 +1494,19 @@ def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessU
             record.pop("teams", None)
         users[key] = record
 
-    save_env_value("DISCORD_ALLOWED_USERS", ",".join(allowed_ids))
+    save_env_value(env_key, ",".join(allowed_ids))
     governance["users"] = users
     cfg["governance"] = governance
     save_config(cfg)
-    return _load_discord_gateway_access_users()
+    return _load_gateway_access_users(platform)
+
+
+def _load_discord_gateway_access_users() -> List[Dict[str, Any]]:
+    return _load_gateway_access_users("discord")
+
+
+def _save_discord_gateway_access_users(users_payload: List[DiscordGatewayAccessUser]) -> List[Dict[str, Any]]:
+    return _save_gateway_access_users("discord", users_payload)
 
 
 def _save_governance_user_from_dashboard_access(
@@ -2968,22 +3021,29 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
     }
 
 
-@app.get("/api/gateway/discord/access-users")
-async def get_discord_gateway_access_users():
-    return {"users": _load_discord_gateway_access_users()}
+@app.get("/api/gateway/{platform}/access-users")
+async def get_gateway_access_users(platform: str):
+    """Managed allowlist + governance roles for a messaging platform.
+
+    Same contract for discord/slack/mattermost/matrix (the old
+    discord-only route is the discord case of this one).
+    """
+    return {"users": _load_gateway_access_users(platform)}
 
 
-@app.put("/api/gateway/discord/access-users")
-async def set_discord_gateway_access_users(body: DiscordGatewayAccessUsersUpdate, request: Request):
-    users = _save_discord_gateway_access_users(body.users)
+@app.put("/api/gateway/{platform}/access-users")
+async def set_gateway_access_users(
+    platform: str, body: DiscordGatewayAccessUsersUpdate, request: Request
+):
+    users = _save_gateway_access_users(platform, body.users)
     _audit_dashboard_event(
-        "gateway.discord_access_users",
+        f"gateway.{str(platform).lower()}_access_users",
         request=request,
         actor=_request_dashboard_actor(request),
         action="save",
-        resource="discord_gateway_access",
+        resource=f"{str(platform).lower()}_gateway_access",
         outcome="success",
-        metadata={"user_count": len(users)},
+        metadata={"platform": str(platform).lower(), "user_count": len(users)},
     )
     return {"ok": True, "users": users}
 

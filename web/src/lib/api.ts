@@ -286,14 +286,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ effort }),
     }),
-  getDiscordGatewayAccessUsers: () =>
-    fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users"),
-  saveDiscordGatewayAccessUsers: (body: { users: DiscordGatewayAccessUser[] }) =>
-    fetchJSON<DiscordGatewayAccessUsersResponse>("/api/gateway/discord/access-users", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+  getGatewayAccessUsers: (platform: string) =>
+    fetchJSON<DiscordGatewayAccessUsersResponse>(
+      `/api/gateway/${encodeURIComponent(platform)}/access-users`,
+    ),
+  saveGatewayAccessUsers: (platform: string, body: { users: DiscordGatewayAccessUser[] }) =>
+    fetchJSON<DiscordGatewayAccessUsersResponse>(
+      `/api/gateway/${encodeURIComponent(platform)}/access-users`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
   getSessions: (limit = 20, offset = 0) =>
     fetchJSON<PaginatedSessions>(`/api/sessions?limit=${limit}&offset=${offset}`),

@@ -93,6 +93,47 @@ function normalizeDiscordRows(rows: DiscordAccessUserDraft[]): DiscordGatewayAcc
     });
 }
 
+// Platforms whose allowlist + governance roles are managed by the users
+// editor instead of a raw comma-separated env field.
+const ACCESS_PLATFORM_IDS = ["discord", "slack", "mattermost", "matrix"] as const;
+
+const ACCESS_ENV_KEYS: Record<string, string> = {
+  discord: "DISCORD_ALLOWED_USERS",
+  slack: "SLACK_ALLOWED_USERS",
+  mattermost: "MATTERMOST_ALLOWED_USERS",
+  matrix: "MATRIX_ALLOWED_USERS",
+};
+
+const USER_ID_PLACEHOLDERS: Record<string, string> = {
+  discord: "284102345871466496",
+  slack: "U01ABC2DEF3",
+  mattermost: "26characteruserid00000000a",
+  matrix: "@ana:company.example",
+};
+
+const USER_ID_HELP: Record<string, string[]> = {
+  discord: [
+    "Enable Developer Mode: Discord Settings → Advanced → Developer Mode.",
+    "Right-click the member (or open their profile → ⋯) and pick Copy User ID.",
+    "It is a long number, e.g. 284102345871466496 — not the @username.",
+  ],
+  slack: [
+    "Open the person's profile in Slack, click the ⋮ (three dots) menu, and pick Copy member ID.",
+    "It starts with U or W, e.g. U01ABC2DEF3 — not the @display name.",
+    "Your own ID: click your avatar → Profile → ⋮ → Copy member ID.",
+  ],
+  mattermost: [
+    "Admins: System Console → User Management → Users, open the user — the ID is on their page.",
+    "Or click a name in any channel to open the profile popover and copy the ID from it.",
+    "It is a 26-character string of letters and numbers.",
+  ],
+  matrix: [
+    "Use the full Matrix ID shown on the user's profile: @username:homeserver.",
+    "Example: @ana:company.example — include the @ and the homeserver part.",
+    "In Element: click the avatar → the ID is under the display name.",
+  ],
+};
+
 const PLATFORMS: GatewayPlatform[] = [
   {
     id: "slack",
@@ -264,9 +305,12 @@ export default function GatewayPage() {
   const [env, setEnv] = useState<Record<string, EnvVarInfo>>({});
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
-  const [discordAccessRows, setDiscordAccessRows] = useState<DiscordAccessUserDraft[]>([
-    newDiscordAccessRow("admin"),
-  ]);
+  const [accessRows, setAccessRows] = useState<Record<string, DiscordAccessUserDraft[]>>(
+    () =>
+      Object.fromEntries(
+        ACCESS_PLATFORM_IDS.map((id) => [id, [newDiscordAccessRow("admin")]]),
+      ),
+  );
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -280,15 +324,21 @@ export default function GatewayPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextEnv, nextStatus, discordAccess] = await Promise.all([
+      const [nextEnv, nextStatus, ...accessLists] = await Promise.all([
         api.getEnvVars(),
         api.getStatus(),
-        api.getDiscordGatewayAccessUsers().catch(() => ({ users: [] })),
+        ...ACCESS_PLATFORM_IDS.map((id) =>
+          api.getGatewayAccessUsers(id).catch(() => ({ users: [] })),
+        ),
       ]);
       setEnv(nextEnv);
       setStatus(nextStatus);
-      const rows = discordAccess.users.map(discordUserToDraft);
-      setDiscordAccessRows(rows.length ? rows : [newDiscordAccessRow("admin")]);
+      const nextRows: Record<string, DiscordAccessUserDraft[]> = {};
+      ACCESS_PLATFORM_IDS.forEach((id, index) => {
+        const rows = (accessLists[index]?.users ?? []).map(discordUserToDraft);
+        nextRows[id] = rows.length ? rows : [newDiscordAccessRow("admin")];
+      });
+      setAccessRows(nextRows);
     } catch (err) {
       showToast(`Failed to load gateway settings: ${err}`, "error");
     } finally {
@@ -314,38 +364,61 @@ export default function GatewayPage() {
     setHelpOpen((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const updateDiscordAccessRow = (index: number, patch: Partial<DiscordAccessUserDraft>) => {
-    setDiscordAccessRows((current) =>
-      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
-    );
+  const updateAccessRow = (
+    platformId: string,
+    index: number,
+    patch: Partial<DiscordAccessUserDraft>,
+  ) => {
+    setAccessRows((current) => ({
+      ...current,
+      [platformId]: (current[platformId] ?? []).map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    }));
   };
 
-  const addDiscordAccessRow = (role = "operator") => {
-    setDiscordAccessRows((current) => [...current, newDiscordAccessRow(role)]);
+  const addAccessRow = (platformId: string, role = "operator") => {
+    setAccessRows((current) => ({
+      ...current,
+      [platformId]: [...(current[platformId] ?? []), newDiscordAccessRow(role)],
+    }));
   };
 
-  const removeDiscordAccessRow = (index: number) => {
-    setDiscordAccessRows((current) => {
-      const next = current.filter((_, rowIndex) => rowIndex !== index);
-      return next.length ? next : [newDiscordAccessRow("admin")];
+  const removeAccessRow = (platformId: string, index: number) => {
+    setAccessRows((current) => {
+      const next = (current[platformId] ?? []).filter((_, rowIndex) => rowIndex !== index);
+      return {
+        ...current,
+        [platformId]: next.length ? next : [newDiscordAccessRow("admin")],
+      };
     });
   };
 
-  const saveDiscordAccessUsers = async () => {
-    const users = normalizeDiscordRows(discordAccessRows);
+  const setPlatformRows = (platformId: string, users: DiscordGatewayAccessUser[]) => {
+    const rows = users.map(discordUserToDraft);
+    setAccessRows((current) => ({
+      ...current,
+      [platformId]: rows.length ? rows : [newDiscordAccessRow("admin")],
+    }));
+  };
+
+  const saveAccessUsers = async (platform: GatewayPlatform) => {
+    const users = normalizeDiscordRows(accessRows[platform.id] ?? []);
     if (!users.length) {
-      showToast("Add at least one Discord user ID before saving.", "error");
+      showToast(`Add at least one ${platform.name} user ID before saving.`, "error");
       return;
     }
-    setBusy("discord:access-users");
+    setBusy(`${platform.id}:access-users`);
     try {
-      const response = await api.saveDiscordGatewayAccessUsers({ users });
-      const rows = response.users.map(discordUserToDraft);
-      setDiscordAccessRows(rows.length ? rows : [newDiscordAccessRow("admin")]);
-      showToast("Discord gateway users and governance roles saved. Restart the gateway to apply the allowlist.", "success");
+      const response = await api.saveGatewayAccessUsers(platform.id, { users });
+      setPlatformRows(platform.id, response.users);
+      showToast(
+        `${platform.name} users and governance roles saved. Restart the gateway to apply the allowlist.`,
+        "success",
+      );
       await load();
     } catch (err) {
-      showToast(`Failed to save Discord users: ${err}`, "error");
+      showToast(`Failed to save ${platform.name} users: ${err}`, "error");
     } finally {
       setBusy("");
     }
@@ -353,9 +426,10 @@ export default function GatewayPage() {
 
   const savePlatform = async (platform: GatewayPlatform) => {
     const draft = drafts[platform.id] ?? {};
-    const discordUsers = platform.id === "discord" ? normalizeDiscordRows(discordAccessRows) : [];
+    const allowKey = ACCESS_ENV_KEYS[platform.id];
+    const accessUsers = allowKey ? normalizeDiscordRows(accessRows[platform.id] ?? []) : [];
     const extraDraftKeys = new Set<string>();
-    if (discordUsers.length) extraDraftKeys.add("DISCORD_ALLOWED_USERS");
+    if (allowKey && accessUsers.length) extraDraftKeys.add(allowKey);
     const missing = missingRequirements(platform, env, draft, extraDraftKeys);
     if (missing.length) {
       showToast(`Missing required gateway values: ${missing.join(", ")}`, "error");
@@ -365,9 +439,9 @@ export default function GatewayPage() {
     const entries = Object.entries(draft)
       .map(([key, value]) => [key, value.trim()] as const)
       .filter(([, value]) => value.length > 0)
-      .filter(([key]) => !(platform.id === "discord" && key === "DISCORD_ALLOWED_USERS" && discordUsers.length));
+      .filter(([key]) => !(allowKey && key === allowKey && accessUsers.length));
 
-    if (!entries.length && !(platform.id === "discord" && discordUsers.length)) {
+    if (!entries.length && !(allowKey && accessUsers.length)) {
       showToast("No new gateway values to save.", "success");
       return;
     }
@@ -377,10 +451,9 @@ export default function GatewayPage() {
       for (const [key, value] of entries) {
         await api.setEnvVar(key, value);
       }
-      if (platform.id === "discord" && discordUsers.length) {
-        const response = await api.saveDiscordGatewayAccessUsers({ users: discordUsers });
-        const rows = response.users.map(discordUserToDraft);
-        setDiscordAccessRows(rows.length ? rows : [newDiscordAccessRow("admin")]);
+      if (allowKey && accessUsers.length) {
+        const response = await api.saveGatewayAccessUsers(platform.id, { users: accessUsers });
+        setPlatformRows(platform.id, response.users);
       }
       setDrafts((current) => ({ ...current, [platform.id]: {} }));
       showToast(`${platform.name} gateway values saved. Restart the gateway to apply them.`, "success");
@@ -528,7 +601,9 @@ export default function GatewayPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <div className="grid gap-3 md:grid-cols-2">
-                  {platform.fields.map((field) => {
+                  {platform.fields
+                    .filter((field) => field.key !== ACCESS_ENV_KEYS[platform.id])
+                    .map((field) => {
                     const info = env[field.key];
                     const current = fieldStatus(env, field.key);
                     const helpKey = `${platform.id}:${field.key}`;
@@ -621,20 +696,17 @@ export default function GatewayPage() {
                   </div>
                 </div>
 
-                {platform.id === "discord" ? (
-                  <DiscordAccessUsersEditor
-                    rows={discordAccessRows}
-                    busy={busy === "discord:access-users"}
-                    disabled={Boolean(busy)}
-                    configured={configured}
-                    onAdd={addDiscordAccessRow}
-                    onRemove={removeDiscordAccessRow}
-                    onSave={saveDiscordAccessUsers}
-                    onUpdate={updateDiscordAccessRow}
-                  />
-                ) : (
-                  <PlatformUserAccessNote platform={platform} />
-                )}
+                <GatewayAccessUsersEditor
+                  platform={platform}
+                  rows={accessRows[platform.id] ?? []}
+                  busy={busy === `${platform.id}:access-users`}
+                  disabled={Boolean(busy)}
+                  configured={configured}
+                  onAdd={(role) => addAccessRow(platform.id, role)}
+                  onRemove={(index) => removeAccessRow(platform.id, index)}
+                  onSave={() => saveAccessUsers(platform)}
+                  onUpdate={(index, patch) => updateAccessRow(platform.id, index, patch)}
+                />
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
                   <Button
@@ -685,28 +757,8 @@ maia logs gateway`}
 }
 
 
-function PlatformUserAccessNote({ platform }: { platform: GatewayPlatform }) {
-  return (
-    <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
-      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
-        <Users className="h-3.5 w-3.5" />
-        User access on {platform.name}
-      </div>
-      <p className="mt-2 text-xs normal-case leading-5 text-muted-foreground">
-        {platform.name} does not need a separate user table: the{" "}
-        <strong>allowed user IDs field above</strong> decides who can talk to
-        Maia on this platform. Names, governance roles, and teams for those
-        people are assigned where all identity lives, in{" "}
-        <code>governance.users</code>: approve their <code>/dashboard</code>{" "}
-        requests on the <em>Access</em> page, or edit the governance section in{" "}
-        <em>Config</em>. Users are identified as{" "}
-        <code>{platform.id}:&lt;user id&gt;</code>.
-      </p>
-    </div>
-  );
-}
-
-type DiscordAccessUsersEditorProps = {
+type GatewayAccessUsersEditorProps = {
+  platform: GatewayPlatform;
   rows: DiscordAccessUserDraft[];
   busy: boolean;
   disabled: boolean;
@@ -717,7 +769,8 @@ type DiscordAccessUsersEditorProps = {
   onUpdate: (index: number, patch: Partial<DiscordAccessUserDraft>) => void;
 };
 
-function DiscordAccessUsersEditor({
+function GatewayAccessUsersEditor({
+  platform,
   rows,
   busy,
   disabled,
@@ -726,28 +779,33 @@ function DiscordAccessUsersEditor({
   onRemove,
   onSave,
   onUpdate,
-}: DiscordAccessUsersEditorProps) {
+}: GatewayAccessUsersEditorProps) {
+  const [idHelpOpen, setIdHelpOpen] = useState(false);
+  const allowKey = ACCESS_ENV_KEYS[platform.id] ?? "";
+  const idPlaceholder = USER_ID_PLACEHOLDERS[platform.id] ?? "user id";
+  const idHelp = USER_ID_HELP[platform.id] ?? [];
+
   return (
     <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
       <div>
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
           <Users className="h-3.5 w-3.5" />
-          Discord users and governance roles
+          {platform.name} users and access levels
         </div>
         <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
           Add the first admin here, then add normal users as the rollout grows. Saving this list writes
           {" "}
-          <code>DISCORD_ALLOWED_USERS</code> for gateway access and stores names, roles, and teams under
+          <code>{allowKey}</code> (who may talk to Maia on {platform.name}) and stores names, roles, and
           {" "}
-          <code>governance.users</code>. Gateway access lets a user talk to the bot; governance roles decide
+          teams under <code>governance.users</code>. Gateway access lets a user talk to the bot; governance
           {" "}
-          what they can do inside configured policies. Dashboard access still uses the protected dashboard
+          roles decide what they can do inside configured policies. Dashboard access still uses the protected
           {" "}
-          token/request flow.
+          dashboard token/request flow.
         </p>
         {!configured && (
           <p className="mt-2 text-xs normal-case leading-5 text-warning">
-            Fill in and save the bot credentials above first — users added here
+            Fill in and save the credentials above first — users added here
             only take effect once the bot can connect.
           </p>
         )}
@@ -763,13 +821,38 @@ function DiscordAccessUsersEditor({
         {rows.map((row, index) => (
           <div key={`${index}:${row.user_id}`} className="grid gap-3 border border-border/60 p-3 xl:grid-cols-[1.2fr_1.2fr_1fr_1fr_auto]">
             <label className="grid gap-1.5">
-              <Label className="font-mono-ui text-[0.7rem]">Discord user ID</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="font-mono-ui text-[0.7rem]">{platform.name} user ID</Label>
+                {idHelp.length > 0 && index === 0 && (
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[0.65rem] font-bold text-muted-foreground hover:border-primary hover:text-primary"
+                    aria-label={`How to find a ${platform.name} user ID`}
+                    aria-expanded={idHelpOpen}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setIdHelpOpen((open) => !open);
+                    }}
+                  >
+                    ?
+                  </button>
+                )}
+              </div>
               <Input
                 value={row.user_id}
-                placeholder="284102345871466496"
+                placeholder={idPlaceholder}
                 onChange={(event) => onUpdate(index, { user_id: event.target.value })}
                 autoComplete="off"
               />
+              {idHelpOpen && index === 0 && idHelp.length > 0 && (
+                <div className="rounded-sm border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground">
+                  <ul className="list-disc space-y-1 pl-4">
+                    {idHelp.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </label>
             <label className="grid gap-1.5">
               <Label className="font-mono-ui text-[0.7rem]">Name / label</Label>
@@ -804,7 +887,7 @@ function DiscordAccessUsersEditor({
               className="self-end"
               onClick={() => onRemove(index)}
               disabled={disabled}
-              aria-label="Remove Discord user"
+              aria-label={`Remove ${platform.name} user`}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -813,7 +896,7 @@ function DiscordAccessUsersEditor({
       </div>
 
       <div className="mt-3 grid gap-2 text-xs normal-case leading-5 text-muted-foreground md:grid-cols-3">
-        <div><strong>Multiple users:</strong> add one row per Discord ID; the saved env value is comma-separated automatically.</div>
+        <div><strong>Multiple users:</strong> add one row per user ID; the saved allowlist is comma-separated automatically.</div>
         <div><strong>Normal users:</strong> use <code>operator</code> or <code>viewer</code> unless they need management abilities.</div>
         <div><strong>Admins:</strong> keep <code>admin</code> limited to people who can manage config, secrets, and access.</div>
       </div>
