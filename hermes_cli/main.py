@@ -5380,8 +5380,11 @@ def cmd_version(args):
 
 
 def cmd_uninstall(args):
-    """Uninstall Hermes Agent."""
-    _require_tty("uninstall")
+    """Uninstall Maia."""
+    # --yes answers every prompt, so the interactive-terminal guard only
+    # applies when the flow would actually need to ask questions.
+    if not getattr(args, "yes", False):
+        _require_tty("uninstall")
     from hermes_cli.uninstall import run_uninstall
 
     run_uninstall(args)
