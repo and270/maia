@@ -1421,13 +1421,29 @@ install_node_deps() {
         log_success "Browser engine setup complete"
     fi
 
-    # Install TUI dependencies
+    # Install and build the TUI (terminal chat + the dashboard's chat tab)
     if [ -f "$INSTALL_DIR/ui-tui/package.json" ]; then
         log_info "Installing TUI dependencies..."
         cd "$INSTALL_DIR/ui-tui"
         npm install --silent 2>/dev/null || {
             log_warn "TUI npm install failed (maia --tui may not work)"
         }
+        # npm can exit 0 without linking the @maia/ink workspace package
+        # (seen on WSL). Verify the link and retry loudly once before
+        # building, otherwise the build fails with a confusing error.
+        if [ ! -e node_modules/@maia/ink/package.json ]; then
+            log_warn "TUI workspace link missing after npm install — retrying..."
+            npm install --no-fund --no-audit --progress=false || {
+                log_warn "TUI npm install failed (maia --tui may not work)"
+            }
+        fi
+        log_info "Building TUI (chat interface)..."
+        if npm run build >/dev/null 2>&1; then
+            log_success "TUI built"
+        else
+            log_warn "TUI build failed — terminal chat and the dashboard chat tab may not work."
+            log_info "Retry manually: cd $INSTALL_DIR/ui-tui && npm install && npm run build"
+        fi
         log_success "TUI dependencies installed"
     fi
 
@@ -1486,9 +1502,10 @@ run_setup_wizard() {
         log_info "Ctrl+C stops the dashboard; restart it any time with: maia dashboard"
         echo ""
         cd "$INSTALL_DIR"
-        # --tui embeds the in-browser chat tab next to the setup pages.
+        # --tui embeds the in-browser chat tab next to the setup pages, and
+        # --open-path lands the browser on the guided onboarding steps.
         # Redirect stdin from /dev/tty so it stays usable when piped from curl.
-        $MAIA_CMD dashboard --tui < /dev/tty || {
+        $MAIA_CMD dashboard --tui --open-path /onboarding < /dev/tty || {
             log_warn "Dashboard exited with an error. Retry with: maia dashboard"
             log_info "Or configure from the terminal instead: maia setup"
         }
@@ -1699,6 +1716,16 @@ main() {
 
     detect_os
     resolve_install_layout
+
+    # Legacy-home adoption notice: existing ~/.hermes data (from upstream
+    # Hermes or an earlier Maia) is reused so upgrades keep config, keys,
+    # sessions, and skills — which also means provider and theme choices
+    # carry over. Make that visible instead of surprising.
+    if [ "$MAIA_HOME" = "$HOME/.hermes" ]; then
+        log_info "Existing Hermes data found — reusing $MAIA_HOME_DISPLAY (config, API keys, sessions, skills)."
+        log_info "  Your existing model/provider and dashboard theme carry over; review them in the dashboard onboarding."
+        log_info "  Prefer a separate, fresh Maia instead? Re-run with: MAIA_HOME=\$HOME/.maia"
+    fi
     install_uv
     check_python
     check_git

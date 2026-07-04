@@ -6082,6 +6082,14 @@ _mount_plugin_api_routes()
 mount_spa(app)
 
 
+def _is_wsl() -> bool:
+    """True when running inside Windows Subsystem for Linux."""
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
+    except OSError:
+        return False
+
+
 def start_server(
     host: str = "127.0.0.1",
     port: int = 9119,
@@ -6089,6 +6097,7 @@ def start_server(
     allow_public: bool = False,
     *,
     embedded_chat: bool = False,
+    open_path: str = "/",
 ):
     """Start the web UI server."""
     import uvicorn
@@ -6126,14 +6135,39 @@ def start_server(
     app.state.bound_host = host
     app.state.bound_port = port
 
+    path = open_path if open_path.startswith("/") else f"/{open_path}"
+    url = f"http://{host}:{port}{'' if path == '/' else path}"
+
     if open_browser:
+        import subprocess as _subprocess
         import webbrowser
 
         def _open():
             time.sleep(1.0)
-            webbrowser.open(f"http://{host}:{port}")
+            # On WSL the Linux openers webbrowser tries (gio/xdg-open) fail
+            # with "Operation not supported" — hand the URL to Windows.
+            if _is_wsl():
+                for opener in (
+                    ["wslview", url],
+                    ["powershell.exe", "-NoProfile", "Start-Process", url],
+                ):
+                    try:
+                        _subprocess.run(
+                            opener,
+                            stdout=_subprocess.DEVNULL,
+                            stderr=_subprocess.DEVNULL,
+                            timeout=15,
+                            check=True,
+                        )
+                        return
+                    except Exception:
+                        continue
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
 
         threading.Thread(target=_open, daemon=True).start()
 
-    print(f"  Hermes Web UI → http://{host}:{port}")
+    print(f"  Maia Web UI → {url}")
     uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -23,8 +23,11 @@ import type {
 import { api } from "@/lib/api";
 
 /** LocalStorage key — pre-applied before the React tree mounts to avoid
- *  a visible flash of the default palette on theme-overridden installs. */
-const STORAGE_KEY = "hermes-dashboard-theme";
+ *  a visible flash of the default palette on theme-overridden installs.
+ *  Deliberately NOT the upstream "hermes-dashboard-theme" key: an upstream
+ *  Hermes dashboard on the same localhost origin would otherwise leak its
+ *  theme choice into Maia. */
+const STORAGE_KEY = "maia-dashboard-theme";
 
 /** Tracks fontUrls we've already injected so multiple theme switches don't
  *  pile up <link> tags. Keyed by URL. */

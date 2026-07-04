@@ -887,8 +887,15 @@ def _tui_need_npm_install(root: Path) -> bool:
     we'd rather not force a reinstall for them. Falls back to mtime
     comparison if either lockfile is unparseable.
     """
-    ink = root / "node_modules" / "@hermes" / "ink" / "package.json"
-    if not ink.is_file():
+    # The fork renamed the workspace package to @maia/ink; accept the legacy
+    # @hermes/ink layout too so pre-rename checkouts don't reinstall forever.
+    # Probing the wrong dir made this return True on every launch, which also
+    # made _find_bundled_tui reject a good build ("Chat unavailable: 1").
+    ink_candidates = (
+        root / "node_modules" / "@maia" / "ink" / "package.json",
+        root / "node_modules" / "@hermes" / "ink" / "package.json",
+    )
+    if not any(p.is_file() for p in ink_candidates):
         return True
     lock = root / "package-lock.json"
     if not lock.is_file():
@@ -1128,7 +1135,8 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
 
     root = _find_bundled_tui(tui_dir)
     if not root:
-        print("TUI build did not produce dist/entry.js")
+        print("TUI is not runnable: dist/entry.js or the @maia/ink workspace package is missing.")
+        print(f"Fix with: cd {tui_dir} && npm install && npm run build")
         sys.exit(1)
 
     node = _node_bin("node")
@@ -8506,6 +8514,7 @@ def cmd_dashboard(args):
         open_browser=not args.no_open,
         allow_public=getattr(args, "insecure", False),
         embedded_chat=embedded_chat,
+        open_path=getattr(args, "open_path", "/") or "/",
     )
 
 
@@ -10715,6 +10724,12 @@ Examples:
     )
     dashboard_parser.add_argument(
         "--no-open", action="store_true", help="Don't open browser automatically"
+    )
+    dashboard_parser.add_argument(
+        "--open-path",
+        default="/",
+        metavar="PATH",
+        help="Route to open in the browser (e.g. /onboarding; default: /)",
     )
     dashboard_parser.add_argument(
         "--insecure",
