@@ -96,6 +96,10 @@ export type DiscordGatewayAccessUser = {
 export type DiscordGatewayAccessUsersResponse = {
   ok?: boolean;
   users: DiscordGatewayAccessUser[];
+  /** Configured governance.role_hierarchy (fallback default set). */
+  roles?: string[];
+  /** Team names already referenced anywhere in governance. */
+  teams?: string[];
 };
 
 export type FolderPolicy = {

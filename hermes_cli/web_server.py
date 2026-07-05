@@ -3021,14 +3021,73 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
     }
 
 
+def _governance_role_options() -> List[str]:
+    """Selectable governance roles: configured role_hierarchy or defaults."""
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    hierarchy = governance.get("role_hierarchy") if isinstance(governance, dict) else None
+    roles: List[str] = []
+    if isinstance(hierarchy, list):
+        for entry in hierarchy:
+            name = str(entry or "").strip()
+            if name and name not in roles:
+                roles.append(name)
+    return roles or ["viewer", "operator", "manager", "admin"]
+
+
+def _governance_team_options() -> List[str]:
+    """Every team name referenced anywhere in governance config.
+
+    Teams are freeform labels: one exists as soon as a user, a delegated
+    team root, or a folder policy references it. Collected here so the
+    dashboard can suggest existing spellings instead of forcing recall.
+    """
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(governance, dict):
+        governance = {}
+    teams: List[str] = []
+    seen: set[str] = set()
+
+    def _add(value: Any) -> None:
+        name = str(value or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            teams.append(name)
+
+    roots = governance.get("team_file_roots")
+    if isinstance(roots, dict):
+        for team in roots:
+            _add(team)
+    users = governance.get("users")
+    if isinstance(users, dict):
+        for record in users.values():
+            if isinstance(record, dict):
+                for team in _coerce_role_list(record.get("teams") or record.get("team")):
+                    _add(team)
+    policies = governance.get("folder_policies")
+    if isinstance(policies, list):
+        for policy in policies:
+            if isinstance(policy, dict):
+                for key in ("read_teams", "write_teams"):
+                    for team in _coerce_role_list(policy.get(key)):
+                        _add(team)
+    return sorted(teams, key=str.lower)
+
+
 @app.get("/api/gateway/{platform}/access-users")
 async def get_gateway_access_users(platform: str):
     """Managed allowlist + governance roles for a messaging platform.
 
     Same contract for discord/slack/mattermost/matrix (the old
-    discord-only route is the discord case of this one).
+    discord-only route is the discord case of this one). ``roles`` and
+    ``teams`` carry the selectable governance options for the editor.
     """
-    return {"users": _load_gateway_access_users(platform)}
+    return {
+        "users": _load_gateway_access_users(platform),
+        "roles": _governance_role_options(),
+        "teams": _governance_team_options(),
+    }
 
 
 @app.put("/api/gateway/{platform}/access-users")

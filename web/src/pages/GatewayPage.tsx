@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -24,7 +25,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
-import { api, type DiscordGatewayAccessUser, type EnvVarInfo, type StatusResponse } from "@/lib/api";
+import {
+  api,
+  type DiscordGatewayAccessUser,
+  type DiscordGatewayAccessUsersResponse,
+  type EnvVarInfo,
+  type StatusResponse,
+} from "@/lib/api";
 import { PluginSlot } from "@/plugins";
 
 type GatewayField = {
@@ -311,6 +318,8 @@ export default function GatewayPage() {
         ACCESS_PLATFORM_IDS.map((id) => [id, [newDiscordAccessRow("admin")]]),
       ),
   );
+  const [roleOptions, setRoleOptions] = useState<string[]>([]);
+  const [teamOptions, setTeamOptions] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -328,7 +337,9 @@ export default function GatewayPage() {
         api.getEnvVars(),
         api.getStatus(),
         ...ACCESS_PLATFORM_IDS.map((id) =>
-          api.getGatewayAccessUsers(id).catch(() => ({ users: [] })),
+          api
+            .getGatewayAccessUsers(id)
+            .catch((): DiscordGatewayAccessUsersResponse => ({ users: [] })),
         ),
       ]);
       setEnv(nextEnv);
@@ -339,6 +350,10 @@ export default function GatewayPage() {
         nextRows[id] = rows.length ? rows : [newDiscordAccessRow("admin")];
       });
       setAccessRows(nextRows);
+      // Governance role/team options ride along on any access response.
+      const withOptions = accessLists.find((list) => (list?.roles?.length ?? 0) > 0);
+      setRoleOptions(withOptions?.roles ?? []);
+      setTeamOptions(withOptions?.teams ?? []);
     } catch (err) {
       showToast(`Failed to load gateway settings: ${err}`, "error");
     } finally {
@@ -699,6 +714,8 @@ export default function GatewayPage() {
                 <GatewayAccessUsersEditor
                   platform={platform}
                   rows={accessRows[platform.id] ?? []}
+                  roleOptions={roleOptions}
+                  teamOptions={teamOptions}
                   busy={busy === `${platform.id}:access-users`}
                   disabled={Boolean(busy)}
                   configured={configured}
@@ -757,9 +774,13 @@ maia logs gateway`}
 }
 
 
+const DEFAULT_ROLE_OPTIONS = ["viewer", "operator", "manager", "admin"];
+
 type GatewayAccessUsersEditorProps = {
   platform: GatewayPlatform;
   rows: DiscordAccessUserDraft[];
+  roleOptions: string[];
+  teamOptions: string[];
   busy: boolean;
   disabled: boolean;
   configured: boolean;
@@ -772,6 +793,8 @@ type GatewayAccessUsersEditorProps = {
 function GatewayAccessUsersEditor({
   platform,
   rows,
+  roleOptions,
+  teamOptions,
   busy,
   disabled,
   configured,
@@ -781,9 +804,12 @@ function GatewayAccessUsersEditor({
   onUpdate,
 }: GatewayAccessUsersEditorProps) {
   const [idHelpOpen, setIdHelpOpen] = useState(false);
+  const [teamsHelpOpen, setTeamsHelpOpen] = useState(false);
   const allowKey = ACCESS_ENV_KEYS[platform.id] ?? "";
   const idPlaceholder = USER_ID_PLACEHOLDERS[platform.id] ?? "user id";
   const idHelp = USER_ID_HELP[platform.id] ?? [];
+  const roleChoices = roleOptions.length ? roleOptions : DEFAULT_ROLE_OPTIONS;
+  const teamsListId = `gateway-team-options-${platform.id}`;
 
   return (
     <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
@@ -864,22 +890,76 @@ function GatewayAccessUsersEditor({
               />
             </label>
             <label className="grid gap-1.5">
-              <Label className="font-mono-ui text-[0.7rem]">Governance roles</Label>
-              <Input
+              <Label className="font-mono-ui text-[0.7rem]">Access level (role)</Label>
+              <select
                 value={row.roles}
-                placeholder="admin or operator"
                 onChange={(event) => onUpdate(index, { roles: event.target.value })}
-                autoComplete="off"
-              />
+                className="h-9 w-full border border-border bg-background px-2 text-sm"
+              >
+                {row.roles && !roleChoices.includes(row.roles) && (
+                  <option value={row.roles}>{row.roles}</option>
+                )}
+                {roleChoices.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="grid gap-1.5">
-              <Label className="font-mono-ui text-[0.7rem]">Teams</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="font-mono-ui text-[0.7rem]">Teams</Label>
+                {index === 0 && (
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[0.65rem] font-bold text-muted-foreground hover:border-primary hover:text-primary"
+                    aria-label="What teams are and where they are managed"
+                    aria-expanded={teamsHelpOpen}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setTeamsHelpOpen((open) => !open);
+                    }}
+                  >
+                    ?
+                  </button>
+                )}
+              </div>
               <Input
+                list={teamsListId}
                 value={row.teams}
                 placeholder="engineering, finance"
                 onChange={(event) => onUpdate(index, { teams: event.target.value })}
                 autoComplete="off"
               />
+              {teamsHelpOpen && index === 0 && (
+                <div className="rounded-sm border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground">
+                  <p>
+                    Teams group users for shared knowledge and folder access. A
+                    team exists as soon as something references it — just type a
+                    name here (comma-separate several). What each team can reach
+                    is managed in{" "}
+                    <Link to="/file-access" className="font-bold text-primary hover:underline">
+                      File Access
+                    </Link>{" "}
+                    (delegated team roots and folder policies) and team knowledge
+                    in{" "}
+                    <Link to="/knowledge" className="font-bold text-primary hover:underline">
+                      Knowledge
+                    </Link>
+                    ; assignments live under <code>governance.users</code> in{" "}
+                    <Link
+                      to="/config?search=governance"
+                      className="font-bold text-primary hover:underline"
+                    >
+                      Config
+                    </Link>
+                    .
+                  </p>
+                  {teamOptions.length > 0 && (
+                    <p className="mt-1">Existing teams: {teamOptions.join(", ")}.</p>
+                  )}
+                </div>
+              )}
             </label>
             <Button
               size="xs"
@@ -894,6 +974,12 @@ function GatewayAccessUsersEditor({
           </div>
         ))}
       </div>
+
+      <datalist id={teamsListId}>
+        {teamOptions.map((team) => (
+          <option key={team} value={team} />
+        ))}
+      </datalist>
 
       <div className="mt-3 grid gap-2 text-xs normal-case leading-5 text-muted-foreground md:grid-cols-3">
         <div><strong>Multiple users:</strong> add one row per user ID; the saved allowlist is comma-separated automatically.</div>
