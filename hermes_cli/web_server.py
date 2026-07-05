@@ -3075,6 +3075,20 @@ def _governance_team_options() -> List[str]:
     return sorted(teams, key=str.lower)
 
 
+@app.get("/api/governance/options")
+async def get_governance_options():
+    """Selectable governance vocabulary for dashboard forms.
+
+    ``roles`` is the configured role_hierarchy (or the default set) and
+    ``teams`` is every team name referenced anywhere in governance, so
+    forms can offer dropdowns/suggestions instead of free-typed commas.
+    """
+    return {
+        "roles": _governance_role_options(),
+        "teams": _governance_team_options(),
+    }
+
+
 @app.get("/api/gateway/{platform}/access-users")
 async def get_gateway_access_users(platform: str):
     """Managed allowlist + governance roles for a messaging platform.

@@ -30,6 +30,7 @@ import {
   type OnboardingState,
 } from "@/lib/api";
 import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
+import { RoleMultiSelect, useGovernanceOptions } from "@/components/GovernanceFields";
 import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
 
@@ -388,24 +389,19 @@ function StepLinkCard({
 
 function BaselineCard() {
   const { toast, showToast } = useToast();
-  const [allowedRoles, setAllowedRoles] = useState("operator");
-  const [approverRoles, setApproverRoles] = useState("manager");
+  const { roles: roleOptions } = useGovernanceOptions();
+  const [allowedRoles, setAllowedRoles] = useState<string[]>(["operator"]);
+  const [approverRoles, setApproverRoles] = useState<string[]>(["manager"]);
   const [smart, setSmart] = useState(true);
   const [applying, setApplying] = useState(false);
   const [warnings, setWarnings] = useState<GovernanceWarning[] | null>(null);
-
-  const toList = (value: string) =>
-    value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
 
   const apply = async () => {
     setApplying(true);
     try {
       const result = await api.applyGovernanceBaseline({
-        terminal_allowed_roles: toList(allowedRoles),
-        terminal_approver_roles: toList(approverRoles),
+        terminal_allowed_roles: allowedRoles,
+        terminal_approver_roles: approverRoles,
         smart_approvals: smart,
       });
       setWarnings(result.warnings ?? []);
@@ -437,22 +433,24 @@ function BaselineCard() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Terminal allowed roles</Label>
-            <Input
+            <RoleMultiSelect
               value={allowedRoles}
-              onChange={(event) => setAllowedRoles(event.target.value)}
-              placeholder="operator"
+              onChange={setAllowedRoles}
+              options={roleOptions}
+              emptyHint="none selected = no restriction"
             />
             <p className="text-xs text-muted-foreground">
-              Who may run terminal/code at all. Comma-separated. Leave empty for
-              no restriction.
+              Who may run terminal/code at all. Leave all unselected for no
+              restriction.
             </p>
           </div>
           <div className="space-y-2">
             <Label>Command approver roles</Label>
-            <Input
+            <RoleMultiSelect
               value={approverRoles}
-              onChange={(event) => setApproverRoles(event.target.value)}
-              placeholder="manager"
+              onChange={setApproverRoles}
+              options={roleOptions}
+              emptyHint="pick who approves flagged commands"
             />
             <p className="text-xs text-muted-foreground">
               Who must approve flagged commands from non-approvers. The

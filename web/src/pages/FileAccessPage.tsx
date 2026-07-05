@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { FolderTree, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import {
+  HelpBox,
+  HelpDot,
+  RoleMultiSelect,
+  TeamsHelpContent,
+  useGovernanceOptions,
+} from "@/components/GovernanceFields";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -95,6 +103,44 @@ export default function FileAccessPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
+  const { roles: roleOptions, teams: teamOptions } = useGovernanceOptions();
+
+  const teamsHelp = <TeamsHelpContent existingTeams={teamOptions} />;
+  const actorKeyHelp = (
+    <>
+      Exact actor keys in the <code>&lt;platform&gt;:&lt;user id&gt;</code>{" "}
+      format, e.g. <code>slack:U01ABC2DEF3</code> or{" "}
+      <code>discord:99887766</code>. Copy them from each platform&apos;s users
+      editor in{" "}
+      <Link to="/gateway" className="font-bold text-primary hover:underline">
+        Gateway
+      </Link>{" "}
+      or from{" "}
+      <Link to="/dashboard-access" className="font-bold text-primary hover:underline">
+        Access
+      </Link>
+      .
+    </>
+  );
+  const approvalHelp = (
+    <>
+      Even users with a write grant get their changes staged as a pending
+      diff on paths with approval requirements — someone with one of these
+      roles (or one of the exact users) must approve each change in{" "}
+      <Link to="/file-approvals" className="font-bold text-primary hover:underline">
+        File Approvals
+      </Link>
+      . Leave empty for direct writes.
+    </>
+  );
+  const serverPathHelp = (
+    <>
+      A path on the machine running Maia, e.g.{" "}
+      <code>/srv/company/marketing</code> or <code>/home/maia/company-files</code>.
+      The directory must exist and be readable by the Maia process; on WSL
+      keep governed folders on the Linux filesystem.
+    </>
+  );
 
   const load = useCallback(() => {
     setLoading(true);
@@ -293,21 +339,29 @@ export default function FileAccessPage() {
                       value={root.team}
                       onChange={(value) => updateTeamRoot(index, { team: value })}
                       placeholder="marketing"
+                      list="fileaccess-team-options"
+                      help={teamsHelp}
+                      note=""
                     />
                     <Field
                       label="Server root"
                       value={root.path}
                       onChange={(value) => updateTeamRoot(index, { path: value })}
                       placeholder="/srv/company/marketing"
+                      help={serverPathHelp}
+                      note=""
                     />
-                    <Field
-                      label="Manager roles"
-                      value={root.manager_roles}
-                      onChange={(value) =>
-                        updateTeamRoot(index, { manager_roles: value })
-                      }
-                      placeholder="manager"
-                    />
+                    <div className="space-y-2">
+                      <Label>Manager roles</Label>
+                      <RoleMultiSelect
+                        value={textToList(root.manager_roles)}
+                        onChange={(roles) =>
+                          updateTeamRoot(index, { manager_roles: roles.join(", ") })
+                        }
+                        options={roleOptions}
+                        emptyHint="who may manage this root"
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <div className="flex-1">
                         <Field
@@ -317,6 +371,7 @@ export default function FileAccessPage() {
                             updateTeamRoot(index, { managers: value })
                           }
                           placeholder="sso:ana@company.com"
+                          help={actorKeyHelp}
                         />
                       </div>
                       <Button
@@ -368,14 +423,14 @@ export default function FileAccessPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 normal-case lg:grid-cols-2">
-              <div className="space-y-2 lg:col-span-2">
-                <Label>Server path</Label>
-                <Input
+              <div className="lg:col-span-2">
+                <Field
+                  label="Server path"
                   value={policy.path}
-                  onChange={(event) =>
-                    updatePolicy(index, { ...policy, path: event.target.value })
-                  }
+                  onChange={(value) => updatePolicy(index, { ...policy, path: value })}
                   placeholder="/srv/company/marketing"
+                  help={serverPathHelp}
+                  note=""
                 />
               </div>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -394,44 +449,53 @@ export default function FileAccessPage() {
                 value={listToText(policy.read_teams)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "read_teams", value))}
                 placeholder="marketing"
+                list="fileaccess-team-options"
+                help={teamsHelp}
               />
               <Field
                 label="Write teams"
                 value={listToText(policy.write_teams)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "write_teams", value))}
                 placeholder="marketing-leads"
+                list="fileaccess-team-options"
               />
               <Field
                 label="Read users"
                 value={listToText(policy.read_users)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "read_users", value))}
                 placeholder="slack:U123, slack:U456"
+                help={actorKeyHelp}
               />
               <Field
                 label="Write users"
                 value={listToText(policy.write_users)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "write_users", value))}
                 placeholder="slack:U123"
+                help={actorKeyHelp}
               />
               <Field
                 label="Deny users"
                 value={listToText(policy.deny_users)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "deny_users", value))}
                 placeholder="discord:99887766"
+                help={actorKeyHelp}
               />
               <Field
                 label="Deny teams"
                 value={listToText(policy.deny_teams)}
                 onChange={(value) => updatePolicy(index, updateListField(policy, "deny_teams", value))}
                 placeholder="marketing"
+                list="fileaccess-team-options"
               />
-              <Field
+              <RoleField
                 label="Write approval roles"
-                value={listToText(policy.write_approval_roles)}
-                onChange={(value) =>
-                  updatePolicy(index, updateListField(policy, "write_approval_roles", value))
+                help={approvalHelp}
+                value={policy.write_approval_roles ?? []}
+                onChange={(roles) =>
+                  updatePolicy(index, { ...policy, write_approval_roles: roles })
                 }
-                placeholder="manager"
+                options={roleOptions}
+                emptyHint="empty = direct writes"
               />
               <Field
                 label="Write approval users"
@@ -440,6 +504,7 @@ export default function FileAccessPage() {
                   updatePolicy(index, updateListField(policy, "write_approval_users", value))
                 }
                 placeholder="slack:U_MANAGER"
+                help={actorKeyHelp}
               />
               <div className="space-y-2 lg:col-span-2">
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -473,17 +538,23 @@ export default function FileAccessPage() {
               </div>
               {canAdmin && (
                 <>
-                  <Field
+                  <RoleField
                     label="Read roles"
-                    value={listToText(policy.read_roles)}
-                    onChange={(value) => updatePolicy(index, updateListField(policy, "read_roles", value))}
-                    placeholder="viewer, manager"
+                    value={policy.read_roles ?? []}
+                    onChange={(roles) =>
+                      updatePolicy(index, { ...policy, read_roles: roles })
+                    }
+                    options={roleOptions}
+                    emptyHint="no role-based read grant"
                   />
-                  <Field
+                  <RoleField
                     label="Write roles"
-                    value={listToText(policy.write_roles)}
-                    onChange={(value) => updatePolicy(index, updateListField(policy, "write_roles", value))}
-                    placeholder="manager, admin"
+                    value={policy.write_roles ?? []}
+                    onChange={(roles) =>
+                      updatePolicy(index, { ...policy, write_roles: roles })
+                    }
+                    options={roleOptions}
+                    emptyHint="no role-based write grant"
                   />
                 </>
               )}
@@ -491,6 +562,51 @@ export default function FileAccessPage() {
           </Card>
         ))}
       </div>
+
+      <datalist id="fileaccess-team-options">
+        {teamOptions.map((team) => (
+          <option key={team} value={team} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+function RoleField({
+  label,
+  help,
+  value,
+  onChange,
+  options,
+  emptyHint,
+}: {
+  label: string;
+  help?: ReactNode;
+  value: string[];
+  onChange: (roles: string[]) => void;
+  options: string[];
+  emptyHint?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Label>{label}</Label>
+        {help ? (
+          <HelpDot
+            ariaLabel={`Help for ${label}`}
+            open={open}
+            onToggle={() => setOpen((o) => !o)}
+          />
+        ) : null}
+      </div>
+      {help && open ? <HelpBox>{help}</HelpBox> : null}
+      <RoleMultiSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        emptyHint={emptyHint}
+      />
     </div>
   );
 }
@@ -500,21 +616,42 @@ function Field({
   value,
   onChange,
   placeholder,
+  list,
+  help,
+  note = "Comma-separated.",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /** Optional datalist id for value suggestions (e.g. existing teams). */
+  list?: string;
+  /** Optional "?"-toggled help content. */
+  help?: ReactNode;
+  note?: string;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label>{label}</Label>
+        {help ? (
+          <HelpDot
+            ariaLabel={`Help for ${label}`}
+            open={helpOpen}
+            onToggle={() => setHelpOpen((open) => !open)}
+          />
+        ) : null}
+      </div>
       <Input
+        list={list}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        autoComplete="off"
       />
-      <p className="text-xs text-muted-foreground">Comma-separated.</p>
+      {help && helpOpen ? <HelpBox>{help}</HelpBox> : null}
+      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
     </div>
   );
 }

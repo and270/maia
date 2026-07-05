@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   CheckCircle2,
   FileCheck,
@@ -169,10 +170,15 @@ export default function FileApprovalsPage() {
           </div>
         </div>
         <p className="text-xs normal-case leading-5 text-muted-foreground">
-          Writes to folders whose policy declares write_approval_roles /
-          write_approval_users are staged here until an approver accepts them.
-          Approving applies the exact reviewed content; if the file changed on
-          disk after staging, the request is marked stale instead.
+          Writes to folders whose policy declares write approval roles/users
+          are staged here until an approver accepts them. Approving applies
+          the exact reviewed content; if the file changed on disk after
+          staging, the request is marked stale instead. Which folders require
+          approval, and who approves, is configured per policy in{" "}
+          <Link to="/file-access" className="font-bold text-primary hover:underline">
+            File Access
+          </Link>
+          .
         </p>
       </section>
 

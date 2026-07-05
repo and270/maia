@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Ban,
   Check,
@@ -8,6 +9,14 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import {
+  HelpBox,
+  HelpDot,
+  RoleMultiSelect,
+  TeamsHelpContent,
+  TeamsInput,
+  useGovernanceOptions,
+} from "@/components/GovernanceFields";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -73,9 +82,11 @@ export default function DashboardAccessPage() {
   const [drafts, setDrafts] = useState<Record<string, RequestDraft>>({});
   const [manualActor, setManualActor] = useState("");
   const [manualReason, setManualReason] = useState("");
+  const [actorHelpOpen, setActorHelpOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const { toast, showToast } = useToast();
+  const { roles: roleOptions, teams: teamOptions } = useGovernanceOptions();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -231,6 +242,8 @@ export default function DashboardAccessPage() {
               request={request}
               draft={drafts[request.id] ?? defaultDraft(request)}
               busy={busy}
+              roleOptions={roleOptions}
+              teamOptions={teamOptions}
               onDraft={(patch) => updateDraft(request.id, patch)}
               onApprove={() => approve(request)}
               onDeny={() => deny(request)}
@@ -252,7 +265,21 @@ export default function DashboardAccessPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 normal-case md:grid-cols-[1fr_1fr_auto]">
-          <Field label="Actor key" value={manualActor} onChange={setManualActor} placeholder="discord:99887766" />
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Label>Actor key</Label>
+              <HelpDot
+                ariaLabel="What an actor key is and where to find it"
+                open={actorHelpOpen}
+                onToggle={() => setActorHelpOpen((open) => !open)}
+              />
+            </div>
+            <Input
+              value={manualActor}
+              onChange={(event) => setManualActor(event.target.value)}
+              placeholder="discord:99887766"
+            />
+          </div>
           <Field label="Reason" value={manualReason} onChange={setManualReason} placeholder="Role change" />
           <Button
             className="self-end"
@@ -263,6 +290,21 @@ export default function DashboardAccessPage() {
             <Ban className="h-4 w-4" />
             Revoke
           </Button>
+          {actorHelpOpen && (
+            <div className="md:col-span-3">
+              <HelpBox>
+                The actor key is the identity Maia uses everywhere:{" "}
+                <code>&lt;platform&gt;:&lt;user id&gt;</code>, e.g.{" "}
+                <code>slack:U01ABC2DEF3</code> or <code>discord:99887766</code>.
+                Copy it from a request card above, from Recent Decisions below,
+                or from the platform&apos;s users editor in{" "}
+                <Link to="/gateway" className="font-bold text-primary hover:underline">
+                  Gateway
+                </Link>
+                .
+              </HelpBox>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -326,6 +368,8 @@ function AccessRequestCard({
   onDeny,
   onDraft,
   request,
+  roleOptions,
+  teamOptions,
 }: {
   busy: string;
   draft: RequestDraft;
@@ -333,7 +377,10 @@ function AccessRequestCard({
   onDeny: () => void;
   onDraft: (patch: Partial<RequestDraft>) => void;
   request: DashboardAccessRequest;
+  roleOptions: string[];
+  teamOptions: string[];
 }) {
+  const [teamsHelpOpen, setTeamsHelpOpen] = useState(false);
   return (
     <div className="grid gap-4 border border-border p-4 normal-case lg:grid-cols-2">
       <div className="space-y-2 lg:col-span-2">
@@ -347,8 +394,37 @@ function AccessRequestCard({
         </p>
       </div>
       <Field label="Name" value={draft.name} onChange={(value) => onDraft({ name: value })} />
-      <Field label="Roles" value={draft.roles} onChange={(value) => onDraft({ roles: value })} placeholder="manager" />
-      <Field label="Teams" value={draft.teams} onChange={(value) => onDraft({ teams: value })} placeholder="marketing" />
+      <div className="space-y-2">
+        <Label>Access level (roles)</Label>
+        <RoleMultiSelect
+          value={textToList(draft.roles)}
+          onChange={(roles) => onDraft({ roles: roles.join(", ") })}
+          options={roleOptions}
+          emptyHint="pick at least one role"
+        />
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5">
+          <Label>Teams</Label>
+          <HelpDot
+            ariaLabel="What teams are and where they are managed"
+            open={teamsHelpOpen}
+            onToggle={() => setTeamsHelpOpen((open) => !open)}
+          />
+        </div>
+        <TeamsInput
+          value={draft.teams}
+          onChange={(value) => onDraft({ teams: value })}
+          options={teamOptions}
+          listId={`access-team-options-${request.id}`}
+          placeholder="marketing"
+        />
+        {teamsHelpOpen && (
+          <HelpBox>
+            <TeamsHelpContent existingTeams={teamOptions} />
+          </HelpBox>
+        )}
+      </div>
       <Field label="Approval note" value={draft.note} onChange={(value) => onDraft({ note: value })} />
       <Field
         label="Denial reason"

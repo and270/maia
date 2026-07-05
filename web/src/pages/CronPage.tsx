@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   CheckCircle2,
   Clock,
@@ -25,6 +26,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/i18n";
+import {
+  HelpBox,
+  HelpDot,
+  RoleMultiSelect,
+  useGovernanceOptions,
+} from "@/components/GovernanceFields";
 import { PluginSlot } from "@/plugins";
 
 function formatTime(iso?: string | null): string {
@@ -62,9 +69,12 @@ export default function CronPage() {
   const [name, setName] = useState("");
   const [deliver, setDeliver] = useState("local");
   const [requiresApproval, setRequiresApproval] = useState(false);
-  const [approvalRoles, setApprovalRoles] = useState("admin");
+  const [approvalRoles, setApprovalRoles] = useState<string[]>(["admin"]);
   const [approvalUsers, setApprovalUsers] = useState("");
   const [creating, setCreating] = useState(false);
+  const [scheduleHelpOpen, setScheduleHelpOpen] = useState(false);
+  const [approverHelpOpen, setApproverHelpOpen] = useState(false);
+  const { roles: roleOptions } = useGovernanceOptions();
 
   const loadJobs = useCallback(() => {
     api
@@ -93,7 +103,7 @@ export default function CronPage() {
         authorization: requiresApproval
           ? {
               required: true,
-              roles: splitList(approvalRoles),
+              roles: approvalRoles,
               users: splitList(approvalUsers),
             }
           : undefined,
@@ -104,7 +114,7 @@ export default function CronPage() {
       setName("");
       setDeliver("local");
       setRequiresApproval(false);
-      setApprovalRoles("admin");
+      setApprovalRoles(["admin"]);
       setApprovalUsers("");
       loadJobs();
     } catch (e) {
@@ -245,13 +255,42 @@ export default function CronPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="cron-schedule">{t.cron.schedule}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="cron-schedule">{t.cron.schedule}</Label>
+                  <HelpDot
+                    ariaLabel="How to write a cron schedule"
+                    open={scheduleHelpOpen}
+                    onToggle={() => setScheduleHelpOpen((open) => !open)}
+                  />
+                </div>
                 <Input
                   id="cron-schedule"
                   placeholder={t.cron.schedulePlaceholder}
                   value={schedule}
                   onChange={(e) => setSchedule(e.target.value)}
                 />
+                {scheduleHelpOpen && (
+                  <HelpBox>
+                    <p>
+                      Five fields: minute, hour, day of month, month, day of
+                      week. Examples:
+                    </p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4">
+                      <li>
+                        <code>0 9 * * MON</code> — Mondays at 09:00
+                      </li>
+                      <li>
+                        <code>*/30 * * * *</code> — every 30 minutes
+                      </li>
+                      <li>
+                        <code>0 8 1 * *</code> — the 1st of each month at 08:00
+                      </li>
+                      <li>
+                        <code>0 18 * * MON-FRI</code> — weekdays at 18:00
+                      </li>
+                    </ul>
+                  </HelpBox>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -301,7 +340,7 @@ export default function CronPage() {
                 />
                 <span className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4" />
-                  Require authorization checkpoint
+                  Require human approval before each run
                 </span>
               </label>
 
@@ -311,23 +350,54 @@ export default function CronPage() {
                     <Label htmlFor="cron-approval-roles">
                       Approver roles
                     </Label>
-                    <Input
-                      id="cron-approval-roles"
-                      placeholder="manager, admin"
+                    <RoleMultiSelect
                       value={approvalRoles}
-                      onChange={(e) => setApprovalRoles(e.target.value)}
+                      onChange={setApprovalRoles}
+                      options={roleOptions}
+                      emptyHint="pick who can authorize runs"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="cron-approval-users">
-                      Approver users
-                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor="cron-approval-users">
+                        Approver users
+                      </Label>
+                      <HelpDot
+                        ariaLabel="Approver user key format and where roles come from"
+                        open={approverHelpOpen}
+                        onToggle={() => setApproverHelpOpen((open) => !open)}
+                      />
+                    </div>
                     <Input
                       id="cron-approval-users"
                       placeholder="slack:U123, telegram:987654"
                       value={approvalUsers}
                       onChange={(e) => setApprovalUsers(e.target.value)}
                     />
+                    {approverHelpOpen && (
+                      <HelpBox>
+                        When the job becomes due it pauses until someone with
+                        an approver role, or one of these exact users,
+                        authorizes it. Users are actor keys in the{" "}
+                        <code>&lt;platform&gt;:&lt;user id&gt;</code> format
+                        (e.g. <code>slack:U01ABC2DEF3</code>) — copy them from
+                        the platform&apos;s users editor in{" "}
+                        <Link
+                          to="/gateway"
+                          className="font-bold text-primary hover:underline"
+                        >
+                          Gateway
+                        </Link>{" "}
+                        or from{" "}
+                        <Link
+                          to="/dashboard-access"
+                          className="font-bold text-primary hover:underline"
+                        >
+                          Access
+                        </Link>
+                        . Roles come from the governance hierarchy.
+                      </HelpBox>
+                    )}
                   </div>
                 </div>
               )}

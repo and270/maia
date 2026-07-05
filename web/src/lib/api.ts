@@ -284,6 +284,8 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   getOnboardingState: () => fetchJSON<OnboardingState>("/api/onboarding/state"),
+  getGovernanceOptions: () =>
+    fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
   setReasoningEffort: (effort: string) =>
     fetchJSON<{ ok: boolean; effort: string }>("/api/model/effort", {
       method: "POST",
