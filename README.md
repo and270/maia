@@ -57,7 +57,7 @@ Provider keys live in the managed `.env` credential flow, never in prompts, memo
 The installed commands are renamed so operators do not use the upstream `hermes` command name:
 
 ```bash
-maia              # interactive assistant
+maia              # open Maia: dashboard + chat in the browser (terminal chat: maia --tui)
 maia gateway      # messaging gateway
 maia cron list    # scheduled workflows
 maia model        # model/provider selection
@@ -82,9 +82,9 @@ If you skipped that step:
 
 ```bash
 source ~/.bashrc   # or: source ~/.zshrc
-maia dashboard     # browser onboarding: provider, gateway, governance, chat
-maia setup         # or: terminal setup wizard
-maia               # start chatting in the terminal
+maia               # opens the dashboard: onboarding, governance, and the chat tab
+maia --tui         # terminal chat instead (bare `maia` stays terminal chat over SSH)
+maia setup         # terminal setup wizard
 ```
 
 Useful installer options and environment variables:

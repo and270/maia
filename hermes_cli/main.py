@@ -1321,8 +1321,100 @@ def _pin_kanban_board_env() -> None:
         pass
 
 
+def _browser_capable_environment() -> bool:
+    """True when this machine can plausibly open a web browser."""
+    if sys.platform == "darwin" or os.name == "nt":
+        return True
+    try:
+        if "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower():
+            return True  # WSL opens via the Windows side
+    except OSError:
+        pass
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _bare_maia_opens_dashboard() -> bool:
+    """Bare interactive `maia` on a desktop opens the dashboard.
+
+    Only the literal no-argument invocation qualifies; any flag, prompt, or
+    piped stdin/stdout keeps the classic terminal-chat behavior (SSH and
+    scripts are unaffected). Opt out persistently with MAIA_NO_DASHBOARD=1.
+    """
+    if len(sys.argv) != 1:
+        return False
+    if os.environ.get("MAIA_NO_DASHBOARD") == "1":
+        return False
+    if os.environ.get("HERMES_TUI") == "1":
+        return False
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return False
+    except (AttributeError, ValueError, OSError):
+        return False
+    return _browser_capable_environment()
+
+
+def _open_url_in_browser(url: str) -> None:
+    """Best-effort browser open, with the WSL Windows-side fallback."""
+    import subprocess as _subprocess
+    import webbrowser
+
+    try:
+        if "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower():
+            for opener in (
+                ["wslview", url],
+                ["powershell.exe", "-NoProfile", "Start-Process", url],
+            ):
+                try:
+                    _subprocess.run(
+                        opener,
+                        stdout=_subprocess.DEVNULL,
+                        stderr=_subprocess.DEVNULL,
+                        timeout=15,
+                        check=True,
+                    )
+                    return
+                except Exception:
+                    continue
+    except OSError:
+        pass
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
+def _launch_dashboard_from_bare_maia() -> None:
+    print("◆ Opening the Maia dashboard (chat tab included)...")
+    print("  Terminal chat instead: maia --tui    Always terminal: export MAIA_NO_DASHBOARD=1")
+    running = _find_stale_dashboard_pids()
+    if running:
+        url = "http://127.0.0.1:9119"
+        print(f"  Dashboard already running — {url}")
+        _open_url_in_browser(url)
+        return
+    dashboard_args = argparse.Namespace(
+        host="127.0.0.1",
+        port=9119,
+        no_open=False,
+        insecure=False,
+        tui=False,
+        no_chat=False,
+        stop=False,
+        status=False,
+        open_path="/",
+    )
+    cmd_dashboard(dashboard_args)
+
+
 def cmd_chat(args):
     """Run interactive chat CLI."""
+    # Bare `maia` on a browser-capable machine is the corporate entry point:
+    # open the dashboard (which embeds the chat tab) instead of the terminal.
+    if _bare_maia_opens_dashboard():
+        _launch_dashboard_from_bare_maia()
+        return
+
     use_tui = getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1"
 
     # Resolve --continue into --resume with the latest session or by name
@@ -8507,7 +8599,12 @@ def cmd_dashboard(args):
 
     from hermes_cli.web_server import start_server
 
-    embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
+    # The in-browser chat tab is part of the product now: enabled by default,
+    # disabled with --no-chat or HERMES_DASHBOARD_TUI=0. --tui is kept as a
+    # compatibility no-op from when the tab was opt-in.
+    embedded_chat = not getattr(args, "no_chat", False)
+    if os.environ.get("HERMES_DASHBOARD_TUI") == "0":
+        embedded_chat = False
     start_server(
         host=args.host,
         port=args.port,
@@ -10743,8 +10840,16 @@ Examples:
         "--tui",
         action="store_true",
         help=(
-            "Expose the in-browser Chat tab (embedded `maia --tui` via PTY/WebSocket). "
-            "Alternatively set HERMES_DASHBOARD_TUI=1."
+            "Deprecated no-op: the in-browser Chat tab is on by default now. "
+            "Use --no-chat to disable it."
+        ),
+    )
+    dashboard_parser.add_argument(
+        "--no-chat",
+        action="store_true",
+        help=(
+            "Disable the in-browser Chat tab (embedded chat via PTY/WebSocket). "
+            "Alternatively set HERMES_DASHBOARD_TUI=0."
         ),
     )
     # Lifecycle flags — mutually exclusive with each other and with the

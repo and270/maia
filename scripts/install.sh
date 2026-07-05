@@ -1590,10 +1590,10 @@ run_setup_wizard() {
         log_info "Ctrl+C stops the dashboard; restart it any time with: maia dashboard"
         echo ""
         cd "$INSTALL_DIR"
-        # --tui embeds the in-browser chat tab next to the setup pages, and
-        # --open-path lands the browser on the guided onboarding steps.
+        # The chat tab is embedded by default; --open-path lands the browser
+        # on the guided onboarding steps.
         # Redirect stdin from /dev/tty so it stays usable when piped from curl.
-        $MAIA_CMD dashboard --tui --open-path /onboarding < /dev/tty || {
+        $MAIA_CMD dashboard --open-path /onboarding < /dev/tty || {
             log_warn "Dashboard exited with an error. Retry with: maia dashboard"
             log_info "Or configure from the terminal instead: maia setup"
         }
