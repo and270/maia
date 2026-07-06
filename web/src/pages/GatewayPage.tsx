@@ -306,9 +306,11 @@ const PLATFORMS: GatewayPlatform[] = [
         title: "Invite the bot to your server",
         items: [
           "Go to OAuth2 → URL Generator.",
-          "In Scopes, check exactly two boxes: “bot” and “applications.commands”.",
+          "In Scopes, check exactly two boxes: “bot” and “applications.commands” — and nothing else.",
           "Checking “bot” makes a NEW panel appear below the scopes list: Bot Permissions. The permission checkboxes are there — not in the scopes list.",
           "In that panel check: View Channels, Send Messages, Send Messages in Threads, Read Message History, Embed Links, Attach Files, Add Reactions.",
+          "Integration type: keep Guild Install.",
+          "If the Generated URL box asks for a redirect URI instead of showing a link, an extra scope is checked — scopes like identify, guilds, or webhook.incoming require one. Uncheck everything except “bot” and “applications.commands” and the URL appears.",
           "Copy the Generated URL at the bottom, open it in the browser, pick your server, and authorize.",
         ],
       },
