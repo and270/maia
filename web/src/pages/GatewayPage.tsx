@@ -305,11 +305,11 @@ const PLATFORMS: GatewayPlatform[] = [
       {
         title: "Invite the bot to your server",
         items: [
-          "Go to OAuth2 → URL Generator (Gerador de URL OAuth2).",
-          "In Scopes (Escopos), check exactly two boxes: “bot” and “applications.commands”.",
-          "Checking “bot” makes a NEW panel appear below the scopes list: Bot Permissions (Permissões de bot). The permission checkboxes are there — not in the scopes list.",
-          "In that panel check: View Channels (Ver canais), Send Messages (Enviar mensagens), Send Messages in Threads (Enviar mensagens em tópicos), Read Message History (Ler o histórico de mensagens), Embed Links (Incorporar links), Attach Files (Anexar arquivos), Add Reactions (Adicionar reações).",
-          "Copy the Generated URL (URL gerado) at the bottom, open it in the browser, pick your server, and authorize.",
+          "Go to OAuth2 → URL Generator.",
+          "In Scopes, check exactly two boxes: “bot” and “applications.commands”.",
+          "Checking “bot” makes a NEW panel appear below the scopes list: Bot Permissions. The permission checkboxes are there — not in the scopes list.",
+          "In that panel check: View Channels, Send Messages, Send Messages in Threads, Read Message History, Embed Links, Attach Files, Add Reactions.",
+          "Copy the Generated URL at the bottom, open it in the browser, pick your server, and authorize.",
         ],
       },
       {
