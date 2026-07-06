@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   ExternalLink,
   MessageSquare,
@@ -43,6 +46,13 @@ type GatewayField = {
   help?: string[];
 };
 
+type SetupGuideStep = {
+  title: string;
+  items: string[];
+  url?: string;
+  urlLabel?: string;
+};
+
 type GatewayPlatform = {
   id: string;
   name: string;
@@ -54,6 +64,8 @@ type GatewayPlatform = {
   fields: GatewayField[];
   steps: string[];
   test: string;
+  /** Full step-by-step connection guide shown collapsible at the card top. */
+  guide?: SetupGuideStep[];
 };
 
 type DiscordAccessUserDraft = {
@@ -163,6 +175,57 @@ const PLATFORMS: GatewayPlatform[] = [
       "Install the app, copy the xoxb bot token, then invite the bot to channels.",
     ],
     test: "DM the bot, then test one approved channel with @Maia.",
+    guide: [
+      {
+        title: "Create the Slack app",
+        url: "https://api.slack.com/apps",
+        urlLabel: "api.slack.com/apps",
+        items: [
+          "Click Create New App → From scratch.",
+          "Name it (e.g. Maia) and pick your company workspace.",
+        ],
+      },
+      {
+        title: "Enable Socket Mode and create the app-level token",
+        items: [
+          "In the left menu: Settings → Socket Mode → toggle Enable Socket Mode.",
+          "When prompted, create an app-level token with the connections:write scope.",
+          "Copy the token that starts with xapp- and paste it in the App-level token field below.",
+          "Socket Mode means no public webhook URL is needed — the bot connects out from your server.",
+        ],
+      },
+      {
+        title: "Give the bot permissions (OAuth scopes)",
+        items: [
+          "Features → OAuth & Permissions → Bot Token Scopes.",
+          "Add at least: app_mentions:read, chat:write, im:history, im:read, im:write, channels:history, groups:history, mpim:history, users:read.",
+          "Add files:read and files:write if users will exchange files with Maia.",
+        ],
+      },
+      {
+        title: "Subscribe to events",
+        items: [
+          "Features → Event Subscriptions → toggle Enable Events (no URL needed with Socket Mode).",
+          "Under Subscribe to bot events add: message.im, app_mention, message.channels, message.groups, message.mpim.",
+          "Save the changes.",
+        ],
+      },
+      {
+        title: "Install the app and copy the bot token",
+        items: [
+          "Settings → Install App → Install to Workspace, then authorize.",
+          "Copy the Bot User OAuth Token that starts with xoxb- and paste it in the Bot token field below.",
+        ],
+      },
+      {
+        title: "Allow users, save, and go online",
+        items: [
+          "Add member IDs in the users editor below (profile → ⋮ → Copy member ID; the ? there shows how).",
+          "Click Save Slack, then restart the gateway (System panel in the sidebar).",
+          "Invite the bot to a channel with /invite @Maia and send it a DM to test.",
+        ],
+      },
+    ],
   },
   {
     id: "discord",
@@ -213,6 +276,50 @@ const PLATFORMS: GatewayPlatform[] = [
       "Add the initial admin in the Discord users section below, or authorize a Discord role.",
     ],
     test: "DM the bot or mention it in an approved channel after the gateway starts.",
+    guide: [
+      {
+        title: "Create the application",
+        url: "https://discord.com/developers/applications",
+        urlLabel: "Developer Portal",
+        items: [
+          "Click New Application, name it (e.g. Maia), and create it.",
+          "Optional: add an icon and description — that is what your team sees.",
+        ],
+      },
+      {
+        title: "Configure the bot and its intents",
+        items: [
+          "Open the Bot tab of your application.",
+          "Under Privileged Gateway Intents enable MESSAGE CONTENT INTENT — required, the bot cannot read messages without it.",
+          "Also enable SERVER MEMBERS INTENT if you will authorize access by Discord roles.",
+          "Optional: turn off Public Bot so only you can invite it.",
+        ],
+      },
+      {
+        title: "Copy the bot token",
+        items: [
+          "Still on the Bot tab: click Reset Token, confirm, and copy it.",
+          "Paste it in the Bot token field below. Treat it like a password — it is stored in Maia's managed secrets.",
+        ],
+      },
+      {
+        title: "Invite the bot to your server",
+        items: [
+          "Go to OAuth2 → URL Generator.",
+          "Scopes: check bot and applications.commands.",
+          "Bot permissions: View Channels, Send Messages, Send Messages in Threads, Read Message History, Embed Links, Attach Files, Add Reactions.",
+          "Open the generated URL at the bottom, pick your server, and authorize.",
+        ],
+      },
+      {
+        title: "Allow users, save, and go online",
+        items: [
+          "Add yourself as the first admin in the users editor below (the ? there shows how to copy a user ID), or paste allowed Discord role IDs.",
+          "Click Save Discord, then restart the gateway (System panel in the sidebar).",
+          "DM the bot or mention it in a channel it can see to test.",
+        ],
+      },
+    ],
   },
   {
     id: "mattermost",
@@ -615,6 +722,8 @@ export default function GatewayPage() {
                 </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
+                <PlatformSetupGuide platform={platform} configured={configured} />
+
                 <div className="grid gap-3 md:grid-cols-2">
                   {platform.fields
                     .filter((field) => field.key !== ACCESS_ENV_KEYS[platform.id])
@@ -676,21 +785,23 @@ export default function GatewayPage() {
                   })}
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="border border-border/60 p-3">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                      <Terminal className="h-3.5 w-3.5" />
-                      Setup checklist
+                <div className={`grid gap-3 ${platform.guide ? "" : "lg:grid-cols-2"}`}>
+                  {!platform.guide && (
+                    <div className="border border-border/60 p-3">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                        <Terminal className="h-3.5 w-3.5" />
+                        Setup checklist
+                      </div>
+                      <div className="space-y-2">
+                        {platform.steps.map((step) => (
+                          <div key={step} className="flex items-start gap-2 text-xs normal-case leading-5 text-muted-foreground">
+                            <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-success" />
+                            <span>{step}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {platform.steps.map((step) => (
-                        <div key={step} className="flex items-start gap-2 text-xs normal-case leading-5 text-muted-foreground">
-                          <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-success" />
-                          <span>{step}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  )}
 
                   <div className="border border-border/60 p-3">
                     <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
@@ -773,6 +884,76 @@ maia logs gateway`}
   );
 }
 
+
+function PlatformSetupGuide({
+  platform,
+  configured,
+}: {
+  platform: GatewayPlatform;
+  configured: boolean;
+}) {
+  // null = follow the default (open until the platform is configured);
+  // a click pins the user's choice for this visit.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const shown = override ?? !configured;
+
+  if (!platform.guide?.length) return null;
+
+  return (
+    <div className="rounded-sm border border-border/70 bg-muted/20">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 p-3 text-left"
+        aria-expanded={shown}
+        onClick={() => setOverride(!shown)}
+      >
+        <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          <BookOpen className="h-3.5 w-3.5" />
+          Full setup guide — connect {platform.name} step by step
+        </span>
+        <span className="flex items-center gap-2">
+          {!configured && <Badge tone="warning">start here</Badge>}
+          {shown ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </span>
+      </button>
+      {shown && (
+        <div className="grid gap-4 border-t border-border/60 p-4">
+          {platform.guide.map((step, index) => (
+            <div key={step.title} className="grid grid-cols-[28px_1fr] gap-3">
+              <span className="flex h-7 w-7 items-center justify-center border border-current/25 text-sm font-bold text-midground">
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-foreground">
+                  {step.title}
+                  {step.url && (
+                    <a
+                      href={step.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      {step.urlLabel ?? "Open"} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+                <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs normal-case leading-5 text-muted-foreground">
+                  {step.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DEFAULT_ROLE_OPTIONS = ["viewer", "operator", "manager", "admin"];
 
