@@ -30,6 +30,7 @@ import { Toast } from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 import {
   api,
+  type ActionStatusResponse,
   type DiscordGatewayAccessUser,
   type DiscordGatewayAccessUsersResponse,
   type EnvVarInfo,
@@ -66,6 +67,8 @@ type GatewayPlatform = {
   test: string;
   /** Full step-by-step connection guide shown collapsible at the card top. */
   guide?: SetupGuideStep[];
+  /** Always-visible "how your team talks to the bot" instructions. */
+  usage?: string[];
 };
 
 type DiscordAccessUserDraft = {
@@ -218,13 +221,19 @@ const PLATFORMS: GatewayPlatform[] = [
         ],
       },
       {
-        title: "Allow users, save, and go online",
+        title: "Allow users, save, and start the gateway",
         items: [
           "Add member IDs in the users editor below (profile → ⋮ → Copy member ID; the ? there shows how).",
-          "Click Save Slack, then restart the gateway (System panel in the sidebar).",
-          "Invite the bot to a channel with /invite @Maia and send it a DM to test.",
+          "Click Save Slack to store everything.",
+          "Press Start at the top of this page (use Restart if the gateway is already online). The status badge turns green when it connects.",
+          "Then test it: DM the bot from Slack's Apps section, or /invite it to a channel and mention it.",
         ],
       },
+    ],
+    usage: [
+      "In a channel: first /invite the bot once, then mention @ + its name (e.g. @Maia) followed by the request.",
+      "Or DM it directly from the Apps section in Slack's sidebar — no mention needed in DMs.",
+      "Only members listed in Slack users and access levels get replies; everyone else is silently ignored.",
     ],
   },
   {
@@ -250,30 +259,21 @@ const PLATFORMS: GatewayPlatform[] = [
         ],
       },
       {
-        key: "DISCORD_ALLOWED_ROLES",
-        label: "Allowed Discord role IDs",
-        placeholder: "123456789012345678,987654321098765432",
-        help: [
-          "Optional alternative or complement to named users. Separate multiple role IDs with commas.",
-          "In Discord, enable Developer Mode, right-click a role in Server Settings → Roles, then Copy Role ID.",
-          "This grants gateway access to anyone holding that Discord role; Maia governance roles are still configured per user when needed.",
-        ],
-      },
-      {
         key: "DISCORD_HOME_CHANNEL",
         label: "Home channel ID",
         placeholder: "234567890123456789",
         help: [
-          "Optional channel for cron output, notifications, and proactive messages.",
-          "Enable Developer Mode, right-click the target channel, then Copy Channel ID.",
+          "Optional but recommended: the server channel Maia treats as its home base — scheduled task (cron) output, notifications, and proactive messages are posted there.",
+          "To copy the ID: Discord Settings → Advanced → enable Developer Mode, then right-click the channel name and pick Copy Channel ID.",
+          "Pick a channel the bot can see (its role needs View Channels + Send Messages there).",
         ],
       },
     ],
     steps: [
       "Create an application in the Discord Developer Portal.",
-      "Enable Message Content Intent, and Server Members Intent if using roles.",
+      "Enable Message Content Intent on the Bot tab.",
       "Invite the bot with bot and applications.commands scopes.",
-      "Add the initial admin in the Discord users section below, or authorize a Discord role.",
+      "Add the initial admin in the Discord users section below.",
     ],
     test: "DM the bot or mention it in an approved channel after the gateway starts.",
     guide: [
@@ -315,13 +315,28 @@ const PLATFORMS: GatewayPlatform[] = [
         ],
       },
       {
-        title: "Allow users, save, and go online",
+        title: "Pick a home channel (optional, recommended)",
         items: [
-          "Add yourself as the first admin in the users editor below (the ? there shows how to copy a user ID), or paste allowed Discord role IDs.",
-          "Click Save Discord, then restart the gateway (System panel in the sidebar).",
-          "DM the bot or mention it in a channel it can see to test.",
+          "The Home channel ID field below tells Maia which server channel is its home base: scheduled task (cron) output, notifications, and proactive messages are posted there.",
+          "Enable Developer Mode first: Discord Settings → Advanced → Developer Mode.",
+          "Right-click the channel name in your server and pick Copy Channel ID, then paste it in the Home channel ID field below.",
+          "Use a channel the bot can see — its role needs View Channels and Send Messages there.",
         ],
       },
+      {
+        title: "Allow users, save, and start the gateway",
+        items: [
+          "Add yourself as the first admin in the Discord users and access levels editor below — the ? there shows how to copy your user ID.",
+          "Click Save Discord to store everything.",
+          "Press Start at the top of this page (use Restart if the gateway is already online). The status badge turns green when it connects.",
+          "Then test it: DM the bot, or mention it in a channel — see Talking to the bot on this card.",
+        ],
+      },
+    ],
+    usage: [
+      "In a server channel the bot can see: type @ + your bot's application name (e.g. @Maia) followed by the request. Discord autocompletes the mention.",
+      "Or open a direct message with the bot and just type — no @ needed in DMs.",
+      "Only users listed in Discord users and access levels get replies; everyone else is silently ignored.",
     ],
   },
   {
@@ -433,6 +448,10 @@ export default function GatewayPage() {
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [actionOutput, setActionOutput] = useState<{
+    kind: "start" | "restart";
+    lines: string[];
+  } | null>(null);
   const { toast, showToast } = useToast();
 
   const configuredCount = useMemo(
@@ -538,7 +557,7 @@ export default function GatewayPage() {
       const response = await api.saveGatewayAccessUsers(platform.id, { users });
       setPlatformRows(platform.id, response.users);
       showToast(
-        `${platform.name} users and governance roles saved. Restart the gateway to apply the allowlist.`,
+        `${platform.name} users and governance roles saved. Press Start or Restart at the top of this page to apply the allowlist.`,
         "success",
       );
       await load();
@@ -581,7 +600,7 @@ export default function GatewayPage() {
         setPlatformRows(platform.id, response.users);
       }
       setDrafts((current) => ({ ...current, [platform.id]: {} }));
-      showToast(`${platform.name} gateway values saved. Restart the gateway to apply them.`, "success");
+      showToast(`${platform.name} gateway values saved. Press Start or Restart at the top of this page to apply them.`, "success");
       await load();
     } catch (err) {
       showToast(`Failed to save ${platform.name}: ${err}`, "error");
@@ -590,31 +609,79 @@ export default function GatewayPage() {
     }
   };
 
-  const startGateway = async () => {
-    setBusy("gateway:start");
+  // Poll the spawned action until its process exits (or we give up), so the
+  // user gets the real outcome instead of an optimistic "requested" toast.
+  const waitForGatewayAction = async (
+    name: "gateway-start" | "gateway-restart",
+  ): Promise<ActionStatusResponse | null> => {
+    const deadline = Date.now() + 60_000;
+    let last: ActionStatusResponse | null = null;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      try {
+        last = await api.getActionStatus(name, 60);
+      } catch {
+        continue;
+      }
+      if (!last.running) return last;
+    }
+    return last;
+  };
+
+  const runGatewayAction = async (kind: "start" | "restart") => {
+    const name = kind === "start" ? "gateway-start" : "gateway-restart";
+    setBusy(`gateway:${kind}`);
+    setActionOutput(null);
     try {
-      await api.startGateway();
-      showToast("Gateway start requested. Check logs if it does not come online.", "success");
+      if (kind === "start") {
+        await api.startGateway();
+      } else {
+        await api.restartGateway();
+      }
+      showToast(kind === "start" ? "Starting the gateway…" : "Restarting the gateway…", "success");
+      const result = await waitForGatewayAction(name);
       await load();
+      if (result && !result.running && result.exit_code === 0) {
+        showToast(
+          `Gateway ${kind} finished. The status badge above updates as it connects.`,
+          "success",
+        );
+        // The gateway process needs a few more seconds to boot and report
+        // health; keep refreshing the badge without blocking the buttons.
+        void (async () => {
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            try {
+              const next = await api.getStatus();
+              setStatus(next);
+              if (next.gateway_running) return;
+            } catch {
+              // transient — keep polling
+            }
+          }
+        })();
+      } else if (result && !result.running) {
+        setActionOutput({ kind, lines: result.lines });
+        showToast(
+          `Gateway ${kind} failed (exit code ${result.exit_code}). Details below.`,
+          "error",
+        );
+      } else {
+        if (result) setActionOutput({ kind, lines: result.lines });
+        showToast(
+          `Gateway ${kind} is taking longer than expected — latest output below.`,
+          "error",
+        );
+      }
     } catch (err) {
-      showToast(`Gateway start failed: ${err}`, "error");
+      showToast(`Gateway ${kind} failed: ${err}`, "error");
     } finally {
       setBusy("");
     }
   };
 
-  const restartGateway = async () => {
-    setBusy("gateway:restart");
-    try {
-      await api.restartGateway();
-      showToast("Gateway restart requested.", "success");
-      await load();
-    } catch (err) {
-      showToast(`Gateway restart failed: ${err}`, "error");
-    } finally {
-      setBusy("");
-    }
-  };
+  const startGateway = () => runGatewayAction("start");
+  const restartGateway = () => runGatewayAction("restart");
 
   const copyCommand = async (command: string) => {
     try {
@@ -665,16 +732,41 @@ export default function GatewayPage() {
               Refresh
             </Button>
             <Button size="sm" onClick={startGateway} disabled={Boolean(busy)}>
-              <Play className="h-4 w-4" />
-              Start
+              {busy === "gateway:start" ? <Spinner className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              {busy === "gateway:start" ? "Starting…" : "Start"}
             </Button>
             <Button size="sm" outlined onClick={restartGateway} disabled={Boolean(busy)}>
-              <RotateCw className="h-4 w-4" />
-              Restart
+              {busy === "gateway:restart" ? <Spinner className="h-4 w-4" /> : <RotateCw className="h-4 w-4" />}
+              {busy === "gateway:restart" ? "Restarting…" : "Restart"}
             </Button>
           </div>
         </div>
       </section>
+
+      {actionOutput && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                Gateway {actionOutput.kind} output
+              </CardTitle>
+              <Button size="sm" ghost onClick={() => setActionOutput(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <pre className="max-h-72 overflow-auto rounded-sm border border-border bg-muted/30 p-3 font-mono-ui text-xs normal-case leading-5 text-foreground">
+              {actionOutput.lines.length ? actionOutput.lines.join("\n") : "(no output captured)"}
+            </pre>
+            <p className="text-xs normal-case leading-5 text-muted-foreground">
+              This is the tail of the command's log. Fix what it points at (missing
+              tokens are the usual cause), save, and press Start again.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -703,6 +795,7 @@ export default function GatewayPage() {
           const configured = platformConfigured(platform, env);
           const draft = drafts[platform.id] ?? {};
           const saveBusy = busy === `save:${platform.id}`;
+          const infoBoxCount = (platform.guide ? 0 : 1) + (platform.usage ? 1 : 0) + 1;
           return (
             <Card key={platform.id} className={configured ? "border-success/40" : ""}>
               <CardHeader>
@@ -788,7 +881,7 @@ export default function GatewayPage() {
                   })}
                 </div>
 
-                <div className={`grid gap-3 ${platform.guide ? "" : "lg:grid-cols-2"}`}>
+                <div className={`grid gap-3 ${infoBoxCount > 1 ? "lg:grid-cols-2" : ""}`}>
                   {!platform.guide && (
                     <div className="border border-border/60 p-3">
                       <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
@@ -800,6 +893,23 @@ export default function GatewayPage() {
                           <div key={step} className="flex items-start gap-2 text-xs normal-case leading-5 text-muted-foreground">
                             <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-success" />
                             <span>{step}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {platform.usage && (
+                    <div className="border border-border/60 p-3">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Talking to the bot
+                      </div>
+                      <div className="space-y-2">
+                        {platform.usage.map((item) => (
+                          <div key={item} className="flex items-start gap-2 text-xs normal-case leading-5 text-muted-foreground">
+                            <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-success" />
+                            <span>{item}</span>
                           </div>
                         ))}
                       </div>

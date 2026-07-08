@@ -173,17 +173,16 @@ class TestSystemdServiceRefresh:
 
 
 class TestRequireServiceInstalled:
-    def test_exits_with_install_hint_when_unit_missing(self, tmp_path, monkeypatch, capsys):
+    def test_raises_typed_error_with_install_hint_when_unit_missing(self, tmp_path, monkeypatch):
         unit_path = tmp_path / "hermes-gateway.service"
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(gateway_cli.ServiceNotInstalledError) as exc_info:
             gateway_cli._require_service_installed("start")
 
-        assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "not installed" in out
-        assert "hermes gateway install" in out
+        message = str(exc_info.value)
+        assert "not installed" in message
+        assert "gateway install" in message
 
     def test_passes_when_unit_exists(self, tmp_path, monkeypatch):
         unit_path = tmp_path / "hermes-gateway.service"
@@ -191,6 +190,183 @@ class TestRequireServiceInstalled:
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
 
         gateway_cli._require_service_installed("start")
+
+class TestGatewayStartBackgroundFallback:
+    def _args(self, **overrides):
+        base = {"gateway_command": "start", "system": False, "all": False}
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def test_start_falls_back_when_user_systemd_unreachable(self, monkeypatch, capsys):
+        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+
+        def raise_unreachable(system=False):
+            gateway_cli._raise_user_systemd_unavailable(
+                "andre",
+                reason="User systemd control sockets are missing even though linger is enabled.",
+                fix_hint="  systemctl start user@1000.service",
+            )
+
+        monkeypatch.setattr(gateway_cli, "systemd_start", raise_unreachable)
+        called = {}
+        monkeypatch.setattr(
+            gateway_cli, "_start_gateway_background", lambda: called.setdefault("bg", True)
+        )
+
+        gateway_cli.gateway_command(self._args())
+
+        assert called.get("bg") is True
+        out = capsys.readouterr().out
+        assert "background process" in out
+
+    def test_start_falls_back_when_unit_not_installed(self, monkeypatch, capsys):
+        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+
+        def raise_not_installed(system=False):
+            raise gateway_cli.ServiceNotInstalledError(
+                "Gateway service is not installed\n  Run: maia gateway install"
+            )
+
+        monkeypatch.setattr(gateway_cli, "systemd_start", raise_not_installed)
+        called = {}
+        monkeypatch.setattr(
+            gateway_cli, "_start_gateway_background", lambda: called.setdefault("bg", True)
+        )
+
+        gateway_cli.gateway_command(self._args())
+
+        assert called.get("bg") is True
+        out = capsys.readouterr().out
+        assert "gateway install" in out  # persistence hint still shown
+
+    def test_start_system_scope_does_not_fall_back(self, monkeypatch, capsys):
+        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+
+        def raise_not_installed(system=False):
+            raise gateway_cli.ServiceNotInstalledError(
+                "Gateway service is not installed\n  Run: sudo maia gateway install --system"
+            )
+
+        monkeypatch.setattr(gateway_cli, "systemd_start", raise_not_installed)
+        called = {}
+        monkeypatch.setattr(
+            gateway_cli, "_start_gateway_background", lambda: called.setdefault("bg", True)
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            gateway_cli.gateway_command(self._args(system=True))
+
+        assert exc_info.value.code == 1
+        assert "bg" not in called
+        assert "not installed" in capsys.readouterr().out
+
+    def test_start_on_wsl_without_systemd_uses_background(self, monkeypatch, capsys):
+        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: False)
+        monkeypatch.setattr(gateway_cli, "is_macos", lambda: False)
+        monkeypatch.setattr(gateway_cli, "is_wsl", lambda: True)
+        called = {}
+        monkeypatch.setattr(
+            gateway_cli, "_start_gateway_background", lambda: called.setdefault("bg", True)
+        )
+
+        gateway_cli.gateway_command(self._args())
+
+        assert called.get("bg") is True
+        assert "background process" in capsys.readouterr().out
+
+    def test_restart_manual_path_uses_background_start(self, monkeypatch, capsys):
+        missing_unit = Path("/nonexistent/hermes-gateway.service")
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+        monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: missing_unit)
+        monkeypatch.setattr(gateway_cli, "is_macos", lambda: False)
+        monkeypatch.setattr(gateway_cli, "get_systemd_linger_status", lambda: (True, "enabled"))
+        monkeypatch.setattr(gateway_cli, "stop_profile_gateway", lambda: True)
+        monkeypatch.setattr(gateway_cli, "_wait_for_gateway_exit", lambda **kw: None)
+        called = {}
+        monkeypatch.setattr(
+            gateway_cli, "_start_gateway_background", lambda: called.setdefault("bg", True)
+        )
+
+        gateway_cli.gateway_command(SimpleNamespace(gateway_command="restart", system=False, **{"all": False}))
+
+        assert called.get("bg") is True
+        assert "Stopped gateway for this profile" in capsys.readouterr().out
+
+
+class TestStartGatewayBackgroundHelper:
+    def test_spawns_detached_gateway_run_and_reports_success(self, tmp_path, monkeypatch, capsys):
+        log_path = tmp_path / "logs" / "gateway.log"
+        monkeypatch.setattr(gateway_cli, "_gateway_background_log_path", lambda: log_path)
+        monkeypatch.setattr("gateway.status.get_running_pid", lambda cleanup_stale=True: None)
+
+        recorded = {}
+
+        class FakeProc:
+            pid = 4242
+
+            def poll(self):
+                return None
+
+        def fake_popen(cmd, **kwargs):
+            recorded["cmd"] = cmd
+            recorded["kwargs"] = kwargs
+            return FakeProc()
+
+        monkeypatch.setattr(gateway_cli.subprocess, "Popen", fake_popen)
+        import time as time_module
+
+        monkeypatch.setattr(time_module, "sleep", lambda s: None)
+        ticker = iter(float(n) for n in range(1000))
+        monkeypatch.setattr(time_module, "monotonic", lambda: next(ticker))
+
+        gateway_cli._start_gateway_background()
+
+        assert recorded["cmd"][1:] == ["-m", "hermes_cli.main", "gateway", "run", "--replace"]
+        assert recorded["kwargs"]["start_new_session"] is True
+        assert recorded["kwargs"]["stdin"] is gateway_cli.subprocess.DEVNULL
+        assert "background start" in log_path.read_text(encoding="utf-8")
+        out = capsys.readouterr().out
+        assert "Gateway started in the background (PID 4242)" in out
+        assert str(log_path) in out
+
+    def test_reports_already_running_without_spawning(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(
+            gateway_cli, "_gateway_background_log_path", lambda: tmp_path / "gateway.log"
+        )
+        monkeypatch.setattr("gateway.status.get_running_pid", lambda cleanup_stale=True: 555)
+
+        def explode(*args, **kwargs):
+            raise AssertionError("Popen must not be called when the gateway is already running")
+
+        monkeypatch.setattr(gateway_cli.subprocess, "Popen", explode)
+
+        gateway_cli._start_gateway_background()
+
+        assert "already running (PID 555)" in capsys.readouterr().out
+
+    def test_reports_immediate_crash_and_exits_nonzero(self, tmp_path, monkeypatch, capsys):
+        log_path = tmp_path / "logs" / "gateway.log"
+        monkeypatch.setattr(gateway_cli, "_gateway_background_log_path", lambda: log_path)
+        monkeypatch.setattr("gateway.status.get_running_pid", lambda cleanup_stale=True: None)
+
+        class DeadProc:
+            pid = 4243
+            returncode = 2
+
+            def poll(self):
+                return 2
+
+        monkeypatch.setattr(gateway_cli.subprocess, "Popen", lambda cmd, **kw: DeadProc())
+
+        with pytest.raises(SystemExit) as exc_info:
+            gateway_cli._start_gateway_background()
+
+        assert exc_info.value.code == 1
+        assert "exited immediately" in capsys.readouterr().out
 
 
 class TestGeneratedSystemdUnits:
@@ -1386,7 +1562,7 @@ class TestPreflightUserSystemd:
 
         msg = str(exc_info.value)
         assert "sudo loginctl enable-linger" in msg
-        assert "hermes gateway run" in msg  # foreground fallback mentioned
+        assert "gateway run" in msg  # foreground fallback mentioned (brand-agnostic)
         assert "Interactive authentication required" in msg
 
     def test_raises_when_loginctl_missing(self, monkeypatch):

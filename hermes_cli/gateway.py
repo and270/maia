@@ -1117,7 +1117,21 @@ class UserSystemdUnavailableError(RuntimeError):
 
     Typically hit on fresh RHEL/Debian SSH sessions where linger is disabled
     and no user@.service is running, so ``/run/user/$UID/bus`` never exists.
+    Also common on WSL distros where ``user@$UID.service`` runs but WSLg
+    remounts ``/run/user/$UID`` without the systemd control sockets.
     Carries a user-facing remediation message in ``args[0]``.
+    """
+
+
+class ServiceNotInstalledError(RuntimeError):
+    """Raised when a service action needs a unit file that was never installed.
+
+    Previously ``_require_service_installed`` printed and ``sys.exit(1)``,
+    which made it impossible for ``gateway start`` to fall back to a plain
+    background process on hosts without an installed unit (the common state
+    right after a fresh install, before ``gateway install`` ever ran).
+    ``gateway_command`` still prints the same message and exits 1 for paths
+    that have no fallback. Carries the user-facing message in ``args[0]``.
     """
 
 
@@ -1301,9 +1315,104 @@ def _raise_user_systemd_unavailable(username: str, *, reason: str, fix_hint: str
         "\n"
         "  Alternative: run the gateway in the foreground (stays up until\n"
         "  you exit / close the terminal):\n"
-        "    hermes gateway run"
+        f"    {_cli_command_name()} gateway run"
     )
     raise UserSystemdUnavailableError(msg)
+
+
+def _cli_command_name() -> str:
+    """Best-effort name of the installed CLI launcher for help strings."""
+    argv0 = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else ""
+    if (
+        argv0
+        and not argv0.startswith("python")
+        and argv0 not in {"main.py", "__main__.py", "-c", "-m", "pytest", "py.test"}
+    ):
+        return argv0
+    return "maia"
+
+
+def _gateway_background_log_path() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return Path(get_hermes_home()) / "logs" / "gateway.log"
+
+
+def _start_gateway_background() -> None:
+    """Start ``gateway run`` as a detached background process.
+
+    Fallback used when no service manager can supervise the gateway: user
+    systemd unreachable (common on WSL, where WSLg remounts /run/user/$UID
+    without the control sockets), no unit installed yet, or a WSL distro
+    without systemd at all. The spawned gateway writes the profile PID file,
+    so ``gateway stop`` / ``gateway status`` keep working; output goes to
+    ``<home>/logs/gateway.log``. Exits 1 when the process dies immediately so
+    callers (and the dashboard action log) see an honest failure instead of a
+    silent success.
+    """
+    import time as _time
+    from datetime import datetime
+
+    try:
+        from gateway.status import get_running_pid
+
+        existing = get_running_pid()
+    except Exception:
+        existing = None
+    if existing is not None:
+        print_success(f"Gateway is already running (PID {existing})")
+        return
+
+    log_path = _gateway_background_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    repo_root = Path(__file__).resolve().parent.parent
+    # --replace bulldozes stale PID files / sockets from a previous unclean
+    # exit; a genuinely live gateway was already handled above.
+    cmd = [sys.executable, "-m", "hermes_cli.main", "gateway", "run", "--replace"]
+
+    popen_kwargs: dict = {}
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+
+    with open(log_path, "ab") as log_file:
+        log_file.write(
+            f"\n--- background start {datetime.now().isoformat(timespec='seconds')} ---\n".encode()
+        )
+        log_file.flush()
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(repo_root),
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            **popen_kwargs,
+        )
+
+    # Give it a moment so immediate config/credential crashes are reported
+    # honestly instead of claiming success.
+    deadline = _time.monotonic() + 3.0
+    while _time.monotonic() < deadline:
+        if proc.poll() is not None:
+            break
+        _time.sleep(0.2)
+
+    if proc.poll() is not None:
+        print_error(f"Gateway exited immediately (code {proc.returncode}). Last log lines:")
+        try:
+            tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
+        except OSError:
+            tail = []
+        for line in tail:
+            print(f"  {line}")
+        print_info(f"  Full log: {log_path}")
+        sys.exit(1)
+
+    print_success(f"Gateway started in the background (PID {proc.pid})")
+    print_info(f"  Logs: {log_path}")
+    print_info(
+        "  Note: a background process does not auto-start after reboot; "
+        f"run '{_cli_command_name()} gateway start' again after restarting."
+    )
 
 
 def _systemctl_cmd(system: bool = False) -> list[str]:
@@ -2243,9 +2352,10 @@ def _require_service_installed(action: str, system: bool = False) -> None:
     unit_path = get_systemd_unit_path(system=system)
     if not unit_path.exists():
         scope_flag = " --system" if system else ""
-        print(f"✗ Gateway service is not installed")
-        print(f"  Run: {'sudo ' if system else ''}hermes gateway install{scope_flag}")
-        sys.exit(1)
+        raise ServiceNotInstalledError(
+            "Gateway service is not installed\n"
+            f"  Run: {'sudo ' if system else ''}{_cli_command_name()} gateway install{scope_flag}"
+        )
 
 
 def systemd_start(system: bool = False):
@@ -4620,6 +4730,14 @@ def gateway_command(args):
         for line in str(e).splitlines():
             print(f"  {line}")
         sys.exit(1)
+    except ServiceNotInstalledError as e:
+        # Same message and exit code the old print+exit produced, for the
+        # subcommands that have no fallback (stop, restart of --system, ...).
+        lines = str(e).splitlines()
+        print_error(lines[0] if lines else "Gateway service is not installed")
+        for line in lines[1:]:
+            print(line)
+        sys.exit(1)
     except SystemScopeRequiresRootError as e:
         # The direct ``hermes gateway install|uninstall|start|stop|restart``
         # path lands here when the user typed a system-scope action without
@@ -4729,19 +4847,31 @@ def _gateway_command_inner(args):
             print("Run manually: hermes gateway")
             sys.exit(1)
         if supports_systemd_services():
-            systemd_start(system=system)
+            try:
+                systemd_start(system=system)
+            except ServiceNotInstalledError:
+                if system:
+                    raise
+                # Common state right after a fresh install: no unit yet.
+                # Make Start work anyway instead of demanding an install step.
+                print_info("No gateway service unit is installed — starting as a background process instead.")
+                print_info(f"  (For a boot-persistent service: {_cli_command_name()} gateway install)")
+                _start_gateway_background()
+            except UserSystemdUnavailableError as e:
+                if system:
+                    raise
+                print_warning("User systemd is not reachable in this environment:")
+                first_line = str(e).splitlines()[0] if str(e) else ""
+                if first_line:
+                    print(f"  {first_line}")
+                print_info("Starting the gateway as a background process instead.")
+                _start_gateway_background()
         elif is_macos():
             launchd_start()
         elif is_wsl():
-            print("WSL detected but systemd is not available.")
-            print("Run the gateway in foreground mode instead:")
-            print()
-            print("  hermes gateway run                              # direct foreground")
-            print("  tmux new -s hermes 'hermes gateway run'         # persistent via tmux")
-            print("  nohup hermes gateway run > ~/.hermes/logs/gateway.log 2>&1 &  # background")
-            print()
-            print("To enable systemd: add systemd=true to /etc/wsl.conf and run 'wsl --shutdown' from PowerShell.")
-            sys.exit(1)
+            print_info("WSL detected without systemd — starting the gateway as a background process.")
+            print_info("  (To enable systemd: add systemd=true under [boot] in /etc/wsl.conf, then 'wsl --shutdown'.)")
+            _start_gateway_background()
         elif is_container():
             print("Service start is not applicable inside a Docker container.")
             print("The gateway runs as the container's main process.")
@@ -4843,6 +4973,7 @@ def _gateway_command_inner(args):
                 run_gateway(verbose=0)
             return
         
+        user_systemd_unreachable = False
         if supports_systemd_services() and (get_systemd_unit_path(system=False).exists() or get_systemd_unit_path(system=True).exists()):
             service_configured = True
             try:
@@ -4850,6 +4981,18 @@ def _gateway_command_inner(args):
                 service_available = True
             except subprocess.CalledProcessError:
                 pass
+            except UserSystemdUnavailableError as e:
+                if system:
+                    raise
+                user_systemd_unreachable = True
+                print_warning("User systemd is not reachable in this environment:")
+                first_line = str(e).splitlines()[0] if str(e) else ""
+                if first_line:
+                    print(f"  {first_line}")
+            except ServiceNotInstalledError:
+                # Unit disappeared between the .exists() check and the restart
+                # (or only the other scope's unit exists) — treat as manual.
+                service_configured = False
         elif is_macos() and get_launchd_plist_path().exists():
             service_configured = True
             try:
@@ -4857,29 +5000,26 @@ def _gateway_command_inner(args):
                 service_available = True
             except subprocess.CalledProcessError:
                 pass
-        
+
         if not service_available:
-            # systemd/launchd restart failed — check if linger is the issue
-            if supports_systemd_services():
+            # systemd/launchd restart failed — surface linger guidance, but
+            # keep going with a background restart so the command still works.
+            if supports_systemd_services() and not user_systemd_unreachable:
                 linger_ok, _detail = get_systemd_linger_status()
                 if linger_ok is not True:
                     import getpass
                     _username = getpass.getuser()
                     print()
-                    print("⚠ Cannot restart gateway as a service — linger is not enabled.")
-                    print("  The gateway user service requires linger to function on headless servers.")
+                    print("⚠ The gateway service cannot be managed — linger is not enabled.")
+                    print(f"  For a persistent service, run:  sudo loginctl enable-linger {_username}")
+                    print("  Continuing with a background process restart for now.")
                     print()
-                    print(f"  Run:  sudo loginctl enable-linger {_username}")
-                    print()
-                    print("  Then restart the gateway:")
-                    print("    hermes gateway restart")
-                    return
 
-            if service_configured:
+            if service_configured and not user_systemd_unreachable:
                 print()
                 print("✗ Gateway service restart failed.")
                 print("  The service definition exists, but the service manager did not recover it.")
-                print("  Fix the service, then retry: hermes gateway start")
+                print(f"  Fix the service, then retry: {_cli_command_name()} gateway start")
                 sys.exit(1)
 
             # Manual restart: stop only this profile's gateway
@@ -4888,9 +5028,10 @@ def _gateway_command_inner(args):
 
             _wait_for_gateway_exit(timeout=10.0, force_after=5.0)
 
-            # Start fresh
+            # Start fresh as a detached background process (never blocks the
+            # caller — the dashboard Restart action depends on this).
             print("Starting gateway...")
-            run_gateway(verbose=0)
+            _start_gateway_background()
     
     elif subcmd == "status":
         deep = getattr(args, 'deep', False)
