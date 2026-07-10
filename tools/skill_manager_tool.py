@@ -112,6 +112,15 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
 
+def _active_user_skills_dir() -> Path:
+    """Return the current actor's writable personal skill directory."""
+
+    from agent.user_scope import scoped_user_root
+
+    root = scoped_user_root()
+    return (root / "skills") if root else SKILLS_DIR
+
+
 def _containing_skills_root(skill_path: Path) -> Path:
     """Return the skills root directory (local or external_dirs entry) that
     contains ``skill_path``.  Falls back to the local ``SKILLS_DIR`` if no
@@ -131,7 +140,7 @@ def _containing_skills_root(skill_path: Path) -> Path:
             return root
         except (ValueError, OSError):
             continue
-    return SKILLS_DIR
+    return _active_user_skills_dir()
 
 
 def _pinned_guard(name: str) -> Optional[str]:
@@ -270,9 +279,10 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[st
 
 def _resolve_skill_dir(name: str, category: str = None) -> Path:
     """Build the directory path for a new skill, optionally under a category."""
+    skills_dir = _active_user_skills_dir()
     if category:
-        return SKILLS_DIR / category / name
-    return SKILLS_DIR / name
+        return skills_dir / category / name
+    return skills_dir / name
 
 
 def _find_skill(name: str) -> Optional[Dict[str, Any]]:
@@ -339,6 +349,29 @@ def _shared_skill_scope_error(name: str) -> Optional[str]:
                 f"change for an authorized approver."
             )
     return None
+
+
+def _personal_skill_scope_error(name: str) -> Optional[str]:
+    """Prevent a gateway user from mutating another skill storage layer."""
+
+    from agent.user_scope import scoped_user_root
+
+    root = scoped_user_root()
+    if root is None:
+        return None
+    existing = _find_skill(name)
+    if not existing:
+        return None
+    personal_root = root / "skills"
+    try:
+        existing["path"].resolve().relative_to(personal_root.resolve())
+        return None
+    except (ValueError, OSError):
+        return (
+            f"Skill '{name}' is outside your personal skill scope and is read-only. "
+            "Create a differently named personal skill, or use scope='team' or "
+            "scope='corporate' to submit an approved shared change."
+        )
 
 
 def _validate_file_path(file_path: str) -> Optional[str]:
@@ -461,7 +494,7 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
     result = {
         "success": True,
         "message": f"Skill '{name}' created.",
-        "path": str(skill_dir.relative_to(SKILLS_DIR)),
+        "path": str(skill_dir.relative_to(_active_user_skills_dir())),
         "skill_md": str(skill_md),
     }
     if category:
@@ -829,6 +862,9 @@ def skill_manage(
         shared_err = _shared_skill_scope_error(name)
         if shared_err:
             return tool_error(shared_err, success=False)
+        personal_err = _personal_skill_scope_error(name)
+        if personal_err:
+            return tool_error(personal_err, success=False)
 
     if action == "create":
         if not content:
@@ -902,7 +938,10 @@ SKILL_MANAGE_SCHEMA = {
     "description": (
         "Manage skills (create, update, delete). Skills are your procedural "
         "memory — reusable approaches for recurring task types. "
-        f"New skills go to {display_hermes_home()}/skills/; existing skills can be modified wherever they live.\n\n"
+        "New user-scope skills go to the current actor's personal directory: "
+        f"{display_hermes_home()}/skills/ for local/CLI sessions, or an isolated "
+        "user directory for gateway identities. Shared/baseline skills are read-only "
+        "to gateway users and require team/corporate approval flows.\n\n"
         "Scopes: user (default, immediate), team (pending human approval), "
         "corporate (pending human approval and injected tenant-wide after approval). "
         "For team scope, provide `team`. For team/corporate changes, include "

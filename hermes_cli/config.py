@@ -914,6 +914,8 @@ DEFAULT_CONFIG = {
         # Later roles inherit earlier roles.
         "role_hierarchy": ["viewer", "operator", "manager", "admin"],
         # Users are keyed by "platform:user_id" (preferred) or plain user_id.
+        # Human gateway access fails closed unless a matching record has at
+        # least one role. Allowlists/pairing are admission filters only.
         # Example:
         # users:
         #   "slack:U123":
@@ -959,8 +961,9 @@ DEFAULT_CONFIG = {
 
     # Approved corporate/team memory and skill layers.
     #
-    # User memory and user skills keep the upstream behavior under
-    # <HERMES_HOME>/memories and <HERMES_HOME>/skills.  Corporate knowledge
+    # CLI/local memory and skills keep the upstream profile-wide paths.
+    # Human gateway actors use isolated, opaque paths under
+    # <HERMES_HOME>/users/<platform-hash>/{memories,skills}. Corporate knowledge
     # lives under <HERMES_HOME>/corporate/ and is injected into every
     # conversation.  Team knowledge lives under <HERMES_HOME>/teams/<team>/ and
     # is injected for actors assigned to that team in governance.users.
@@ -2191,7 +2194,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "TELEGRAM_ALLOWED_USERS": {
-        "description": "Comma-separated Telegram user IDs allowed to use the bot (get ID from @userinfobot)",
+        "description": "Comma-separated Telegram user IDs admitted by the gateway. Each human also needs an explicit governance.users role (get ID from @userinfobot).",
         "prompt": "Allowed Telegram user IDs (comma-separated)",
         "url": "https://t.me/userinfobot",
         "password": False,
@@ -2211,14 +2214,14 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "DISCORD_ALLOWED_USERS": {
-        "description": "Comma-separated Discord user IDs allowed to use the bot. This is gateway access only; governance.users controls roles, teams, and dashboard permissions.",
+        "description": "Comma-separated Discord user IDs admitted by the gateway. Each human also needs an explicit governance.users role before bot access.",
         "prompt": "Allowed Discord user IDs (comma-separated)",
         "url": None,
         "password": False,
         "category": "messaging",
     },
     "DISCORD_ALLOWED_ROLES": {
-        "description": "Comma-separated Discord role IDs allowed to use the bot. Role allowlists authorize Discord users at the gateway; Maia governance roles are configured separately.",
+        "description": "Comma-separated Discord role IDs admitted by the gateway. This never replaces the required per-user governance.users role.",
         "prompt": "Allowed Discord role IDs (comma-separated)",
         "url": None,
         "password": False,
@@ -2257,7 +2260,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "SLACK_ALLOWED_USERS": {
-        "description": "Comma-separated Slack member IDs allowed to use the bot",
+        "description": "Comma-separated Slack member IDs admitted by the gateway; each human also needs an explicit governance.users role",
         "prompt": "Allowed Slack member IDs (comma-separated)",
         "url": None,
         "password": False,
@@ -2285,7 +2288,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "MATTERMOST_ALLOWED_USERS": {
-        "description": "Comma-separated Mattermost user IDs allowed to use the bot",
+        "description": "Comma-separated Mattermost user IDs admitted by the gateway; each human also needs an explicit governance.users role",
         "prompt": "Allowed Mattermost user IDs (comma-separated)",
         "url": None,
         "password": False,
@@ -2341,7 +2344,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "MATRIX_ALLOWED_USERS": {
-        "description": "Comma-separated Matrix user IDs allowed to use the bot (@user:server format)",
+        "description": "Comma-separated Matrix user IDs admitted by the gateway; each human also needs an explicit governance.users role (@user:server format)",
         "prompt": "Allowed Matrix user IDs (comma-separated)",
         "url": None,
         "password": False,

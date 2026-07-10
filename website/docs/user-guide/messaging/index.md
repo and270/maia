@@ -100,6 +100,12 @@ flowchart TB
 
 Each platform adapter receives messages, routes them through a per-chat session store, and dispatches them to the AIAgent for processing. The gateway also runs the cron scheduler, ticking every 60 seconds to execute any due jobs.
 
+## Human Access Requires Two Gates
+
+For every human messaging platform, gateway admission is necessary but not sufficient. Allowlists, platform-role filters, pairing approval, and `*_ALLOW_ALL_USERS` decide whether an identity may enter the gateway. Maia then requires a matching `governance.users.<platform:user_id>` record with at least one role. Unknown or role-less identities remain blocked before commands, tools, memory, skills, and cron creation are available.
+
+On a completely fresh installation, the dashboard Gateway editor bootstraps only the first saved identity as `admin`. Every additional identity is shown as **Pending Governance** until an administrator grants a role in **Config / Governance**. System-generated Home Assistant/webhook events and explicitly admitted bot-to-bot traffic keep their integration-specific authentication paths.
+
 ## Quick Setup
 
 The easiest way to configure messaging platforms is the interactive wizard:

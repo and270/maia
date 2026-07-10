@@ -561,11 +561,12 @@ const NEXT_STEPS = [
 
 const CHECKLIST = [
   "Gateway users are identified by platform:user_id.",
-  "Users can run /dashboard in a private chat to create a dashboard access request.",
+  "Every human gateway user has an explicit governance.users role before first bot access.",
+  "Allowlisted users without Governance membership remain blocked and cannot create dashboard requests.",
   "Dashboard channel tokens are short-lived, one-use, approval-based, and revocable.",
   "Users that need shared team knowledge have governance.users.*.teams assigned.",
   "Production file policy is default deny.",
-  "Corporate and team memories/skills are changed only through Knowledge approvals.",
+  "Personal memories and skills are isolated by platform:user_id; shared layers use Knowledge approvals.",
   "Finance, HR, legal, security, shared folders, and delegated team roots have separate policies.",
   "Cron jobs that touch governed folders require manager or admin approval.",
   "Audit log retention and SIEM export are configured for regulated data.",

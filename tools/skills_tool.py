@@ -88,6 +88,18 @@ logger = logging.getLogger(__name__)
 HERMES_HOME = get_hermes_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 
+
+def _actor_skill_dirs() -> List[Path]:
+    """Return visible skill roots while preserving local path overrides."""
+
+    from agent.skill_utils import get_all_skills_dirs
+    from agent.user_scope import scoped_user_root
+
+    dirs = list(get_all_skills_dirs())
+    if scoped_user_root() is None and SKILLS_DIR not in dirs:
+        dirs.insert(0, SKILLS_DIR)
+    return dirs
+
 # Anthropic-recommended limits for progressive disclosure efficiency
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
@@ -558,7 +570,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     Returns:
         List of skill metadata dicts (name, description, category).
     """
-    from agent.skill_utils import get_all_skills_dirs, iter_skill_index_files
+    from agent.skill_utils import iter_skill_index_files
 
     skills = []
     seen_names: set = set()
@@ -568,7 +580,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
 
     # Scan corporate/team roots first, then local/user, then external dirs.
     dirs_to_scan = []
-    for root in get_all_skills_dirs():
+    for root in _actor_skill_dirs():
         if root.exists() and root not in dirs_to_scan:
             dirs_to_scan.append(root)
 
@@ -952,10 +964,8 @@ def skill_view(
             if bare:
                 local_category_name = f"{namespace}/{bare}"
 
-        from agent.skill_utils import get_all_skills_dirs
-
         # Build list of all skill directories to search
-        all_dirs = [path for path in get_all_skills_dirs() if path.exists()]
+        all_dirs = [path for path in _actor_skill_dirs() if path.exists()]
 
         if not all_dirs:
             return json.dumps(
@@ -965,6 +975,29 @@ def skill_view(
                 },
                 ensure_ascii=False,
             )
+
+        requested_path = Path(name).expanduser()
+        if requested_path.is_absolute():
+            try:
+                resolved_requested = requested_path.resolve()
+            except OSError:
+                resolved_requested = requested_path
+            within_visible_root = False
+            for visible_root in all_dirs:
+                try:
+                    resolved_requested.relative_to(visible_root.resolve())
+                    within_visible_root = True
+                    break
+                except (ValueError, OSError):
+                    continue
+            if not within_visible_root:
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": "Absolute skill path is outside your visible skill scope.",
+                    },
+                    ensure_ascii=False,
+                )
 
         skill_dir = None
         skill_md = None

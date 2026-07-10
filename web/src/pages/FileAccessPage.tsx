@@ -282,8 +282,8 @@ export default function FileAccessPage() {
         </CardHeader>
         <CardContent className="grid gap-3 normal-case text-sm leading-6 text-muted-foreground md:grid-cols-3">
           <div>
-            <span className="font-medium text-foreground">1. Approve identities</span>
-            <p>Users request /dashboard in a private channel. Admins approve them in Dashboard Access with roles and teams.</p>
+            <span className="font-medium text-foreground">1. Provision identities</span>
+            <p>Admins add each platform:user_id with roles and teams in Config / Governance before the user can access the bot.</p>
           </div>
           <div>
             <span className="font-medium text-foreground">2. Delegate roots</span>

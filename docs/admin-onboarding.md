@@ -83,7 +83,7 @@ governance:
       managers: ["discord:99887766"]
 ```
 
-The first `/dashboard` message is an access request, not a token issuance. The bot already knows the actor key, such as `discord:99887766` or `whatsapp:+15551234567`, from the authenticated gateway event. Approval in **Dashboard Access** writes that actor into `governance.users`. The second `/dashboard` message issues the short-lived one-time token only if the request is approved, the actor is not revoked, and the current roles satisfy `dashboard.auth.read_roles`. The token is hashed on disk, expires quickly, is consumed on first use, and is accepted by the normal dashboard login form.
+The first `/dashboard` message is an access request, not a token issuance. It is available only after the actor key, such as `discord:99887766` or `whatsapp:+15551234567`, already has a Governance role. Approval in **Dashboard Access** authorizes dashboard login and may update that existing user record. The second `/dashboard` message issues the short-lived one-time token only if the request is approved, the actor is not revoked, and the current roles satisfy `dashboard.auth.read_roles`. The token is hashed on disk, expires quickly, is consumed on first use, and is accepted by the normal dashboard login form.
 
 Revocation is also in **Dashboard Access**. Click **Revoke** beside an approved actor or enter an actor key manually. Revocation blocks future token issuance, removes unused channel tokens, and drops active dashboard sessions for that actor. Click **Restore** if access should be allowed again.
 
@@ -140,12 +140,14 @@ Prefer stable platform IDs over display names. Display names can change and may 
 
 Practical user onboarding:
 
-1. Ask the user to DM the bot and run `/dashboard` if they need dashboard access.
-2. Open **Dashboard Access** and review the pending request.
-3. Assign **Roles** and **Teams** on that request, then approve or deny it.
-4. Keep channel-level bot allowlists enabled where the platform supports them, so only approved accounts can talk to the bot at all.
-5. Ask the user to run `/whoami` if you need to verify the resulting roles and teams.
+1. Add the stable platform ID to the channel allowlist in **Gateway**.
+2. Add the same `platform:user_id` under `governance.users` in **Config / Governance**, with at least one role and any team assignments. Allowlisting, role-based channel admission, pairing, and allow-all flags never create this record.
+3. Start or restart the gateway. The user can now talk to Maia and run `/whoami` to verify the mapping.
+4. If the user also needs the admin dashboard, ask them to run `/dashboard` in a private chat.
+5. Open **Dashboard Access**, review the now-governed user's request, and approve or deny dashboard login.
 6. Ask the user to run `/dashboard` again to receive the one-time dashboard login token.
+
+On a completely fresh installation, the Gateway editor bootstraps only the first saved user as `admin`. Every later allowlisted user is shown as **Pending Governance** and remains unable to use the bot until step 2 is complete.
 
 The platform authenticates the channel account. Maia authorizes what that account can do. These are separate controls: a Discord or WhatsApp sender ID proves who sent the message, while the approved Dashboard Access record and `governance.users` decide whether that sender is a viewer, operator, manager, admin, auditor, or team member.
 
@@ -162,7 +164,7 @@ knowledge:
     approver_roles: [manager, admin]
 ```
 
-Corporate memory and skills apply to every conversation. Team memory and skills apply to users assigned to that team. User memory and skills remain profile-level and follow the original Hermes behavior.
+Corporate memory and skills apply to every conversation. Team memory and skills apply to users assigned to that team. Each human gateway identity gets isolated personal memory and skills under an opaque `<MAIA_HOME>/users/<platform-hash>/` directory; CLI/local sessions retain the legacy profile-wide paths.
 
 Shared corporate/team changes are proposal-first. The agent can stage a memory or skill change, but an authorized human approves it in the dashboard **Knowledge** panel before the file is changed. See [Knowledge governance](knowledge-governance.md).
 
@@ -175,7 +177,7 @@ File policies are checked before reads, searches, writes, patches, deletes, cron
 System admin workflow:
 
 1. Ask users who need dashboard or delegated file administration to run `/dashboard` from Slack, Discord, Telegram, WhatsApp, or the channel they use.
-2. Open **Dashboard Access** and approve each request with the right roles and teams. This creates the `governance.users` entries that File Access policies use.
+2. Add each exact actor key with the right roles and teams in **Config / Governance**. This creates the `governance.users` entries that File Access policies use; approve Dashboard Access separately only for people who need the admin UI.
 3. Open **Dashboard -> File Access**.
 4. Set **Default file policy** to `deny`.
 5. Add shared folders with **Read roles** / **Write roles** only when the whole tenant should have access.

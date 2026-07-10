@@ -13,10 +13,14 @@ Maia separates memory and skills into three layers:
 | Corporate skills | `<MAIA_HOME>/corporate/skills/` | Every conversation | Human approval |
 | Team memory | `<MAIA_HOME>/teams/<team>/memories/MEMORY.md` | Assigned team users | Human approval |
 | Team skills | `<MAIA_HOME>/teams/<team>/skills/` | Assigned team users | Human approval |
-| User memory | `<MAIA_HOME>/memories/` | Current profile | User-level flow |
-| User skills | `<MAIA_HOME>/skills/` | Current profile | User-level flow |
+| Gateway user memory | `<MAIA_HOME>/users/<platform-hash>/memories/` | One `platform:user_id` | Isolated user flow |
+| Gateway user skills | `<MAIA_HOME>/users/<platform-hash>/skills/` | One `platform:user_id` | Isolated personal skill flow |
+| Local/CLI memory | `<MAIA_HOME>/memories/` | Local profile | Legacy-compatible flow |
+| Local/CLI skills | `<MAIA_HOME>/skills/` | Local profile and gateway baseline | Legacy-compatible flow |
 
 Corporate and team knowledge is injected before user memory and user skills. If the layers conflict, approved corporate/team knowledge wins.
+
+The filesystem segment is a stable hash of `platform:user_id`, so raw external IDs are not embedded in directory names. Cron jobs restore their creator identity and therefore reuse that creator's personal memory and skills.
 
 ## Teams
 

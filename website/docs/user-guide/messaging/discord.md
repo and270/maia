@@ -250,7 +250,7 @@ DISCORD_ALLOWED_USERS=284102345871466496
 # DISCORD_ALLOWED_USERS=284102345871466496,198765432109876543
 ```
 
-`DISCORD_ALLOWED_USERS` is only the Discord gateway allowlist. For human-readable names, teams, and Maia roles, use the dashboard's structured Discord users editor or add matching `governance.users` records such as `discord:284102345871466496`. Dashboard access still uses Dashboard Access approvals and one-time tokens; ordinary gateway users can use the bot without receiving dashboard access.
+`DISCORD_ALLOWED_USERS` is only the Discord gateway allowlist. The dashboard Gateway editor shows each identity as **Pending Governance** until an admin adds a matching `governance.users` record such as `discord:284102345871466496` with at least one role in Config / Governance. Pending users cannot use the bot. Dashboard login is a third, separate approval and one-time-token flow.
 
 Then start the gateway:
 
@@ -273,8 +273,8 @@ Discord behavior is controlled through two files: **`~/.maia/.env`** for credent
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DISCORD_BOT_TOKEN` | **Yes** | — | Bot token from the [Discord Developer Portal](https://discord.com/developers/applications). |
-| `DISCORD_ALLOWED_USERS` | **Yes** | — | Comma-separated Discord user IDs allowed to interact with the Discord gateway. Without this **or** `DISCORD_ALLOWED_ROLES`, the gateway denies all users. This does not grant dashboard admin access; map names/teams/governance roles separately. |
-| `DISCORD_ALLOWED_ROLES` | No | — | Comma-separated Discord server role IDs. Any member with one of these roles is authorized at the gateway — OR semantics with `DISCORD_ALLOWED_USERS`. These are Discord roles, not Maia governance roles. Auto-enables the **Server Members Intent** on connect. Useful when moderation teams churn: new mods get access as soon as the role is granted, no config push needed. |
+| `DISCORD_ALLOWED_USERS` | **Yes** | — | Comma-separated Discord user IDs admitted to the gateway. Without this **or** `DISCORD_ALLOWED_ROLES`, the gateway denies all users. Each human still needs an explicit `governance.users` role before bot access. |
+| `DISCORD_ALLOWED_ROLES` | No | — | Comma-separated Discord server role IDs. Any member with one of these roles is admitted at the gateway — OR semantics with `DISCORD_ALLOWED_USERS` — but still needs their own Maia Governance record. Auto-enables the **Server Members Intent** on connect. |
 | `DISCORD_HOME_CHANNEL` | No | — | Channel ID where the bot sends proactive messages (cron output, reminders, notifications). |
 | `DISCORD_HOME_CHANNEL_NAME` | No | `"Home"` | Display name for the home channel in logs and status output. |
 | `DISCORD_COMMAND_SYNC_POLICY` | No | `"safe"` | Controls native slash-command startup sync. `"safe"` diffs existing global commands and only updates what changed, recreating commands when Discord metadata changes cannot be applied via patch. `"bulk"` preserves the old `tree.sync()` behavior. `"off"` skips startup sync entirely. |
@@ -607,7 +607,7 @@ If you intentionally want a shared room conversation, leave it off — just expe
 ## Security
 
 :::warning
-Always set `DISCORD_ALLOWED_USERS` (or `DISCORD_ALLOWED_ROLES`) to restrict who can interact with the bot through the gateway. Without either, the gateway denies all users by default as a safety measure. Only authorize people you trust — authorized gateway users can exercise the agent's capabilities inside their configured policies, including tool use and system access. Dashboard access is a separate admin-console flow and should stay limited to admins, auditors, managers, or delegated team leads.
+Always set `DISCORD_ALLOWED_USERS` (or `DISCORD_ALLOWED_ROLES`) to restrict gateway admission. Without either, the gateway denies all users by default. Admission alone grants no Maia access: every human must also have an explicit role in `governance.users`. Dashboard login is a separate third gate and should stay limited to admins, auditors, managers, or delegated team leads.
 :::
 
 ### Role-Based Access Control
@@ -621,12 +621,12 @@ DISCORD_ALLOWED_ROLES=987654321098765432,876543210987654321
 
 Semantics:
 
-- **OR with user allowlist.** A user is authorized if their ID is in `DISCORD_ALLOWED_USERS` **or** they have any role in `DISCORD_ALLOWED_ROLES`.
+- **OR for gateway admission.** A user passes the Discord gate if their ID is in `DISCORD_ALLOWED_USERS` **or** they have any role in `DISCORD_ALLOWED_ROLES`; Maia then separately requires their `discord:user_id` Governance role.
 - **Server Members Intent auto-enabled.** When `DISCORD_ALLOWED_ROLES` is set, the bot enables the Members intent on connect — required for Discord to send role information with member records.
 - **Role IDs, not names.** Grab them from Discord: **User Settings → Advanced → Developer Mode ON**, then right-click any role → **Copy Role ID**.
 - **DM fallback.** In DMs the role check scans mutual guilds; a user with an allowed role in any shared server is authorized in DMs too.
 
-This is the preferred pattern when the moderation team churns — new moderators get access the moment the role is granted, with no `.env` edit or gateway restart.
+This is the preferred pattern when the moderation team churns — a new moderator receives gateway admission with the Discord role, while an admin still explicitly provisions the moderator's Maia Governance role.
 
 ### Mention Control
 

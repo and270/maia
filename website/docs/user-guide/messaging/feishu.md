@@ -460,7 +460,7 @@ platforms:
 | Policy | Description |
 |--------|-------------|
 | `open` | Anyone in the group can use the bot |
-| `allowlist` | Only users in the group's `allowlist` can use the bot |
+| `allowlist` | Only listed users pass the group gateway gate; each human still needs a Governance role |
 | `blacklist` | Everyone except users in the group's `blacklist` can use the bot |
 | `admin_only` | Only users in the global `admins` list can use the bot in this group |
 | `disabled` | Bot ignores all messages in this group |

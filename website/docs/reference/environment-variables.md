@@ -231,8 +231,8 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token (from @BotFather) |
-| `TELEGRAM_ALLOWED_USERS` | Comma-separated user IDs allowed to use the bot (applies to DMs, groups, and forums) |
-| `TELEGRAM_GROUP_ALLOWED_USERS` | Comma-separated sender user IDs authorized in groups/forums only (does NOT grant DM access). Chat-ID-shaped values (starting with `-`) are still honored as chat IDs for backward compat with pre-#17686 configs, with a deprecation warning. |
+| `TELEGRAM_ALLOWED_USERS` | Comma-separated user IDs admitted by the gateway (DMs, groups, and forums); each human also needs an explicit Governance role |
+| `TELEGRAM_GROUP_ALLOWED_USERS` | Comma-separated sender user IDs admitted in groups/forums only (does NOT grant DM admission or a Governance role). Chat-ID-shaped values (starting with `-`) remain backward compatible. |
 | `TELEGRAM_GROUP_ALLOWED_CHATS` | Comma-separated group/forum chat IDs; any member is authorized |
 | `TELEGRAM_HOME_CHANNEL` | Default Telegram chat/channel for cron delivery |
 | `TELEGRAM_HOME_CHANNEL_NAME` | Display name for the Telegram home channel |

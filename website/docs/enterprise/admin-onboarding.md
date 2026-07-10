@@ -33,14 +33,16 @@ governance:
 
 Practical flow:
 
-1. Ask the user to DM the bot and run `/dashboard` if they need dashboard access.
-2. Open **Dashboard Access** and review the pending request.
-3. Assign roles and teams on that request, then approve or deny it.
-4. Keep channel-level bot allowlists enabled where the platform supports them.
-5. Ask the user to run `/whoami` only when you need to troubleshoot or verify roles and teams.
+1. Add the stable platform ID to the channel allowlist in **Gateway**.
+2. Add the same `platform:user_id` under `governance.users` in **Config / Governance**, with at least one role and any teams. Pairing and allow-all flags do not replace this step.
+3. Start or restart the gateway, then ask the user to run `/whoami` to verify the mapping.
+4. If dashboard access is needed, ask the now-governed user to run `/dashboard` in a private chat.
+5. Review that login request in **Dashboard Access**, then approve or deny it.
 6. Ask the user to run `/dashboard` again to receive the one-time dashboard login token.
 
-The channel provider authenticates who sent the message. Maia authorizes that identity through the approved Dashboard Access request and `governance.users`.
+On a fresh installation only the first user saved in Gateway is bootstrapped as `admin`. Later allowlisted users show **Pending Governance** and cannot talk to Maia until step 2 is complete.
+
+The channel provider authenticates who sent the message. Maia requires both gateway admission and an explicit `governance.users` role before that human identity can reach the bot.
 
 ## Dashboard Access
 
@@ -107,7 +109,7 @@ governance:
       managers: ["discord:99887766"]
 ```
 
-The first `/dashboard` message is an access request, not a token issuance. Approval in **Dashboard Access** writes the actor into `governance.users`. The second `/dashboard` message issues a short-lived one-time token only if the request is approved, the actor is not revoked, and current roles satisfy `dashboard.auth.read_roles`.
+The first `/dashboard` message is an access request, not a token issuance, and it is available only after the actor already has a Governance role. Approval in **Dashboard Access** authorizes dashboard login and may update that existing user record. The second `/dashboard` message issues a short-lived one-time token only if the request is approved, the actor is not revoked, and current roles satisfy `dashboard.auth.read_roles`.
 
 Revocation is also in **Dashboard Access**. Click **Revoke** beside an approved actor or enter an actor key manually. Revocation blocks future token issuance, removes unused channel tokens, and drops active dashboard sessions for that actor. Click **Restore** if access should be allowed again.
 
@@ -135,7 +137,7 @@ knowledge:
     approver_roles: [manager, admin]
 ```
 
-Corporate memory/skills apply to every conversation. Team memory/skills apply by team membership. User memory/skills remain profile-level. Shared corporate/team changes must be approved in the dashboard Knowledge panel before files are changed.
+Corporate memory/skills apply to every conversation. Team memory/skills apply by team membership. Each human gateway identity has isolated personal memory and skills under an opaque `<MAIA_HOME>/users/<platform-hash>/` path; local CLI sessions retain profile-level compatibility. Shared corporate/team changes must be approved in the dashboard Knowledge panel before files are changed.
 
 ## File Access
 

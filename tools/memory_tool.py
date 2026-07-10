@@ -30,7 +30,6 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from hermes_constants import get_hermes_home
 from typing import Dict, Any, List, Optional
 
 from utils import atomic_replace
@@ -53,8 +52,10 @@ logger = logging.getLogger(__name__)
 # constant was cached at import time and could go stale if a profile switch
 # happened after the first import.
 def get_memory_dir() -> Path:
-    """Return the profile-scoped memories directory."""
-    return get_hermes_home() / "memories"
+    """Return the current actor's memory directory."""
+    from agent.user_scope import personal_memory_dir
+
+    return personal_memory_dir()
 
 ENTRY_DELIMITER = "\n§\n"
 
@@ -115,17 +116,34 @@ class MemoryStore:
         Tool responses always reflect this live state.
     """
 
-    def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375):
+    def __init__(
+        self,
+        memory_char_limit: int = 2200,
+        user_char_limit: int = 1375,
+        memory_dir: Optional[Path] = None,
+        platform: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ):
         self.memory_entries: List[str] = []
         self.user_entries: List[str] = []
         self.memory_char_limit = memory_char_limit
         self.user_char_limit = user_char_limit
+        if memory_dir is not None:
+            self.memory_dir = Path(memory_dir)
+        elif platform is not None or user_id is not None:
+            from agent.user_scope import personal_memory_dir
+
+            self.memory_dir = personal_memory_dir(platform=platform, user_id=user_id)
+        else:
+            # Preserve the dynamic helper for profile switching and tests that
+            # patch get_memory_dir before constructing a store.
+            self.memory_dir = get_memory_dir()
         # Frozen snapshot for system prompt -- set once at load_from_disk()
         self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
 
     def load_from_disk(self):
         """Load entries from MEMORY.md and USER.md, capture system prompt snapshot."""
-        mem_dir = get_memory_dir()
+        mem_dir = self.memory_dir
         mem_dir.mkdir(parents=True, exist_ok=True)
 
         self.memory_entries = self._read_file(mem_dir / "MEMORY.md")
@@ -178,9 +196,8 @@ class MemoryStore:
                     pass
             fd.close()
 
-    @staticmethod
-    def _path_for(target: str) -> Path:
-        mem_dir = get_memory_dir()
+    def _path_for(self, target: str) -> Path:
+        mem_dir = self.memory_dir
         if target == "user":
             return mem_dir / "USER.md"
         return mem_dir / "MEMORY.md"
@@ -196,7 +213,7 @@ class MemoryStore:
 
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
-        get_memory_dir().mkdir(parents=True, exist_ok=True)
+        self.memory_dir.mkdir(parents=True, exist_ok=True)
         self._write_file(self._path_for(target), self._entries_for(target))
 
     def _entries_for(self, target: str) -> List[str]:

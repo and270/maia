@@ -31,6 +31,7 @@ def _make_bare_runner():
     from gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
+    runner._has_governance_gateway_access = lambda _source: True
     runner.pairing_store = SimpleNamespace(is_approved=lambda *_a, **_kw: False)
     return runner
 
@@ -69,6 +70,17 @@ def test_feishu_bot_authorized_when_allow_bots_all(monkeypatch):
     runner = _make_bare_runner()
     monkeypatch.setenv("FEISHU_ALLOW_BOTS", "all")
     monkeypatch.setenv("FEISHU_ALLOWED_USERS", "ou_human")
+
+    assert runner._is_user_authorized(_make_feishu_bot_source()) is True
+
+
+def test_feishu_bot_policy_precedes_human_allow_all_gate(monkeypatch):
+    """An explicitly permitted bot must not need a Governance user record."""
+    runner = _make_bare_runner()
+    runner._has_governance_gateway_access = lambda _source: False
+
+    monkeypatch.setenv("FEISHU_ALLOW_BOTS", "all")
+    monkeypatch.setenv("FEISHU_ALLOW_ALL_USERS", "true")
 
     assert runner._is_user_authorized(_make_feishu_bot_source()) is True
 

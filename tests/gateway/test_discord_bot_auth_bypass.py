@@ -52,6 +52,9 @@ def _make_bare_runner():
     """
     from gateway.run import GatewayRunner
     runner = object.__new__(GatewayRunner)
+    # These regression tests isolate the Discord admission gate. Explicit
+    # Governance membership is covered in test_governance_access_gate.py.
+    runner._has_governance_gateway_access = lambda _source: True
     # _is_user_authorized reads self.pairing_store.is_approved(...) before
     # any allowlist check succeeds; stub it to never approve so we exercise
     # the real allowlist path.
@@ -108,6 +111,17 @@ def test_discord_bot_authorized_when_allow_bots_all(monkeypatch):
 
     source = _make_discord_bot_source()
     assert runner._is_user_authorized(source) is True
+
+
+def test_discord_bot_policy_precedes_human_allow_all_gate(monkeypatch):
+    """An explicitly permitted bot must not need a Governance user record."""
+    runner = _make_bare_runner()
+    runner._has_governance_gateway_access = lambda _source: False
+
+    monkeypatch.setenv("DISCORD_ALLOW_BOTS", "all")
+    monkeypatch.setenv("DISCORD_ALLOW_ALL_USERS", "true")
+
+    assert runner._is_user_authorized(_make_discord_bot_source()) is True
 
 
 def test_discord_bot_NOT_authorized_when_allow_bots_none(monkeypatch):

@@ -301,7 +301,7 @@ Keys are Mattermost channel IDs (find them in the channel URL or via the API). A
 ## Security
 
 :::warning
-Always set `MATTERMOST_ALLOWED_USERS` to restrict who can interact with the bot. Without it, the gateway denies all users by default as a safety measure. Only add User IDs of people you trust — authorized users have full access to the agent's capabilities, including tool use and system access.
+Always set `MATTERMOST_ALLOWED_USERS` to restrict gateway admission. Without it, the gateway denies all users by default. Each human ID must also have an explicit `governance.users` role; an allowlist entry alone remains Pending Governance and has no bot access.
 :::
 
 For more information on securing your Maia deployment, see the [Security Guide](../security.md).

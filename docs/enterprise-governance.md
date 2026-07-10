@@ -11,13 +11,15 @@ Gateway users are identified by `platform:user_id`, for example:
 - `telegram:987654321`
 - `whatsapp:+15551234567`
 
-The normal way to add a dashboard user is **Dashboard -> Dashboard Access**:
+Gateway admission and Maia membership are two required gates:
 
-1. The user sends `/dashboard` in a private/direct chat with the bot.
-2. Maia records a pending request with the exact `platform:user_id`.
-3. A system admin opens **Dashboard Access**, reviews the request, assigns roles and teams, and approves or denies it.
-4. On approval, Maia writes the user record under `governance.users`.
+1. An admin adds the stable ID to the platform allowlist in **Gateway**.
+2. An admin creates the exact `platform:user_id` under `governance.users` with at least one role.
+3. Only then can the user talk to Maia. If dashboard access is also needed, the governed user sends `/dashboard` in a private/direct chat.
+4. Maia records a pending dashboard-login request; a system admin reviews and approves or denies it in **Dashboard Access**.
 5. The user sends `/dashboard` again to receive a short-lived one-time login token.
+
+Allowlists, allowed platform roles, pairing approvals, and allow-all flags are admission filters only. They do not synthesize a default Governance role. On a completely fresh installation, the Gateway editor bootstraps the first saved identity as `admin`; later identities remain blocked as **Pending Governance** until explicitly provisioned.
 
 The YAML below is the backing data saved in `<MAIA_HOME>/config.yaml`; direct editing is for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
 
@@ -41,7 +43,7 @@ The `/whoami` command is still useful for troubleshooting because it shows the e
 /whoami
 ```
 
-Channel identity and Maia authorization are separate: Discord, Telegram, Slack, WhatsApp, or another provider authenticates the sender account; Maia maps that sender to company roles and teams.
+Channel identity and Maia authorization are separate: Discord, Telegram, Slack, WhatsApp, or another provider authenticates the sender account; Maia requires both gateway admission and an explicit Governance role before a human sender can reach the bot.
 
 ## Dashboard Access
 
@@ -87,7 +89,7 @@ Use this path when team leaders already talk to Maia through Slack, Discord, Tel
 4. A team leader sends `/dashboard` in a private/direct chat with the bot.
 5. Maia creates a pending request in **Dashboard Access** with the actor key, display name, platform, and request time.
 6. A system admin logs in with the local admin token and opens **Dashboard Access**.
-7. The admin fills **Name**, **Roles**, and **Teams**, then clicks **Approve**. This writes `governance.users.<actor_key>` in `<MAIA_HOME>/config.yaml`.
+7. The admin reviews **Name**, **Roles**, and **Teams**, then clicks **Approve**. The user already has a minimum Governance role to reach `/dashboard`; approval can update that existing `governance.users.<actor_key>` record and separately authorizes dashboard login.
 8. If the team leader should manage files, the admin also defines a `team_file_roots` entry in **File Access**.
 9. The team leader sends `/dashboard` again. Maia verifies the approved request and current roles, then sends a one-time token.
 10. The dashboard session is limited by `read_roles`, `manage_roles`, `admin_roles`, and delegated File Access roots.
@@ -219,7 +221,8 @@ Maia keeps user memory/skills, but adds approved corporate and team layers above
 
 - corporate memory and skills apply to every conversation;
 - team memory and skills apply to actors assigned to that team;
-- user memory and skills remain profile-level.
+- each human gateway identity has isolated personal memory and skills under `<MAIA_HOME>/users/<platform-hash>/`;
+- CLI/local sessions retain profile-level `<MAIA_HOME>/memories/` and `<MAIA_HOME>/skills/` compatibility.
 
 ```yaml
 knowledge:
@@ -243,7 +246,7 @@ The policy is checked before `read_file`, `search_files`, `write_file`, `patch`,
 ### What To Do First
 
 1. Ask each real user who needs dashboard or delegated file administration to run `/dashboard` in a private channel chat.
-2. Approve the request in **Dashboard Access** with the right roles and teams. This creates the `governance.users` mapping used by file policies.
+2. Provision each `platform:user_id` in **Config / Governance** with the right roles and teams. This creates the `governance.users` mapping used by file policies; Dashboard Access is a later, separate login grant.
 3. Keep `governance.default_file_policy: deny` in production.
 4. Open **Dashboard -> File Access** to create the actual folder policies.
 
@@ -285,7 +288,7 @@ Goal:
 
 Dashboard actions:
 
-1. **Dashboard Access**: approve Ana, Bruno, and Carla with the right roles and `marketing` team. This creates `governance.users`.
+1. **Config / Governance**: add Ana, Bruno, and Carla with the right roles and `marketing` team. This creates `governance.users` before any of them can access the bot.
 2. **File Access -> Delegated team roots**: add team `marketing` with server root `/srv/company/marketing` and manager user `sso:ana@company.com`.
 3. **File Access -> Add policy**: add `/srv/company/marketing` with `read_teams: marketing` and `write_users: sso:ana@company.com`.
 4. **File Access -> Add policy**: add `/srv/company/marketing/campaigns` with `read_teams: marketing` and `write_teams: marketing`.

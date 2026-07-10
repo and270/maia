@@ -585,8 +585,8 @@ If the bot isn't working in channels, verify **all** of the following:
 
 :::warning
 **Always set `SLACK_ALLOWED_USERS`** with the Member IDs of authorized users. Without this setting,
-the gateway will **deny all messages** by default as a safety measure. Never share your bot tokens —
-treat them like passwords.
+the gateway will **deny all messages** by default as a safety measure. This is gateway admission only:
+each human also needs an explicit `governance.users` role before Maia access. Never share your bot tokens.
 :::
 
 - Tokens should be stored in `~/.maia/.env` (file permissions `600`)

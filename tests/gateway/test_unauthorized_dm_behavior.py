@@ -59,6 +59,9 @@ def _make_runner(platform: Platform, config: GatewayConfig):
     from gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
+    # This file tests gateway admission and pairing independently from the
+    # explicit Governance membership gate.
+    runner._has_governance_gateway_access = lambda _source: True
     runner.config = config
     adapter = SimpleNamespace(send=AsyncMock())
     runner.adapters = {platform: adapter}

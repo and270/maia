@@ -218,7 +218,7 @@ class TestWebServerEndpoints:
         # Should contain known env var names
         assert any(k.endswith("_API_KEY") or k.endswith("_TOKEN") for k in data.keys())
 
-    def test_discord_gateway_access_users_syncs_env_and_governance(self):
+    def test_discord_gateway_access_users_bootstraps_only_first_admin(self):
         from hermes_cli.config import load_config, load_env
 
         resp = self.client.put(
@@ -259,9 +259,16 @@ class TestWebServerEndpoints:
         assert governance_users["discord:284102345871466496"] == {
             "name": "Ana Admin",
             "roles": ["admin"],
-            "teams": ["leadership"],
         }
-        assert governance_users["discord:198765432109876543"]["roles"] == ["operator"]
+        assert "discord:198765432109876543" not in governance_users
+        assert data["users"][0]["governed"] is True
+        assert data["users"][1] == {
+            "user_id": "198765432109876543",
+            "name": "",
+            "roles": [],
+            "teams": [],
+            "governed": False,
+        }
 
     def test_discord_gateway_access_users_lists_allowed_users_only(self):
         from hermes_cli.config import load_env, save_config, save_env_value
@@ -298,9 +305,10 @@ class TestWebServerEndpoints:
         assert save_resp.json()["users"] == [
             {
                 "user_id": "333333333333333333",
-                "name": "New User",
-                "roles": ["operator"],
+                "name": "",
+                "roles": [],
                 "teams": [],
+                "governed": False,
             }
         ]
 

@@ -10,10 +10,14 @@ Maia separates memory and skills into three practical layers so company-wide ins
 | Corporate skills | `<MAIA_HOME>/corporate/skills/` | Every conversation | Human approval required |
 | Team memory | `<MAIA_HOME>/teams/<team>/memories/MEMORY.md` | Users assigned to that team | Human approval required |
 | Team skills | `<MAIA_HOME>/teams/<team>/skills/` | Users assigned to that team | Human approval required |
-| User memory | `<MAIA_HOME>/memories/` | Current user/profile | Existing user-level memory flow |
-| User skills | `<MAIA_HOME>/skills/` | Current user/profile | Existing skill flow |
+| Gateway user memory | `<MAIA_HOME>/users/<platform-hash>/memories/` | One `platform:user_id` | Isolated user-level memory flow |
+| Gateway user skills | `<MAIA_HOME>/users/<platform-hash>/skills/` | One `platform:user_id` | Isolated personal skill flow |
+| Local/CLI memory | `<MAIA_HOME>/memories/` | Local profile | Legacy-compatible memory flow |
+| Local/CLI skills | `<MAIA_HOME>/skills/` | Local profile and read-only baseline for gateway users | Legacy-compatible skill flow |
 
 Corporate and team knowledge is injected before user memory and user skills. If there is a conflict, the approved corporate/team layer wins.
+
+The `<platform-hash>` segment is derived from `platform:user_id` without placing the raw user ID in the filesystem path. Cron runs restore their creator identity, so a job created from a gateway session sees that creator's personal memory and skills rather than another user's data.
 
 ## Assign Teams
 

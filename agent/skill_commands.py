@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -21,14 +22,17 @@ from agent.skill_preprocessing import (
 logger = logging.getLogger(__name__)
 
 _skill_commands: Dict[str, Dict[str, Any]] = {}
-_skill_commands_platform: Optional[str] = None
+_skill_commands_platform: Optional[str] = None  # composite platform:user scope
+_skill_commands_context: ContextVar = ContextVar(
+    "maia_skill_commands_context", default=None
+)
 # Patterns for sanitizing skill names into clean hyphen-separated slugs.
 _SKILL_INVALID_CHARS = re.compile(r"[^a-z0-9-]")
 _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
 
 
-def _resolve_skill_commands_platform() -> Optional[str]:
-    """Return the current platform scope used for disabled-skill filtering.
+def _resolve_skill_commands_scope() -> Optional[str]:
+    """Return the platform + user scope used for skill command caching.
 
     Used to detect when the active platform has shifted so
     :func:`get_skill_commands` can drop a stale cache that was populated
@@ -46,9 +50,13 @@ def _resolve_skill_commands_platform() -> Optional[str]:
             os.getenv("HERMES_PLATFORM")
             or get_session_env("HERMES_SESSION_PLATFORM")
         )
+        resolved_user = get_session_env("HERMES_SESSION_USER_ID")
     except Exception:
         resolved_platform = os.getenv("HERMES_PLATFORM")
-    return resolved_platform or None
+        resolved_user = ""
+    if not resolved_platform:
+        return None
+    return f"{resolved_platform}:{resolved_user}" if resolved_user else resolved_platform
 
 def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tuple[dict[str, Any], Path | None, str] | None:
     """Load a skill by name/path and return (loaded_payload, skill_dir, display_name)."""
@@ -245,19 +253,21 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
         Dict mapping "/skill-name" to {name, description, skill_md_path, skill_dir}.
     """
     global _skill_commands, _skill_commands_platform
-    _skill_commands_platform = _resolve_skill_commands_platform()
-    _skill_commands = {}
+    scope = _resolve_skill_commands_scope()
+    commands: Dict[str, Dict[str, Any]] = {}
     try:
         from tools.skills_tool import SKILLS_DIR, _parse_frontmatter, skill_matches_platform, _get_disabled_skill_names
-        from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
+        from agent.skill_utils import get_all_skills_dirs, iter_skill_index_files
+        from agent.user_scope import scoped_user_root
         disabled = _get_disabled_skill_names()
         seen_names: set = set()
 
-        # Scan local dir first, then external dirs
-        dirs_to_scan = []
-        if SKILLS_DIR.exists():
-            dirs_to_scan.append(SKILLS_DIR)
-        dirs_to_scan.extend(get_external_skills_dirs())
+        dirs_to_scan = [path for path in get_all_skills_dirs() if path.exists()]
+        # Preserve the patchable profile root used by CLI/tests. Gateway users
+        # deliberately rely on get_all_skills_dirs so another actor's root can
+        # never be injected through this module-level compatibility constant.
+        if scoped_user_root() is None and SKILLS_DIR.exists() and SKILLS_DIR not in dirs_to_scan:
+            dirs_to_scan.insert(0, SKILLS_DIR)
 
         for scan_dir in dirs_to_scan:
             for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
@@ -291,7 +301,7 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                     cmd_name = _SKILL_MULTI_HYPHEN.sub('-', cmd_name).strip('-')
                     if not cmd_name:
                         continue
-                    _skill_commands[f"/{cmd_name}"] = {
+                    commands[f"/{cmd_name}"] = {
                         "name": name,
                         "description": description or f"Invoke the {name} skill",
                         "skill_md_path": str(skill_md),
@@ -301,7 +311,10 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
                     continue
     except Exception:
         pass
-    return _skill_commands
+    _skill_commands = commands
+    _skill_commands_platform = scope
+    _skill_commands_context.set((scope, commands))
+    return commands
 
 
 def get_skill_commands() -> Dict[str, Dict[str, Any]]:
@@ -311,12 +324,14 @@ def get_skill_commands() -> Dict[str, Dict[str, Any]]:
     process serving Telegram and Discord concurrently) so each platform
     sees its own ``skills.platform_disabled`` view (#14536).
     """
-    if (
-        not _skill_commands
-        or _skill_commands_platform != _resolve_skill_commands_platform()
-    ):
-        scan_skill_commands()
-    return _skill_commands
+    scope = _resolve_skill_commands_scope()
+    cached = _skill_commands_context.get()
+    if _skill_commands and cached and cached[0] == scope:
+        return cached[1]
+    if _skill_commands and _skill_commands_platform == scope:
+        _skill_commands_context.set((scope, _skill_commands))
+        return _skill_commands
+    return scan_skill_commands()
 
 
 def reload_skills() -> Dict[str, Any]:
@@ -358,7 +373,17 @@ def reload_skills() -> Dict[str, Any]:
             out[bare] = (info or {}).get("description") or ""
         return out
 
-    before = _snapshot(_skill_commands)
+    scope = _resolve_skill_commands_scope()
+    cached = _skill_commands_context.get()
+    if not _skill_commands:
+        before_commands = {}
+    elif cached and cached[0] == scope:
+        before_commands = cached[1]
+    elif _skill_commands_platform == scope:
+        before_commands = _skill_commands
+    else:
+        before_commands = {}
+    before = _snapshot(before_commands)
 
     # Rescan the skills dir. ``scan_skill_commands`` resets
     # ``_skill_commands = {}`` internally and repopulates it.

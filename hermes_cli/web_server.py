@@ -1445,6 +1445,7 @@ def _load_gateway_access_users(platform: str) -> List[Dict[str, Any]]:
                 "name": str(record.get("name") or ""),
                 "roles": _coerce_role_list(record.get("roles")),
                 "teams": _coerce_role_list(record.get("teams") or record.get("team")),
+                "governed": bool(_coerce_role_list(record.get("roles"))),
             }
         )
     return result
@@ -1465,6 +1466,17 @@ def _save_gateway_access_users(
     if not isinstance(users, dict):
         users = {}
 
+    # Only a completely fresh installation receives an automatic bootstrap
+    # administrator. Once any explicit user with a role exists, this editor is
+    # allowlist-only; Governance is the sole place that can grant access.
+    bootstrap_needed = not any(
+        _coerce_role_list(
+            record.get("roles") if isinstance(record, dict) else record
+        )
+        for record in users.values()
+    )
+    bootstrap_created = False
+
     allowed_ids: List[str] = []
     seen: set[str] = set()
     for item in users_payload:
@@ -1478,21 +1490,18 @@ def _save_gateway_access_users(
 
         key = f"{platform}:{user_id}"
         existing = users.get(key)
-        record = dict(existing) if isinstance(existing, dict) else {}
-        name = str(item.name or "").strip()
-        if name:
-            record["name"] = name
-        elif not record.get("name"):
-            record["name"] = key
+        existing_roles = _coerce_role_list(
+            existing.get("roles") if isinstance(existing, dict) else existing
+        )
+        if existing_roles:
+            # Gateway editing must never rewrite an established Governance
+            # identity, role, or team assignment.
+            continue
 
-        roles = _coerce_role_list(item.roles) or _coerce_role_list(record.get("roles")) or ["operator"]
-        teams = _coerce_role_list(item.teams)
-        record["roles"] = roles
-        if teams:
-            record["teams"] = teams
-        elif "teams" in record:
-            record.pop("teams", None)
-        users[key] = record
+        if bootstrap_needed and not bootstrap_created:
+            name = str(item.name or "").strip() or key
+            users[key] = {"name": name, "roles": ["admin"]}
+            bootstrap_created = True
 
     save_env_value(env_key, ",".join(allowed_ids))
     governance["users"] = users
@@ -3091,11 +3100,12 @@ async def get_governance_options():
 
 @app.get("/api/gateway/{platform}/access-users")
 async def get_gateway_access_users(platform: str):
-    """Managed allowlist + governance roles for a messaging platform.
+    """Managed allowlist and read-only Governance status for a platform.
 
     Same contract for discord/slack/mattermost/matrix (the old
-    discord-only route is the discord case of this one). ``roles`` and
-    ``teams`` carry the selectable governance options for the editor.
+    discord-only route is the discord case of this one). New allowlist users
+    remain pending until an administrator grants a role in Governance. The
+    first user on a completely fresh installation is bootstrapped as admin.
     """
     return {
         "users": _load_gateway_access_users(platform),

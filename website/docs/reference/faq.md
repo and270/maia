@@ -424,17 +424,17 @@ cat ~/.maia/logs/gateway.log | tail -50
 
 #### Allowlist confusion — who can talk to the bot?
 
-**Cause:** Authorization mode determines who gets access.
+**Cause:** Gateway admission was mistaken for Maia membership.
 
 **Solution:**
 
 | Mode | How it works |
 |------|-------------|
-| **Allowlist** | Only user IDs listed in config can interact |
-| **DM pairing** | First user to message in DM claims exclusive access |
-| **Open** | Anyone can interact (not recommended for production) |
+| **Allowlist** | Only listed user IDs pass the gateway gate |
+| **DM pairing** | An approved pair passes the gateway gate |
+| **Open** | Any identity passes the gateway gate (not recommended) |
 
-Configure in `~/.maia/config.yaml` under your gateway's settings. See the [Messaging docs](../user-guide/messaging/index.md).
+Every human who passes one of those modes must also have an explicit `governance.users.<platform:user_id>` role before the bot accepts commands or messages. Configure both layers and see the [Messaging docs](../user-guide/messaging/index.md).
 
 #### Gateway won't start
 

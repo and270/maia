@@ -74,27 +74,22 @@ type GatewayPlatform = {
 type DiscordAccessUserDraft = {
   user_id: string;
   name: string;
-  roles: string;
-  teams: string;
+  roles: string[];
+  teams: string[];
+  governed: boolean;
 };
 
-function textToList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function newDiscordAccessRow(role = "operator"): DiscordAccessUserDraft {
-  return { user_id: "", name: "", roles: role, teams: "" };
+function newDiscordAccessRow(): DiscordAccessUserDraft {
+  return { user_id: "", name: "", roles: [], teams: [], governed: false };
 }
 
 function discordUserToDraft(user: DiscordGatewayAccessUser): DiscordAccessUserDraft {
   return {
     user_id: user.user_id ?? "",
     name: user.name ?? "",
-    roles: (user.roles ?? []).join(", ") || "operator",
-    teams: (user.teams ?? []).join(", "),
+    roles: user.roles ?? [],
+    teams: user.teams ?? [],
+    governed: Boolean(user.governed),
   };
 }
 
@@ -103,9 +98,6 @@ function normalizeDiscordRows(rows: DiscordAccessUserDraft[]): DiscordGatewayAcc
   return rows
     .map((row) => ({
       user_id: row.user_id.trim(),
-      name: row.name.trim(),
-      roles: textToList(row.roles),
-      teams: textToList(row.teams),
     }))
     .filter((row) => row.user_id.length > 0)
     .filter((row) => {
@@ -115,8 +107,8 @@ function normalizeDiscordRows(rows: DiscordAccessUserDraft[]): DiscordGatewayAcc
     });
 }
 
-// Platforms whose allowlist + governance roles are managed by the users
-// editor instead of a raw comma-separated env field.
+// Platforms whose allowlists are managed by the users editor instead of a
+// raw comma-separated env field. Governance grants are intentionally separate.
 const ACCESS_PLATFORM_IDS = ["discord", "slack", "mattermost", "matrix"] as const;
 
 const ACCESS_ENV_KEYS: Record<string, string> = {
@@ -440,11 +432,9 @@ export default function GatewayPage() {
   const [accessRows, setAccessRows] = useState<Record<string, DiscordAccessUserDraft[]>>(
     () =>
       Object.fromEntries(
-        ACCESS_PLATFORM_IDS.map((id) => [id, [newDiscordAccessRow("admin")]]),
+        ACCESS_PLATFORM_IDS.map((id) => [id, [newDiscordAccessRow()]]),
       ),
   );
-  const [roleOptions, setRoleOptions] = useState<string[]>([]);
-  const [teamOptions, setTeamOptions] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -476,13 +466,9 @@ export default function GatewayPage() {
       const nextRows: Record<string, DiscordAccessUserDraft[]> = {};
       ACCESS_PLATFORM_IDS.forEach((id, index) => {
         const rows = (accessLists[index]?.users ?? []).map(discordUserToDraft);
-        nextRows[id] = rows.length ? rows : [newDiscordAccessRow("admin")];
+        nextRows[id] = rows.length ? rows : [newDiscordAccessRow()];
       });
       setAccessRows(nextRows);
-      // Governance role/team options ride along on any access response.
-      const withOptions = accessLists.find((list) => (list?.roles?.length ?? 0) > 0);
-      setRoleOptions(withOptions?.roles ?? []);
-      setTeamOptions(withOptions?.teams ?? []);
     } catch (err) {
       showToast(`Failed to load gateway settings: ${err}`, "error");
     } finally {
@@ -521,10 +507,10 @@ export default function GatewayPage() {
     }));
   };
 
-  const addAccessRow = (platformId: string, role = "operator") => {
+  const addAccessRow = (platformId: string) => {
     setAccessRows((current) => ({
       ...current,
-      [platformId]: [...(current[platformId] ?? []), newDiscordAccessRow(role)],
+      [platformId]: [...(current[platformId] ?? []), newDiscordAccessRow()],
     }));
   };
 
@@ -533,7 +519,7 @@ export default function GatewayPage() {
       const next = (current[platformId] ?? []).filter((_, rowIndex) => rowIndex !== index);
       return {
         ...current,
-        [platformId]: next.length ? next : [newDiscordAccessRow("admin")],
+        [platformId]: next.length ? next : [newDiscordAccessRow()],
       };
     });
   };
@@ -542,7 +528,7 @@ export default function GatewayPage() {
     const rows = users.map(discordUserToDraft);
     setAccessRows((current) => ({
       ...current,
-      [platformId]: rows.length ? rows : [newDiscordAccessRow("admin")],
+      [platformId]: rows.length ? rows : [newDiscordAccessRow()],
     }));
   };
 
@@ -557,7 +543,7 @@ export default function GatewayPage() {
       const response = await api.saveGatewayAccessUsers(platform.id, { users });
       setPlatformRows(platform.id, response.users);
       showToast(
-        `${platform.name} users and governance roles saved. Press Start or Restart at the top of this page to apply the allowlist.`,
+        `${platform.name} allowlist saved. Pending users stay blocked until an admin grants a role in Governance. Press Start or Restart at the top of this page to apply the allowlist.`,
         "success",
       );
       await load();
@@ -778,9 +764,9 @@ export default function GatewayPage() {
         <CardContent className="grid gap-3 text-sm normal-case leading-6 text-muted-foreground md:grid-cols-4">
           {[
             "Choose Slack, Discord, Mattermost, or Matrix.",
-            "Save required bot credentials and user or role allowlists.",
+            "Save bot credentials and gateway allowlists; new users remain pending.",
+            "Grant each human identity at least one role in Config / Governance.",
             "Start or restart the gateway service.",
-            "Test /dashboard from a private chat and approve access in Dashboard Access.",
           ].map((item) => (
             <div key={item} className="flex items-start gap-2 border border-border/60 p-3">
               <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-success" />
@@ -938,12 +924,10 @@ export default function GatewayPage() {
                 <GatewayAccessUsersEditor
                   platform={platform}
                   rows={accessRows[platform.id] ?? []}
-                  roleOptions={roleOptions}
-                  teamOptions={teamOptions}
                   busy={busy === `${platform.id}:access-users`}
                   disabled={Boolean(busy)}
                   configured={configured}
-                  onAdd={(role) => addAccessRow(platform.id, role)}
+                  onAdd={() => addAccessRow(platform.id)}
                   onRemove={(index) => removeAccessRow(platform.id, index)}
                   onSave={() => saveAccessUsers(platform)}
                   onUpdate={(index, patch) => updateAccessRow(platform.id, index, patch)}
@@ -1068,17 +1052,13 @@ function PlatformSetupGuide({
   );
 }
 
-const DEFAULT_ROLE_OPTIONS = ["viewer", "operator", "manager", "admin"];
-
 type GatewayAccessUsersEditorProps = {
   platform: GatewayPlatform;
   rows: DiscordAccessUserDraft[];
-  roleOptions: string[];
-  teamOptions: string[];
   busy: boolean;
   disabled: boolean;
   configured: boolean;
-  onAdd: (role?: string) => void;
+  onAdd: () => void;
   onRemove: (index: number) => void;
   onSave: () => void;
   onUpdate: (index: number, patch: Partial<DiscordAccessUserDraft>) => void;
@@ -1087,8 +1067,6 @@ type GatewayAccessUsersEditorProps = {
 function GatewayAccessUsersEditor({
   platform,
   rows,
-  roleOptions,
-  teamOptions,
   busy,
   disabled,
   configured,
@@ -1098,30 +1076,25 @@ function GatewayAccessUsersEditor({
   onUpdate,
 }: GatewayAccessUsersEditorProps) {
   const [idHelpOpen, setIdHelpOpen] = useState(false);
-  const [teamsHelpOpen, setTeamsHelpOpen] = useState(false);
   const allowKey = ACCESS_ENV_KEYS[platform.id] ?? "";
   const idPlaceholder = USER_ID_PLACEHOLDERS[platform.id] ?? "user id";
   const idHelp = USER_ID_HELP[platform.id] ?? [];
-  const roleChoices = roleOptions.length ? roleOptions : DEFAULT_ROLE_OPTIONS;
-  const teamsListId = `gateway-team-options-${platform.id}`;
 
   return (
     <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
       <div>
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
           <Users className="h-3.5 w-3.5" />
-          {platform.name} users and access levels
+          {platform.name} gateway allowlist
         </div>
         <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
-          Add the first admin here, then add normal users as the rollout grows. Saving this list writes
-          {" "}
-          <code>{allowKey}</code> (who may talk to Maia on {platform.name}) and stores names, roles, and
-          {" "}
-          teams under <code>governance.users</code>. Gateway access lets a user talk to the bot; governance
-          {" "}
-          roles decide what they can do inside configured policies. Dashboard access still uses the protected
-          {" "}
-          dashboard token/request flow.
+          Saving this list writes <code>{allowKey}</code>, but allowlisting alone does not grant bot access.
+          Every human user must also have an explicit role under <code>governance.users</code>. New IDs remain
+          blocked until an admin grants that role in{" "}
+          <Link to="/config?search=governance" className="font-bold text-primary hover:underline">
+            Config / Governance
+          </Link>
+          . On a completely fresh installation, Maia bootstraps only the first saved user as <code>admin</code>.
         </p>
         {!configured && (
           <p className="mt-2 text-xs normal-case leading-5 text-warning">
@@ -1139,7 +1112,7 @@ function GatewayAccessUsersEditor({
 
       <div className="mt-4 grid gap-3">
         {rows.map((row, index) => (
-          <div key={`${index}:${row.user_id}`} className="grid gap-3 border border-border/60 p-3 xl:grid-cols-[1.2fr_1.2fr_1fr_1fr_auto]">
+          <div key={`${index}:${row.user_id}`} className="grid gap-3 border border-border/60 p-3 xl:grid-cols-[1.3fr_1.7fr_auto]">
             <label className="grid gap-1.5">
               <div className="flex items-center gap-1.5">
                 <Label className="font-mono-ui text-[0.7rem]">{platform.name} user ID</Label>
@@ -1174,87 +1147,24 @@ function GatewayAccessUsersEditor({
                 </div>
               )}
             </label>
-            <label className="grid gap-1.5">
-              <Label className="font-mono-ui text-[0.7rem]">Name / label</Label>
-              <Input
-                value={row.name}
-                placeholder="Ana Admin"
-                onChange={(event) => onUpdate(index, { name: event.target.value })}
-                autoComplete="off"
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <Label className="font-mono-ui text-[0.7rem]">Access level (role)</Label>
-              <select
-                value={row.roles}
-                onChange={(event) => onUpdate(index, { roles: event.target.value })}
-                className="h-9 w-full border border-border bg-background px-2 text-sm"
-              >
-                {row.roles && !roleChoices.includes(row.roles) && (
-                  <option value={row.roles}>{row.roles}</option>
-                )}
-                {roleChoices.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <Label className="font-mono-ui text-[0.7rem]">Teams</Label>
-                {index === 0 && (
-                  <button
-                    type="button"
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[0.65rem] font-bold text-muted-foreground hover:border-primary hover:text-primary"
-                    aria-label="What teams are and where they are managed"
-                    aria-expanded={teamsHelpOpen}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setTeamsHelpOpen((open) => !open);
-                    }}
-                  >
-                    ?
-                  </button>
-                )}
-              </div>
-              <Input
-                list={teamsListId}
-                value={row.teams}
-                placeholder="engineering, finance"
-                onChange={(event) => onUpdate(index, { teams: event.target.value })}
-                autoComplete="off"
-              />
-              {teamsHelpOpen && index === 0 && (
-                <div className="rounded-sm border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground">
-                  <p>
-                    Teams group users for shared knowledge and folder access. A
-                    team exists as soon as something references it — just type a
-                    name here (comma-separate several). What each team can reach
-                    is managed in{" "}
-                    <Link to="/file-access" className="font-bold text-primary hover:underline">
-                      File Access
-                    </Link>{" "}
-                    (delegated team roots and folder policies) and team knowledge
-                    in{" "}
-                    <Link to="/knowledge" className="font-bold text-primary hover:underline">
-                      Knowledge
-                    </Link>
-                    ; assignments live under <code>governance.users</code> in{" "}
-                    <Link
-                      to="/config?search=governance"
-                      className="font-bold text-primary hover:underline"
-                    >
-                      Config
-                    </Link>
-                    .
-                  </p>
-                  {teamOptions.length > 0 && (
-                    <p className="mt-1">Existing teams: {teamOptions.join(", ")}.</p>
-                  )}
+            <div className="grid content-start gap-1.5 text-xs normal-case leading-5">
+              <Label className="font-mono-ui text-[0.7rem]">Governance status</Label>
+              {row.governed ? (
+                <div className="border border-success/40 bg-success/5 px-3 py-2 text-muted-foreground">
+                  <strong className="text-success">Active in Governance</strong>
+                  {row.name ? <span> · {row.name}</span> : null}
+                  <div>
+                    Roles: <code>{row.roles.join(", ")}</code>
+                    {row.teams.length ? <> · Teams: <code>{row.teams.join(", ")}</code></> : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="border border-warning/40 bg-warning/5 px-3 py-2 text-muted-foreground">
+                  <strong className="text-warning">Pending Governance</strong>
+                  <div>This user cannot talk to Maia until an admin grants a role in Governance.</div>
                 </div>
               )}
-            </label>
+            </div>
             <Button
               size="xs"
               outlined
@@ -1269,27 +1179,21 @@ function GatewayAccessUsersEditor({
         ))}
       </div>
 
-      <datalist id={teamsListId}>
-        {teamOptions.map((team) => (
-          <option key={team} value={team} />
-        ))}
-      </datalist>
-
       <div className="mt-3 grid gap-2 text-xs normal-case leading-5 text-muted-foreground md:grid-cols-3">
         <div><strong>Multiple users:</strong> add one row per user ID; the saved allowlist is comma-separated automatically.</div>
-        <div><strong>Normal users:</strong> use <code>operator</code> or <code>viewer</code> unless they need management abilities.</div>
-        <div><strong>Admins:</strong> keep <code>admin</code> limited to people who can manage config, secrets, and access.</div>
+        <div><strong>Pending means denied:</strong> pairing and allow-all do not bypass Governance membership.</div>
+        <div><strong>Grant access:</strong> add the platform ID and at least one role in <Link to="/config?search=governance" className="font-bold text-primary hover:underline">Config / Governance</Link>.</div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
         <Button
           size="sm"
           outlined
-          onClick={() => onAdd(rows.length === 0 ? "admin" : "operator")}
+          onClick={onAdd}
           disabled={disabled}
         >
           <Plus className="h-4 w-4" />
-          {rows.length === 0 ? "Add first admin" : "Add user"}
+          Add user ID
         </Button>
         <Button size="sm" onClick={onSave} disabled={disabled || rows.length === 0}>
           {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}

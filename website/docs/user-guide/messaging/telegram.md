@@ -667,10 +667,11 @@ TELEGRAM_GROUP_ALLOWED_CHATS="-1001234567890"
 
 Behavior:
 
-- `TELEGRAM_ALLOWED_USERS` covers all chat types (DMs, groups, forums).
-- `TELEGRAM_GROUP_ALLOWED_USERS` only authorizes the listed senders in groups/forums. They still can't DM the bot unless listed in `TELEGRAM_ALLOWED_USERS`.
-- A chat in `TELEGRAM_GROUP_ALLOWED_CHATS` authorizes every member of that chat, regardless of sender.
-- Use `*` in any of these to allow any sender/chat.
+- `TELEGRAM_ALLOWED_USERS` admits listed senders across DMs, groups, and forums.
+- `TELEGRAM_GROUP_ALLOWED_USERS` admits listed senders in groups/forums only. It does not grant DM admission.
+- A chat in `TELEGRAM_GROUP_ALLOWED_CHATS` passes the Telegram gateway gate for its members.
+- Use `*` in these lists only when broad gateway admission is intentional.
+- Every human sender still needs an explicit `telegram:user_id` role in `governance.users` before Maia access.
 - This layers on top of existing mention/pattern triggers and on top of `group_topics` + `ignored_threads`.
 
 ### Migration from before PR #17686

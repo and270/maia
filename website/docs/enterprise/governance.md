@@ -11,7 +11,7 @@ Most employees do not need the dashboard. They interact with Maia through a mess
 
 ## Identity and Roles
 
-Gateway users are identified by stable `platform:user_id` keys. Gateway allowlists such as `DISCORD_ALLOWED_USERS` decide who may talk to the bot; `governance.users` decides the Maia roles, teams, and policy behavior attached to that identity. Adding a Discord ID to the gateway allowlist does not automatically make that person a dashboard admin.
+Gateway users are identified by stable `platform:user_id` keys. Human access is the intersection of two gates: a platform allowlist, allowed role, pairing approval, or allow-all flag admits the identity to the gateway; an explicit `governance.users` record with at least one role admits that identity to Maia. A user who passes only the first gate remains blocked as **Pending Governance**.
 
 ```yaml
 governance:
@@ -28,7 +28,7 @@ governance:
 
 Roles drive authorization. Teams drive approved team memory and skill injection.
 
-The normal dashboard path does not require manually copying `/whoami` output into YAML. A user sends `/dashboard` in a private/direct chat, Maia records the exact actor key in **Dashboard Access**, and a system admin approves the request with roles and teams. `/whoami` is still useful for troubleshooting because it shows the channel identity and current mapping.
+Provision the stable ID in **Gateway**, then add the same `platform:user_id` with a role in **Config / Governance**. On a completely fresh installation, the Gateway editor bootstraps only the first saved identity as `admin`; every later identity requires this explicit grant. After provisioning, `/whoami` shows the current mapping and `/dashboard` can create a separate dashboard-login request for users who need the admin surface.
 
 ## Dashboard Access
 
@@ -61,7 +61,7 @@ Default built-in flow for team leaders:
 1. The team leader sends `/dashboard` in a private/direct gateway chat.
 2. Maia creates a pending request in **Dashboard Access**.
 3. A system admin opens **Dashboard Access**, reviews the actor key, assigns roles and teams, and approves or denies the request.
-4. On approval, Maia writes the actor under `governance.users`.
+4. On approval, Maia authorizes dashboard login and may update the actor's already-provisioned `governance.users` record.
 5. The team leader sends `/dashboard` again to receive a short-lived one-time dashboard token.
 6. The admin can revoke or restore that dashboard access from the same page.
 
@@ -235,7 +235,7 @@ Decision rules:
 
 ## Knowledge Authority
 
-Corporate memory/skills apply to every conversation. Team memory/skills apply by `governance.users.*.teams`. User memory/skills remain profile-level. Corporate and team edits are staged for approval and applied only by an authorized human in the dashboard Knowledge panel or API.
+Corporate memory/skills apply to every conversation. Team memory/skills apply by `governance.users.*.teams`. Each human gateway identity has isolated personal memory and skills under `<MAIA_HOME>/users/<platform-hash>/`; CLI/local sessions keep the profile-wide legacy paths. Corporate and team edits are staged for approval and applied only by an authorized human in the dashboard Knowledge panel or API.
 
 ## Cron Authorization
 

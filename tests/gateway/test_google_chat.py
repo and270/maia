@@ -2463,6 +2463,7 @@ class TestAuthorizationEmailMatch:
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "alice@example.com")
         cfg = GatewayConfig()
         runner = GatewayRunner(cfg)
+        runner._has_governance_gateway_access = lambda _source: True
         runner.pairing_store = MagicMock()
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 
@@ -2484,6 +2485,7 @@ class TestAuthorizationEmailMatch:
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "alice@example.com")
         cfg = GatewayConfig()
         runner = GatewayRunner(cfg)
+        runner._has_governance_gateway_access = lambda _source: True
         runner.pairing_store = MagicMock()
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 
@@ -2510,6 +2512,7 @@ class TestAuthorizationEmailMatch:
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "users/77777")
         cfg = GatewayConfig()
         runner = GatewayRunner(cfg)
+        runner._has_governance_gateway_access = lambda _source: True
         runner.pairing_store = MagicMock()
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 

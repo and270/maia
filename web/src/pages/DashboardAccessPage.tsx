@@ -222,9 +222,10 @@ export default function DashboardAccessPage() {
           </Button>
         </div>
         <p className="max-w-3xl text-sm normal-case leading-6 text-muted-foreground">
-          Users request dashboard access with /dashboard from a private channel chat.
-          Admins approve the request here, assign roles and teams, and can revoke
-          future dashboard logins at any time.
+          Governed users can request dashboard access with /dashboard from a private
+          channel chat. New gateway users must first receive a role in Config /
+          Governance; allowlisting alone cannot reach this request flow. Admins review
+          requests here and can revoke future dashboard logins at any time.
         </p>
       </section>
 

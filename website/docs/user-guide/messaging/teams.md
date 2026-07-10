@@ -128,7 +128,7 @@ Open the printed link in your browser — it opens directly in the Teams client.
 | `TEAMS_CLIENT_ID` | Azure AD App (client) ID |
 | `TEAMS_CLIENT_SECRET` | Azure AD client secret |
 | `TEAMS_TENANT_ID` | Azure AD tenant ID |
-| `TEAMS_ALLOWED_USERS` | Comma-separated AAD object IDs allowed to use the bot |
+| `TEAMS_ALLOWED_USERS` | Comma-separated AAD object IDs admitted by the gateway; Governance roles are still required |
 | `TEAMS_ALLOW_ALL_USERS` | Set `true` to skip the allowlist and allow anyone |
 | `TEAMS_HOME_CHANNEL` | Conversation ID for cron/proactive message delivery |
 | `TEAMS_HOME_CHANNEL_NAME` | Display name for the home channel |
@@ -204,11 +204,11 @@ Make sure your configured port (`TEAMS_PORT`, default `3978`) is reachable from 
 ## Security
 
 :::warning
-**Always set `TEAMS_ALLOWED_USERS`** with the AAD object IDs of authorized users. Without this, anyone who can find or install your bot can interact with it.
+**Always set `TEAMS_ALLOWED_USERS`** with the AAD object IDs admitted by the gateway. Each human also needs an explicit `governance.users` role before Maia accepts their messages.
 
 Treat `TEAMS_CLIENT_SECRET` like a password — rotate it periodically via the Azure portal or Teams CLI.
 :::
 
 - Store credentials in `~/.maia/.env` with permissions `600` (`chmod 600 ~/.maia/.env`)
-- The bot only accepts messages from users in `TEAMS_ALLOWED_USERS`; unauthorized messages are silently dropped
+- The gateway admits only users in `TEAMS_ALLOWED_USERS`; admitted users without a Governance role remain blocked
 - Your public endpoint (`/api/messages`) is authenticated by the Teams Bot Framework — requests without valid JWTs are rejected

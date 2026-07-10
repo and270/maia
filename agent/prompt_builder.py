@@ -5,6 +5,7 @@ assemble pieces, then combines them with memory and ephemeral prompts.
 """
 
 import json
+import hashlib
 import logging
 import os
 import re
@@ -566,8 +567,10 @@ _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
 _SKILLS_SNAPSHOT_VERSION = 1
 
 
-def _skills_prompt_snapshot_path() -> Path:
-    return get_hermes_home() / ".skills_prompt_snapshot.json"
+def _skills_prompt_snapshot_path(skills_dir: Optional[Path] = None) -> Path:
+    skills_dir = get_skills_dir() if skills_dir is None else skills_dir
+    root_key = hashlib.sha256(str(skills_dir.resolve()).encode("utf-8")).hexdigest()[:20]
+    return get_hermes_home() / "cache" / "skill_prompt_snapshots" / f"{root_key}.json"
 
 
 def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
@@ -576,7 +579,12 @@ def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
         _SKILLS_PROMPT_CACHE.clear()
     if clear_snapshot:
         try:
-            _skills_prompt_snapshot_path().unlink(missing_ok=True)
+            snapshot_dir = get_hermes_home() / "cache" / "skill_prompt_snapshots"
+            if snapshot_dir.exists():
+                for snapshot in snapshot_dir.glob("*.json"):
+                    snapshot.unlink(missing_ok=True)
+            # Clean up the pre-user-scope snapshot from older releases.
+            (get_hermes_home() / ".skills_prompt_snapshot.json").unlink(missing_ok=True)
         except OSError as e:
             logger.debug("Could not remove skills prompt snapshot: %s", e)
 
@@ -596,7 +604,7 @@ def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:
 
 def _load_skills_snapshot(skills_dir: Path) -> Optional[dict]:
     """Load the disk snapshot if it exists and its manifest still matches."""
-    snapshot_path = _skills_prompt_snapshot_path()
+    snapshot_path = _skills_prompt_snapshot_path(skills_dir)
     if not snapshot_path.exists():
         return None
     try:
@@ -626,7 +634,9 @@ def _write_skills_snapshot(
         "category_descriptions": category_descriptions,
     }
     try:
-        atomic_json_write(_skills_prompt_snapshot_path(), payload)
+        snapshot_path = _skills_prompt_snapshot_path(skills_dir)
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json_write(snapshot_path, payload)
     except Exception as e:
         logger.debug("Could not write skills prompt snapshot: %s", e)
 
@@ -733,11 +743,14 @@ def build_skills_system_prompt(
     are read-only — they appear in the index but new skills are always created
     in the local dir.  Local skills take precedence when names collide.
     """
-    skills_dir = get_skills_dir()
-    external_dirs = get_all_skills_dirs()[1:]  # skip local (index 0)
-
-    if not skills_dir.exists() and not external_dirs:
+    all_skill_dirs = [path for path in get_all_skills_dirs() if path.exists()]
+    if not all_skill_dirs:
         return ""
+    # Keep the precedence declared by get_all_skills_dirs(): authoritative
+    # corporate/team layers, the current actor's personal skills, the shared
+    # profile baseline, then configured external directories.
+    skills_dir = all_skill_dirs[0]
+    external_dirs = all_skill_dirs[1:]
 
     # ── Layer 1: in-process LRU cache ─────────────────────────────────
     # Include the resolved platform so per-platform disabled-skill lists

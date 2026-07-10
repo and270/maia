@@ -48,6 +48,7 @@ def _make_runner(platform: Platform):
         platforms={platform: PlatformConfig(enabled=True)},
     )
     runner = object.__new__(GatewayRunner)
+    runner._has_governance_gateway_access = lambda _source: True
     runner.config = config
     adapter = SimpleNamespace(send=AsyncMock())
     runner.adapters = {platform: adapter}

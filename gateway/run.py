@@ -4752,16 +4752,49 @@ class GatewayRunner:
             return YuanbaoAdapter(config)
 
         return None
-    def _is_user_authorized(self, source: SessionSource) -> bool:
+
+    @staticmethod
+    def _has_governance_gateway_access(source: SessionSource) -> bool:
+        """Require explicit Governance membership for human gateway actors."""
+
+        try:
+            from agent.governance import Actor, has_explicit_user_access
+
+            platform = source.platform.value if source.platform else ""
+            actor = Actor(
+                platform=platform,
+                user_id=str(source.user_id or ""),
+                user_name=str(source.user_name or ""),
+            )
+            return has_explicit_user_access(actor)
+        except Exception as exc:
+            logger.error(
+                "Could not verify Governance membership for %s:%s: %s",
+                getattr(source.platform, "value", source.platform),
+                source.user_id,
+                exc,
+            )
+            return False
+
+    def _is_user_authorized(
+        self,
+        source: SessionSource,
+        *,
+        require_governance: bool = True,
+    ) -> bool:
         """
         Check if a user is authorized to use the bot.
         
-        Checks in order:
+        Gateway admission checks in order:
         1. Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
         2. Environment variable allowlists (TELEGRAM_ALLOWED_USERS, etc.)
         3. DM pairing approved list
         4. Global allow-all (GATEWAY_ALLOW_ALL_USERS=true)
         5. Default: deny
+
+        Human users must additionally have an explicit ``governance.users``
+        record with at least one role.  Allow-all, allowlists, role admission,
+        and pairing do not grant Governance membership by themselves.
         """
         # Home Assistant events are system-generated (state changes), not
         # user-initiated messages.  The HASS_TOKEN already authenticates the
@@ -4770,6 +4803,12 @@ class GatewayRunner:
         # the adapter itself — no user allowlist applies.
         if source.platform in (Platform.HOMEASSISTANT, Platform.WEBHOOK):
             return True
+
+        def finalize_admission(admitted: bool) -> bool:
+            return bool(admitted) and (
+                not require_governance
+                or self._has_governance_gateway_access(source)
+            )
 
         user_id = source.user_id
         if not user_id:
@@ -4839,15 +4878,19 @@ class GatewayRunner:
             except Exception:
                 pass
 
-        # Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
-        platform_allow_all_var = platform_allow_all_map.get(source.platform, "")
-        if platform_allow_all_var and os.getenv(platform_allow_all_var, "").lower() in ("true", "1", "yes"):
-            return True
-
+        # Evaluate explicitly permitted bot-to-bot traffic before human
+        # allow-all flags. Otherwise a deployment with both settings enabled
+        # would incorrectly apply the human Governance membership gate to a
+        # bot sender before reaching this integration-specific exception.
         if getattr(source, "is_bot", False):
             allow_bots_var = platform_allow_bots_map.get(source.platform)
             if allow_bots_var and os.getenv(allow_bots_var, "none").lower().strip() in ("mentions", "all"):
                 return True
+
+        # Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
+        platform_allow_all_var = platform_allow_all_map.get(source.platform, "")
+        if platform_allow_all_var and os.getenv(platform_allow_all_var, "").lower() in ("true", "1", "yes"):
+            return finalize_admission(True)
 
         # Discord role-based access (DISCORD_ALLOWED_ROLES): the adapter's
         # on_message pre-filter already verified role membership — if the
@@ -4859,12 +4902,12 @@ class GatewayRunner:
             source.platform == Platform.DISCORD
             and os.getenv("DISCORD_ALLOWED_ROLES", "").strip()
         ):
-            return True
+            return finalize_admission(True)
 
         # Check pairing store (always checked, regardless of allowlists)
         platform_name = source.platform.value if source.platform else ""
         if self.pairing_store.is_approved(platform_name, user_id):
-            return True
+            return finalize_admission(True)
 
         # Check platform-specific and global allowlists
         platform_allowlist = os.getenv(platform_env_map.get(source.platform, ""), "").strip()
@@ -4877,7 +4920,8 @@ class GatewayRunner:
 
         if not platform_allowlist and not group_user_allowlist and not group_chat_allowlist and not global_allowlist:
             # No allowlists configured -- check global allow-all flag
-            return os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
+            admitted = os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
+            return finalize_admission(admitted)
 
         # Telegram can optionally authorize group traffic by chat ID.
         # Keep this separate from TELEGRAM_GROUP_ALLOWED_USERS, which gates
@@ -4887,7 +4931,7 @@ class GatewayRunner:
                 chat_id.strip() for chat_id in group_chat_allowlist.split(",") if chat_id.strip()
             }
             if "*" in allowed_group_ids or source.chat_id in allowed_group_ids:
-                return True
+                return finalize_admission(True)
 
         # Backward-compat shim for #15027: prior to PR #17686,
         # TELEGRAM_GROUP_ALLOWED_USERS was (mis)used as a chat-ID allowlist.
@@ -4917,7 +4961,7 @@ class GatewayRunner:
                     )
                     self._warned_telegram_group_users_legacy = True
                 if source.chat_id in legacy_chat_ids:
-                    return True
+                    return finalize_admission(True)
 
         # Check if user is in any allowlist. In group/forum chats,
         # TELEGRAM_GROUP_ALLOWED_USERS is the scoped allowlist and should not
@@ -4934,7 +4978,7 @@ class GatewayRunner:
         # "*" in any allowlist means allow everyone (consistent with
         # SIGNAL_GROUP_ALLOWED_USERS precedent)
         if "*" in allowed_ids:
-            return True
+            return finalize_admission(True)
 
         check_ids = {user_id}
         if "@" in user_id:
@@ -4953,7 +4997,7 @@ class GatewayRunner:
             if normalized_user_id:
                 check_ids.add(normalized_user_id)
 
-        return bool(check_ids & allowed_ids)
+        return finalize_admission(bool(check_ids & allowed_ids))
 
     @staticmethod
     def _coerce_gateway_role_list(value) -> list[str]:
@@ -5229,6 +5273,26 @@ class GatewayRunner:
             return None
         elif not self._is_user_authorized(source):
             logger.warning("Unauthorized user: %s (%s) on %s", source.user_id, source.user_name, source.platform.value)
+            # A recognized/allowlisted human who is still missing Governance
+            # membership is pending, not a pairing candidate. Pairing can open
+            # the gateway door but never grants a Maia role.
+            gateway_admitted = self._is_user_authorized(
+                source,
+                require_governance=False,
+            )
+            if gateway_admitted and not self._has_governance_gateway_access(source):
+                if source.chat_type == "dm":
+                    adapter = self.adapters.get(source.platform)
+                    if adapter:
+                        actor_key = f"{source.platform.value}:{source.user_id}"
+                        await adapter.send(
+                            source.chat_id,
+                            "Your gateway identity is recognized, but access to Maia is "
+                            "still pending Governance approval. Ask an administrator to "
+                            f"add `{actor_key}` under `governance.users` with at least "
+                            "one role."
+                        )
+                return None
             # In DMs: offer pairing code. In groups: silently ignore.
             if source.chat_type == "dm" and self._get_unauthorized_dm_behavior(source.platform) == "pair":
                 platform_name = source.platform.value if source.platform else "unknown"

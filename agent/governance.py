@@ -151,6 +151,55 @@ def _user_record(config: dict[str, Any], actor: Actor) -> dict[str, Any]:
     return {}
 
 
+def explicit_user_record(
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
+    """Return an explicitly configured governance user record.
+
+    Unlike :func:`actor_roles`, this helper never falls back to
+    ``governance.default_role``.  Gateway admission uses it as a fail-closed
+    membership check: an allowlist or pairing approval is necessary, but a
+    human actor is not allowed to reach the bot until an administrator has
+    also created a Governance record with at least one role.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    who = current_actor() if actor is None else actor
+    users = cfg.get("users", {})
+    if not isinstance(users, dict):
+        return None
+    platform = str(who.platform or "local").strip().lower()
+    user_id = str(who.user_id or "").strip()
+    if not user_id:
+        return None
+    # Gateway membership must be tied to the stable sender ID. Display names
+    # are mutable and may collide, so the broader Actor.keys name fallbacks
+    # used by legacy policy lookups are intentionally excluded here.
+    stable_keys = (f"{platform}:{user_id}", user_id)
+    for key in stable_keys:
+        if key not in users:
+            continue
+        value = users[key]
+        if isinstance(value, dict):
+            record = dict(value)
+        elif isinstance(value, (str, list, tuple, set)):
+            record = {"roles": _coerce_list(value)}
+        else:
+            return None
+        return record if _coerce_list(record.get("roles")) else None
+    return None
+
+
+def has_explicit_user_access(
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Whether *actor* has an explicit Governance record with a role."""
+
+    return explicit_user_record(actor=actor, config=config) is not None
+
+
 def actor_roles(
     actor: Optional[Actor] = None,
     config: Optional[dict[str, Any]] = None,

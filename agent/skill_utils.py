@@ -233,10 +233,12 @@ def get_external_skills_dirs() -> List[Path]:
 
 
 def get_all_skills_dirs() -> List[Path]:
-    """Return all skill directories: corporate/team, local, then external.
+    """Return corporate/team, personal, profile, then external skill dirs.
 
     Shared corporate/team skills intentionally take precedence over user-level
-    skills when names collide.  That keeps tenant procedures authoritative.
+    skills when names collide. A gateway actor's isolated personal directory
+    precedes the profile-wide baseline so one user's skills are never exposed
+    to another gateway user.
     """
     dirs: List[Path] = []
     try:
@@ -245,9 +247,17 @@ def get_all_skills_dirs() -> List[Path]:
         dirs.extend(enterprise_skill_dirs())
     except Exception:
         pass
-    local = get_skills_dir()
-    if local not in dirs:
-        dirs.append(local)
+    try:
+        from agent.user_scope import personal_skills_dir
+
+        personal = personal_skills_dir()
+        if personal not in dirs:
+            dirs.append(personal)
+    except Exception:
+        pass
+    profile = get_skills_dir()
+    if profile not in dirs:
+        dirs.append(profile)
     dirs.extend(get_external_skills_dirs())
     return dirs
 
