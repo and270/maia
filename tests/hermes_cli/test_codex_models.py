@@ -53,6 +53,7 @@ def test_get_codex_model_ids_falls_back_to_curated_defaults(tmp_path, monkeypatc
     models = get_codex_model_ids()
 
     assert models[: len(DEFAULT_CODEX_MODELS)] == DEFAULT_CODEX_MODELS
+    assert models[:3] == ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
     assert "gpt-5.4" in models
     assert "gpt-5.3-codex-spark" not in models
 
@@ -66,6 +67,15 @@ def test_get_codex_model_ids_adds_forward_compat_models_from_templates(monkeypat
     models = get_codex_model_ids(access_token="codex-access-token")
 
     assert models == ["gpt-5.2-codex", "gpt-5.4-mini", "gpt-5.4", "gpt-5.3-codex"]
+
+
+def test_openai_and_codex_fallback_catalogs_include_gpt_5_6_family():
+    from hermes_cli.models import _PROVIDER_MODELS
+
+    expected = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+    assert DEFAULT_CODEX_MODELS[:3] == expected
+    assert _PROVIDER_MODELS["openai"][:3] == expected
+    assert _PROVIDER_MODELS["openai-codex"][:3] == expected
 
 
 def test_model_command_uses_runtime_access_token_for_codex_list(monkeypatch):

@@ -353,12 +353,11 @@ def test_select_provider_and_model_warns_if_named_custom_provider_disappears(
     assert "selected saved custom provider is no longer available" in out
 
 
-def test_select_provider_and_model_hides_onboarding_providers(
+def test_select_provider_and_model_excludes_nous_from_maia(
     tmp_path, monkeypatch
 ):
-    """The setup/onboarding flow can hide providers without removing them globally."""
+    """Nous Research's provider is never selectable in Maia."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_ONBOARDING_HIDDEN_PROVIDERS", "nous")
     _clear_provider_env(monkeypatch)
 
     captured = []
@@ -377,6 +376,10 @@ def test_select_provider_and_model_hides_onboarding_providers(
     assert captured
     assert not any("Nous Portal" in label for label in captured)
     assert any("OpenRouter" in label for label in captured)
+
+    from hermes_cli.models import CANONICAL_PROVIDERS
+
+    assert "nous" not in {entry.slug for entry in CANONICAL_PROVIDERS}
 
 
 def test_select_provider_and_model_accepts_named_provider_from_providers_section(

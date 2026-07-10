@@ -37,6 +37,10 @@ Type in the filter box to narrow by provider name, slug, or model ID.
 
 Pick a model, hit **Switch**, and Hermes writes it to `~/.maia/config.yaml` under the `model` section. **This applies to new sessions only** — any chat tab you already have open keeps running whatever model it started with. To hot-swap the current chat, use the `/model` slash command inside it.
 
+:::info GPT-5.6 preview
+OpenAI Codex and the direct OpenAI provider support `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`. During the limited preview, Maia keeps the live provider catalog authoritative: the models work only for API organizations or Codex workspaces that OpenAI has enabled. Nous Portal is an upstream Hermes provider and is not offered by Maia.
+:::
+
 ## Setting auxiliary models
 
 Click **Show auxiliary** to reveal the eight task slots:

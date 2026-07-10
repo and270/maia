@@ -162,3 +162,32 @@ def test_no_codex_when_no_credentials(tmp_path, monkeypatch):
     assert "openai-codex" not in slugs, (
         "openai-codex should not appear without any credentials"
     )
+
+
+def test_nous_never_appears_in_maia_model_picker(tmp_path, monkeypatch):
+    """Even migrated Nous credentials must not re-expose the Hermes provider."""
+    maia_home = tmp_path / ".maia"
+    maia_home.mkdir()
+    monkeypatch.setenv("MAIA_HOME", str(maia_home))
+    monkeypatch.setenv("HERMES_HOME", str(maia_home))
+    (maia_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "providers": {
+                    "nous": {
+                        "access_token": "legacy-nous-token",
+                    }
+                },
+            }
+        )
+    )
+
+    from hermes_cli.model_switch import list_authenticated_providers
+
+    providers = list_authenticated_providers(
+        current_provider="nous",
+        max_models=10,
+    )
+
+    assert "nous" not in {provider["slug"] for provider in providers}

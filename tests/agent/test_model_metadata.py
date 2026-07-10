@@ -243,9 +243,9 @@ class TestDefaultContextLengths:
 
 class TestCodexOAuthContextLength:
     """ChatGPT Codex OAuth imposes lower context limits than the direct
-    OpenAI API for the same slugs. Verified Apr 2026 via live probe of
-    chatgpt.com/backend-api/codex/models: every model returns 272k, while
-    models.dev reports 1.05M for gpt-5.5/gpt-5.4 and 400k for the rest.
+    OpenAI API for the same slugs. Live probes return 272k for the older
+    Codex catalog and 372k for GPT-5.6, while direct GPT-5.6 API models
+    expose a 1.05M context window.
     """
 
     def setup_method(self):
@@ -280,6 +280,29 @@ class TestCodexOAuthContextLength:
                     f"Codex {model}: expected 272000 fallback, got {ctx} "
                     "(models.dev leakage?)"
                 )
+
+    def test_gpt_5_6_uses_provider_specific_context_fallbacks(self):
+        from agent.model_metadata import get_model_context_length
+
+        with patch("agent.model_metadata.get_cached_context_length", return_value=None), \
+             patch("agent.model_metadata.save_context_length"), \
+             patch("agent.model_metadata.fetch_endpoint_model_metadata", return_value={}), \
+             patch("agent.models_dev.lookup_models_dev_context", return_value=None):
+            for model in ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"):
+                codex_context = get_model_context_length(
+                    model=model,
+                    base_url="https://chatgpt.com/backend-api/codex",
+                    api_key="",
+                    provider="openai-codex",
+                )
+                direct_context = get_model_context_length(
+                    model=model,
+                    base_url="https://api.openai.com/v1",
+                    api_key="",
+                    provider="openai",
+                )
+                assert codex_context == 372_000
+                assert direct_context == 1_050_000
 
     def test_live_probe_overrides_fallback(self):
         """When a token is provided, the live /models probe is preferred

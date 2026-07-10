@@ -1,3 +1,4 @@
+from decimal import Decimal
 from types import SimpleNamespace
 
 from agent.usage_pricing import (
@@ -143,6 +144,36 @@ def test_estimate_usage_cost_marks_subscription_routes_included():
 
     assert result.status == "included"
     assert float(result.amount_usd) == 0.0
+
+
+def test_gpt_5_6_direct_openai_pricing_matches_official_preview_rates():
+    expected = {
+        "gpt-5.6-sol": ("5.00", "30.00", "0.50", "6.25"),
+        "gpt-5.6-terra": ("2.50", "15.00", "0.25", "3.125"),
+        "gpt-5.6-luna": ("1.00", "6.00", "0.10", "1.25"),
+    }
+
+    for model, rates in expected.items():
+        entry = get_pricing_entry(model, provider="openai")
+        assert entry is not None
+        assert (
+            entry.input_cost_per_million,
+            entry.output_cost_per_million,
+            entry.cache_read_cost_per_million,
+            entry.cache_write_cost_per_million,
+        ) == tuple(Decimal(rate) for rate in rates)
+
+
+def test_gpt_5_6_codex_oauth_remains_subscription_included():
+    result = estimate_usage_cost(
+        "gpt-5.6-sol",
+        CanonicalUsage(input_tokens=1000, output_tokens=500),
+        provider="openai-codex",
+        base_url="https://chatgpt.com/backend-api/codex",
+    )
+
+    assert result.status == "included"
+    assert result.amount_usd == Decimal("0")
 
 
 def test_estimate_usage_cost_refuses_cache_pricing_without_official_cache_rate(monkeypatch):

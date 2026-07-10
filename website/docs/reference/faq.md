@@ -17,8 +17,7 @@ Quick answers and fixes for the most common questions and issues.
 Maia works with any OpenAI-compatible API. Supported providers include:
 
 - **[OpenRouter](https://openrouter.ai/)** — access hundreds of models through one API key (recommended for flexibility)
-- **Nous Portal** — optional inference endpoint supported by the upstream provider stack
-- **OpenAI** — GPT-4o, o1, o3, etc.
+- **OpenAI / OpenAI Codex** — direct API keys or Codex OAuth, including entitled GPT-5.6 Sol, Terra, and Luna preview access
 - **Anthropic** — Claude models (via OpenRouter or compatible proxy)
 - **Google** — Gemini models (via OpenRouter or compatible proxy)
 - **z.ai / ZhipuAI** — GLM models

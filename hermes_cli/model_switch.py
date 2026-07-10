@@ -1158,6 +1158,11 @@ def list_authenticated_providers(
 
     data = fetch_models_dev()
 
+    # Maia intentionally does not expose Nous Research's subscription
+    # provider. The inherited implementation remains available only for
+    # legacy runtime compatibility, never as a selectable provider.
+    from hermes_cli.models import MAIA_HIDDEN_PROVIDER_SLUGS
+
     # Build curated model lists keyed by hermes provider ID
     curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)
     curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]
@@ -1199,6 +1204,8 @@ def list_authenticated_providers(
 
     # --- 1. Check Hermes-mapped providers ---
     for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+        if hermes_id in MAIA_HIDDEN_PROVIDER_SLUGS:
+            continue
         # Skip aliases that map to the same models.dev provider (e.g.
         # kimi-coding and kimi-coding-cn both → kimi-for-coding).
         # The first one with valid credentials wins (#10526).
@@ -1278,6 +1285,8 @@ def list_authenticated_providers(
 
         # Resolve Hermes slug — e.g. "github-copilot" → "copilot"
         hermes_slug = _mdev_to_hermes.get(pid, pid)
+        if hermes_slug in MAIA_HIDDEN_PROVIDER_SLUGS:
+            continue
         if hermes_slug.lower() in seen_slugs:
             continue
 

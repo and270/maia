@@ -194,6 +194,9 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     # Native OpenAI Chat Completions (api.openai.com). Used by /model counts and
     # provider_model_ids fallback when /v1/models is unavailable.
     "openai": [
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "gpt-5.4",
         "gpt-5.4-mini",
         "gpt-5-mini",
@@ -787,8 +790,15 @@ class ProviderEntry(NamedTuple):
     label: str
     tui_desc: str   # detailed description for `hermes model` TUI
 
+
+# Maia is derived from Hermes but does not offer Nous Research's subscription
+# provider. Keep the inherited runtime/auth implementation available for
+# legacy config migration and upstream merges, while excluding it from every
+# Maia-facing provider catalog.
+MAIA_HIDDEN_PROVIDER_SLUGS = frozenset({"nous"})
+
+
 CANONICAL_PROVIDERS: list[ProviderEntry] = [
-    ProviderEntry("nous",           "Nous Portal",              "Nous Portal (Nous Research subscription)"),
     ProviderEntry("openrouter",     "OpenRouter",               "OpenRouter (100+ models, pay-per-use)"),
     ProviderEntry("lmstudio",       "LM Studio",                "LM Studio (local desktop app with built-in model server)"),
     ProviderEntry("anthropic",      "Anthropic",                "Anthropic (Claude models — API key or Claude Code)"),
@@ -831,7 +841,7 @@ _canonical_slugs = {p.slug for p in CANONICAL_PROVIDERS}
 try:
     from providers import list_providers as _list_providers_for_canonical
     for _pp in _list_providers_for_canonical():
-        if _pp.name in _canonical_slugs:
+        if _pp.name in _canonical_slugs or _pp.name in MAIA_HIDDEN_PROVIDER_SLUGS:
             continue
         if _pp.auth_type in ("oauth_device_code", "oauth_external", "external_process", "aws_sdk", "copilot"):
             continue  # non-api-key flows need bespoke picker UX; skip auto-inject

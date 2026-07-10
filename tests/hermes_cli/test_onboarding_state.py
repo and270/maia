@@ -55,8 +55,16 @@ class TestOnboardingState:
         assert by_slug["anthropic"]["auth_type"] == "api_key"
         # openrouter predates PROVIDER_REGISTRY; the endpoint fills the gap.
         assert by_slug["openrouter"]["env_key"] == "OPENROUTER_API_KEY"
+        # Nous Research's subscription provider belongs to upstream Hermes,
+        # not Maia, and must never appear in the onboarding catalog.
+        assert "nous" not in by_slug
         # OAuth providers are listed but carry no key env (handled elsewhere).
-        assert by_slug["nous"]["auth_type"] != "api_key"
+        assert by_slug["openai-codex"]["auth_type"] != "api_key"
+
+    def test_nous_is_absent_from_maia_oauth_catalog(self):
+        from hermes_cli.web_server import _OAUTH_PROVIDER_CATALOG
+
+        assert "nous" not in {entry["id"] for entry in _OAUTH_PROVIDER_CATALOG}
 
     def test_saving_a_key_flips_provider_configured_without_restart(self):
         assert self._state()["provider_configured"] is False
