@@ -26,7 +26,7 @@ governance:
       teams: [finance]
 ```
 
-Roles drive authorization. Teams drive approved team memory and skill injection.
+Roles drive authorization. Teams are first-class Governance records used for membership, approved team knowledge, delegated roots, and group file grants.
 
 Provision the stable ID in **Gateway**, then add the same `platform:user_id` with a role in **Config / Governance**. On a completely fresh installation, the Gateway editor bootstraps only the first saved identity as `admin`; every later identity requires this explicit grant. After provisioning, `/whoami` shows the current mapping and `/dashboard` can create a separate dashboard-login request for users who need the admin surface.
 
@@ -138,25 +138,26 @@ After approval:
 
 ## File Authorization By Team And User
 
+The Governance workspace is organized as **People → Teams → File access → Approvals → Settings**. People and Teams cover the common assignment workflows; File access is the advanced policy list and opens directly on existing governed paths with **Add policy** beside the list.
+
 Use **Dashboard -> File Access** for normal file authorization. The dashboard writes the same values to `<MAIA_HOME>/config.yaml` on the server under `governance`; this YAML is not a separate repo file. Direct YAML edits are for server operators, reviewed infrastructure-as-code, backup restore, or break-glass recovery.
 
 Before creating policies:
 
 1. Ask users who need dashboard or delegated file administration to run `/dashboard` in a private channel chat.
-2. Approve those requests in **Dashboard Access** with the right roles and teams.
-3. Keep `governance.default_file_policy: deny` in production.
-4. Open **File Access** and save policies from the dashboard.
+2. Create the required teams under **Governance → Teams**.
+3. Approve dashboard requests and assign only registered teams.
+4. Add direct user/team paths from **People** or **Teams**, or open **File Access** for advanced policies.
 
-System admins can change the global default, shared folders, sensitive folders, role-wide grants, and delegated team roots. Team leaders use the same page after approved `/dashboard` access and a private channel token, or trusted-header login from an existing company identity layer, but they see only the team roots delegated to them.
+Unmatched paths are always denied. System admins manage people, teams, direct grants, sensitive folders, role-wide grants, and delegated team roots. Team leaders use File Access after approved `/dashboard` access but see only the roots delegated to them.
 
 System admin workflow:
 
-1. Open **File Access** as a role allowed by `dashboard.auth.admin_roles`.
-2. Set **Default file policy** to `deny`.
-3. Add shared folders only when the whole tenant should access them.
-4. Add department folders using **Read teams** / **Write teams** or named **Read users** / **Write users**.
-5. Add a **Delegated team root** when a team leader should manage one bounded folder.
-6. Save and review `governance.file_access` audit events for denied attempts.
+1. Open **People** to grant roles and optional direct file/folder access.
+2. Open **Teams**, create the team, add governed people, and grant the team paths.
+3. Add a **Delegated management root** on the team when a team leader should manage one bounded folder.
+4. Open **File Access** for advanced role, deny, and write-approval policy fields.
+5. Save and review `governance.file_access` audit events for denied attempts.
 
 Team leader workflow:
 
@@ -167,14 +168,15 @@ Team leader workflow:
 5. Leave **Recursive directory policy** on for folders; turn it off for one exact file.
 6. Save and ask the affected user to retry.
 
-Team leaders cannot change the global default, edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
 Practical marketing example, as saved in `<MAIA_HOME>/config.yaml`:
 
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    marketing: {}
   users:
     "sso:ana@company.com":
       name: Ana Marketing Lead
@@ -220,11 +222,12 @@ Decision rules:
 3. `deny_users` and `deny_teams` override grants.
 4. Reads/searches require `read_users`, `read_teams`, or `read_roles`.
 5. Writes/patches/deletes require `write_users`, `write_teams`, or `write_roles`.
-6. If no policy matches and `default_file_policy` is `deny`, access is denied and audited.
+6. If no policy matches, access is denied and audited.
+7. A matching policy with no applicable read/write grant also denies access.
 
 | Dashboard field | YAML field | Who can normally set it |
 |---|---|---|
-| Default file policy | `default_file_policy` | System admin only. |
+| Team registry | `teams` | System admin only. |
 | Delegated team roots | `team_file_roots` | System admin only. |
 | Server path | `folder_policies[].path` | Admin; team leader below delegated root. |
 | Recursive directory policy | `recursive` | Admin or delegated team leader. |

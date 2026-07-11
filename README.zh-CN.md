@@ -31,12 +31,13 @@ governance:
   tenant_id: acme-corp
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
+  teams:
+    finance: {}
   users:
     "slack:U123":
       name: Finance Manager
       roles: [manager]
       teams: [finance]
-  default_file_policy: deny
 ```
 
 知识层分为：

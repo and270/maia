@@ -13,10 +13,10 @@ import {
   HelpBox,
   HelpDot,
   RoleMultiSelect,
+  TeamMultiSelect,
   TeamsHelpContent,
-  TeamsInput,
-  useGovernanceOptions,
 } from "@/components/GovernanceFields";
+import { useGovernanceOptions } from "@/hooks/useGovernanceOptions";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -413,12 +413,10 @@ function AccessRequestCard({
             onToggle={() => setTeamsHelpOpen((open) => !open)}
           />
         </div>
-        <TeamsInput
-          value={draft.teams}
-          onChange={(value) => onDraft({ teams: value })}
+        <TeamMultiSelect
+          value={textToList(draft.teams)}
+          onChange={(value) => onDraft({ teams: value.join(", ") })}
           options={teamOptions}
-          listId={`access-team-options-${request.id}`}
-          placeholder="marketing"
         />
         {teamsHelpOpen && (
           <HelpBox>

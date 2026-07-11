@@ -113,6 +113,26 @@ export type GovernanceUser = {
   teams: string[];
   governed: boolean;
   gateway_allowed: boolean;
+  file_access: GovernanceFileGrant[];
+};
+
+export type GovernanceFileGrant = {
+  path: string;
+  recursive: boolean;
+  read: boolean;
+  write: boolean;
+};
+
+export type GovernanceTeam = {
+  name: string;
+  members: string[];
+  file_access: GovernanceFileGrant[];
+  delegated_root: {
+    path: string;
+    manager_roles?: string[];
+    managers?: string[];
+    [key: string]: unknown;
+  } | null;
 };
 
 export type GovernanceOverview = {
@@ -120,7 +140,6 @@ export type GovernanceOverview = {
   tenant_id: string;
   default_role: string;
   role_hierarchy: string[];
-  default_file_policy: string;
   team_file_manager_roles: string[];
   gateway: {
     group_sessions_per_user: boolean;
@@ -129,6 +148,7 @@ export type GovernanceOverview = {
   cron: { default_authorizer_roles: string[] };
   terminal: { allowed_roles: string[]; approver_roles: string[] };
   teams: string[];
+  team_records: GovernanceTeam[];
   users: GovernanceUser[];
 };
 
@@ -157,7 +177,6 @@ export type FolderPolicy = {
 
 export type FolderPoliciesResponse = {
   enabled: boolean;
-  default_file_policy: string;
   folder_policies: FolderPolicy[];
   team_file_roots: Record<string, { path: string; [key: string]: unknown }>;
   actor: {
@@ -287,11 +306,9 @@ export const api = {
   getFolderPolicies: () =>
     fetchJSON<FolderPoliciesResponse>("/api/governance/folder-policies"),
   saveFolderPolicies: (body: {
-    default_file_policy?: string;
     folder_policies: FolderPolicy[];
-    team_file_roots?: Record<string, unknown>;
   }) =>
-    fetchJSON<{ ok: boolean; folder_policies: FolderPolicy[]; default_file_policy: string }>(
+    fetchJSON<{ ok: boolean; folder_policies: FolderPolicy[] }>(
       "/api/governance/folder-policies",
       {
         method: "PUT",
@@ -320,7 +337,12 @@ export const api = {
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
   saveGovernanceUser: (
     actorKey: string,
-    body: { name: string; roles: string[]; teams: string[] },
+    body: {
+      name: string;
+      roles: string[];
+      teams: string[];
+      file_access?: GovernanceFileGrant[];
+    },
   ) =>
     fetchJSON<{ ok: boolean }>(
       `/api/governance/users/${encodeURIComponent(actorKey)}`,
@@ -335,12 +357,38 @@ export const api = {
       `/api/governance/users/${encodeURIComponent(actorKey)}`,
       { method: "DELETE" },
     ),
+  createGovernanceTeam: (name: string) =>
+    fetchJSON<{ ok: boolean; team: GovernanceTeam }>("/api/governance/teams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  saveGovernanceTeam: (
+    name: string,
+    body: {
+      members: string[];
+      file_access: GovernanceFileGrant[];
+      delegated_root: GovernanceTeam["delegated_root"];
+    },
+  ) =>
+    fetchJSON<{ ok: boolean; team: GovernanceTeam }>(
+      `/api/governance/teams/${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  removeGovernanceTeam: (name: string) =>
+    fetchJSON<{ ok: boolean; removed: string }>(
+      `/api/governance/teams/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    ),
   saveGovernanceSettings: (body: {
     enabled: boolean;
     tenant_id: string;
     default_role: string;
     role_hierarchy: string[];
-    default_file_policy: string;
     team_file_manager_roles: string[];
     gateway_group_sessions_per_user: boolean;
     gateway_thread_sessions_per_user: boolean;

@@ -30,8 +30,8 @@ import {
   HelpBox,
   HelpDot,
   RoleMultiSelect,
-  useGovernanceOptions,
 } from "@/components/GovernanceFields";
+import { useGovernanceOptions } from "@/hooks/useGovernanceOptions";
 import { PluginSlot } from "@/plugins";
 
 function formatTime(iso?: string | null): string {

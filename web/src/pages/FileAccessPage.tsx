@@ -4,10 +4,9 @@ import { FolderTree, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import {
   HelpBox,
   HelpDot,
-  RoleMultiSelect,
-  TeamsHelpContent,
-  useGovernanceOptions,
+  TeamMultiSelect,
 } from "@/components/GovernanceFields";
+import { useGovernanceOptions } from "@/hooks/useGovernanceOptions";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -32,16 +31,6 @@ function textToList(value: string): string[] {
     .filter(Boolean);
 }
 
-function valueToText(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item)).join(", ");
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  return "";
-}
-
 function updateListField(
   policy: FolderPolicy,
   key: keyof FolderPolicy,
@@ -57,57 +46,15 @@ function updateListField(
   return next;
 }
 
-type TeamRootDraft = {
-  team: string;
-  path: string;
-  manager_roles: string;
-  managers: string;
-};
-
-function teamRootsToDrafts(
-  roots: FolderPoliciesResponse["team_file_roots"],
-): TeamRootDraft[] {
-  return Object.entries(roots ?? {}).map(([team, entry]) => ({
-    team,
-    path: String(entry.path ?? ""),
-    manager_roles: valueToText(entry.manager_roles),
-    managers: valueToText(entry.managers ?? entry.manager_users),
-  }));
-}
-
-function teamRootDraftsToConfig(
-  drafts: TeamRootDraft[],
-): Record<string, Record<string, unknown>> {
-  const result: Record<string, Record<string, unknown>> = {};
-  for (const draft of drafts) {
-    const team = draft.team.trim();
-    const path = draft.path.trim();
-    if (!team && !path) continue;
-    if (!team || !path) {
-      throw new Error("Each delegated team root needs both a team and a server path.");
-    }
-    const entry: Record<string, unknown> = { path };
-    const managerRoles = textToList(draft.manager_roles);
-    const managers = textToList(draft.managers);
-    if (managerRoles.length) entry.manager_roles = managerRoles;
-    if (managers.length) entry.managers = managers;
-    result[team] = entry;
-  }
-  return result;
-}
-
 export default function FileAccessPage({ embedded = false }: { embedded?: boolean }) {
   const [data, setData] = useState<FolderPoliciesResponse | null>(null);
   const [policies, setPolicies] = useState<FolderPolicy[]>([]);
-  const [teamRoots, setTeamRoots] = useState<TeamRootDraft[]>([]);
-  const [defaultFilePolicy, setDefaultFilePolicy] = useState("deny");
   const [selectedPolicyIndex, setSelectedPolicyIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
   const { roles: roleOptions, teams: teamOptions } = useGovernanceOptions();
 
-  const teamsHelp = <TeamsHelpContent existingTeams={teamOptions} />;
   const actorKeyHelp = (
     <>
       Exact actor keys in the <code>&lt;platform&gt;:&lt;user id&gt;</code>{" "}
@@ -145,8 +92,6 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
             ? 0
             : Math.min(current, resp.folder_policies.length - 1),
         );
-        setTeamRoots(teamRootsToDrafts(resp.team_file_roots));
-        setDefaultFilePolicy(resp.default_file_policy || "deny");
       })
       .catch((err) => showToast(`Failed to load file access: ${err}`, "error"))
       .finally(() => setLoading(false));
@@ -186,32 +131,11 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
     });
   };
 
-  const updateTeamRoot = (index: number, patch: Partial<TeamRootDraft>) => {
-    setTeamRoots((current) =>
-      current.map((root, idx) => (idx === index ? { ...root, ...patch } : root)),
-    );
-  };
-
-  const addTeamRoot = () => {
-    setTeamRoots((current) => [
-      ...current,
-      { team: "", path: "", manager_roles: "manager", managers: "" },
-    ]);
-  };
-
-  const removeTeamRoot = (index: number) => {
-    setTeamRoots((current) => current.filter((_, idx) => idx !== index));
-  };
-
   const save = async () => {
     setSaving(true);
     try {
       await api.saveFolderPolicies({
-        default_file_policy: data?.actor.can_admin ? defaultFilePolicy : undefined,
         folder_policies: policies,
-        team_file_roots: data?.actor.can_admin
-          ? teamRootDraftsToConfig(teamRoots)
-          : undefined,
       });
       showToast("File access policies saved", "success");
       load();
@@ -237,189 +161,17 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
       {!embedded && <PluginSlot name="file-access:top" />}
       <Toast toast={toast} />
 
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={data?.enabled ? "success" : "destructive"}>
-            Governance {data?.enabled ? "enabled" : "disabled"}
-          </Badge>
-          <Badge tone={canAdmin ? "warning" : "secondary"}>
-            {canAdmin ? "System admin" : "Team manager"}
-          </Badge>
-          {(data?.actor.managed_teams ?? []).map((team) => (
-            <Badge key={team} tone="outline">
-              {team}
-            </Badge>
-          ))}
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {!embedded && (
-            <H2 variant="sm" className="flex items-center gap-2 text-muted-foreground">
-              <FolderTree className="h-4 w-4" />
-              File Access
-            </H2>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={load} disabled={loading}>
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
+      <div className="grid gap-0 border border-border lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="bg-muted/10">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
+            <div>
+              <div className="text-sm font-semibold normal-case text-foreground">Policies</div>
+              <div className="text-xs normal-case text-muted-foreground">{policies.length} governed paths</div>
+            </div>
             <Button size="sm" onClick={addPolicy}>
               <Plus className="h-4 w-4" />
               Add policy
             </Button>
-            <Button size="sm" onClick={save} disabled={saving}>
-              <Save className="h-4 w-4" />
-              Save
-            </Button>
-          </div>
-        </div>
-        <p className="max-w-3xl text-sm normal-case leading-6 text-muted-foreground">
-          File policies are the server-side maximum for file reads, searches,
-          writes, and patches. System admins can edit global policy and role-wide
-          grants. Team managers can save only policies under delegated team roots
-          and only for users or teams they manage.
-        </p>
-      </section>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Authorization setup order</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 normal-case text-sm leading-6 text-muted-foreground md:grid-cols-3">
-          <div>
-            <span className="font-medium text-foreground">1. Provision identities</span>
-            <p>Admins grant each platform:user_id roles and teams in Governance / People before the user can access the bot.</p>
-          </div>
-          <div>
-            <span className="font-medium text-foreground">2. Delegate roots</span>
-            <p>Admins add team roots here when team managers should control a bounded server folder.</p>
-          </div>
-          <div>
-            <span className="font-medium text-foreground">3. Grant access</span>
-            <p>Use read/write teams for groups and read/write users for exact actor keys.</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Scope</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 normal-case md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Default file policy</Label>
-            <select
-              value={defaultFilePolicy}
-              onChange={(event) => setDefaultFilePolicy(event.target.value)}
-              disabled={!canAdmin}
-              className="h-10 w-full border border-border bg-background px-3 text-sm"
-            >
-              <option value="deny">deny</option>
-              <option value="allow">allow</option>
-            </select>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Use deny in production. This decides what happens when no folder
-              policy matches a path. Team managers cannot change the global default.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label>Delegated team roots</Label>
-              {canAdmin && (
-                <Button size="sm" onClick={addTeamRoot}>
-                  <Plus className="h-4 w-4" />
-                  Add root
-                </Button>
-              )}
-            </div>
-            {canAdmin ? (
-              <div className="space-y-3">
-                {teamRoots.map((root, index) => (
-                  <div
-                    key={`${root.team}-${index}`}
-                    className="grid gap-3 border border-border p-3 md:grid-cols-2"
-                  >
-                    <Field
-                      label="Team"
-                      value={root.team}
-                      onChange={(value) => updateTeamRoot(index, { team: value })}
-                      placeholder="marketing"
-                      list="fileaccess-team-options"
-                      help={teamsHelp}
-                      note=""
-                    />
-                    <Field
-                      label="Server root"
-                      value={root.path}
-                      onChange={(value) => updateTeamRoot(index, { path: value })}
-                      placeholder="/srv/company/marketing"
-                      help={serverPathHelp}
-                      note=""
-                    />
-                    <div className="space-y-2">
-                      <Label>Manager roles</Label>
-                      <RoleMultiSelect
-                        value={textToList(root.manager_roles)}
-                        onChange={(roles) =>
-                          updateTeamRoot(index, { manager_roles: roles.join(", ") })
-                        }
-                        options={roleOptions}
-                        emptyHint="who may manage this root"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <Field
-                          label="Manager users"
-                          value={root.managers}
-                          onChange={(value) =>
-                            updateTeamRoot(index, { managers: value })
-                          }
-                          placeholder="sso:ana@company.com"
-                          help={actorKeyHelp}
-                        />
-                      </div>
-                      <Button
-                        size="icon"
-                        ghost
-                        onClick={() => removeTeamRoot(index)}
-                        className="mt-7"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {teamRoots.length === 0 && (
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    No team roots configured. Add a root to let a team manager
-                    administer a bounded server folder.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1 text-xs leading-5 text-muted-foreground">
-                {Object.entries(data?.team_file_roots ?? {}).map(([team, entry]) => (
-                  <div key={team} className="truncate">
-                    <span className="text-foreground">{team}:</span> {String(entry.path)}
-                  </div>
-                ))}
-                {Object.keys(data?.team_file_roots ?? {}).length === 0 && (
-                  <div>No team roots delegated to this dashboard user.</div>
-                )}
-              </div>
-            )}
-            <p className="text-xs leading-5 text-muted-foreground">
-              Team managers can add or edit policies only below these server paths.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside className="border border-border bg-muted/10">
-          <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Governed paths
           </div>
           {policies.map((policy, index) => (
             <button
@@ -446,8 +198,35 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               No paths configured. Add a policy to grant narrow file access.
             </div>
           )}
+          <div className="flex items-center justify-between gap-2 border-t border-border p-3 normal-case">
+            <span className="text-xs text-muted-foreground">Unmatched paths are denied.</span>
+            <Button size="xs" ghost onClick={load} disabled={loading}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </div>
         </aside>
-        <div className="min-w-0">
+        <div className="min-w-0 p-4 lg:border-l lg:border-border">
+          <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              {!embedded && (
+                <H2 variant="sm" className="flex items-center gap-2 text-foreground">
+                  <FolderTree className="h-4 w-4" />
+                  File Access
+                </H2>
+              )}
+              <Badge tone={data?.enabled ? "success" : "destructive"}>
+                Governance {data?.enabled ? "enabled" : "disabled"}
+              </Badge>
+              <Badge tone={canAdmin ? "warning" : "secondary"}>
+                {canAdmin ? "System admin" : "Team manager"}
+              </Badge>
+            </div>
+            <Button size="sm" onClick={save} disabled={saving}>
+              <Save className="h-4 w-4" />
+              Save policies
+            </Button>
+          </div>
         {policies.map((policy, index) => (
           selectedPolicyIndex === index ? <Card key={`${policy.path}-${index}`}>
             <CardHeader>
@@ -458,8 +237,8 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 </Button>
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 normal-case lg:grid-cols-2">
-              <div className="lg:col-span-2">
+            <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4 normal-case lg:grid-cols-2">
+              <div className="min-w-0 lg:col-span-2">
                 <Field
                   label="Server path"
                   value={policy.path}
@@ -481,7 +260,7 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               </label>
 
               {canAdmin && (
-                <div className="lg:col-span-2">
+                <div className="min-w-0 lg:col-span-2">
                   <RoleAccessMatrix
                     roles={roleOptions}
                     readRoles={policy.read_roles ?? []}
@@ -494,21 +273,22 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 </div>
               )}
 
-              <Field
-                label="Read teams"
-                value={listToText(policy.read_teams)}
-                onChange={(value) => updatePolicy(index, updateListField(policy, "read_teams", value))}
-                placeholder="marketing"
-                list="fileaccess-team-options"
-                help={teamsHelp}
-              />
-              <Field
-                label="Write teams"
-                value={listToText(policy.write_teams)}
-                onChange={(value) => updatePolicy(index, updateListField(policy, "write_teams", value))}
-                placeholder="marketing-leads"
-                list="fileaccess-team-options"
-              />
+              <div className="space-y-2">
+                <Label>Read teams</Label>
+                <TeamMultiSelect
+                  value={policy.read_teams ?? []}
+                  onChange={(read_teams) => updatePolicy(index, { ...policy, read_teams })}
+                  options={teamOptions}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Write teams</Label>
+                <TeamMultiSelect
+                  value={policy.write_teams ?? []}
+                  onChange={(write_teams) => updatePolicy(index, { ...policy, write_teams })}
+                  options={teamOptions}
+                />
+              </div>
               <Field
                 label="Read users"
                 value={listToText(policy.read_users)}
@@ -530,13 +310,14 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 placeholder="discord:99887766"
                 help={actorKeyHelp}
               />
-              <Field
-                label="Deny teams"
-                value={listToText(policy.deny_teams)}
-                onChange={(value) => updatePolicy(index, updateListField(policy, "deny_teams", value))}
-                placeholder="marketing"
-                list="fileaccess-team-options"
-              />
+              <div className="space-y-2">
+                <Label>Deny teams</Label>
+                <TeamMultiSelect
+                  value={policy.deny_teams ?? []}
+                  onChange={(deny_teams) => updatePolicy(index, { ...policy, deny_teams })}
+                  options={teamOptions}
+                />
+              </div>
               <Field
                 label="Write approval users"
                 value={listToText(policy.write_approval_users)}
@@ -579,14 +360,13 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
             </CardContent>
           </Card> : null
         ))}
+          {policies.length === 0 && (
+            <div className="flex min-h-72 items-center justify-center border border-dashed border-border text-sm normal-case text-muted-foreground">
+              Add a policy to grant access to a file or folder.
+            </div>
+          )}
         </div>
       </div>
-
-      <datalist id="fileaccess-team-options">
-        {teamOptions.map((team) => (
-          <option key={team} value={team} />
-        ))}
-      </datalist>
     </div>
   );
 }
@@ -683,7 +463,6 @@ function Field({
   value,
   onChange,
   placeholder,
-  list,
   help,
   note = "Comma-separated.",
 }: {
@@ -691,8 +470,6 @@ function Field({
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  /** Optional datalist id for value suggestions (e.g. existing teams). */
-  list?: string;
   /** Optional "?"-toggled help content. */
   help?: ReactNode;
   note?: string;
@@ -711,7 +488,6 @@ function Field({
         ) : null}
       </div>
       <Input
-        list={list}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

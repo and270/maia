@@ -26,9 +26,10 @@ from hermes_cli.config import (
 class TestGetHermesHome:
     def test_default_path(self):
         with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MAIA_HOME", None)
             os.environ.pop("HERMES_HOME", None)
             home = get_hermes_home()
-            assert home == Path.home() / ".hermes"
+            assert home == Path.home() / ".maia"
 
     def test_env_override(self):
         with patch.dict(os.environ, {"HERMES_HOME": "/custom/path"}):
@@ -629,6 +630,38 @@ class TestInterimAssistantMessageConfig:
         assert raw["_config_version"] == DEFAULT_CONFIG["_config_version"]
         assert raw["display"]["tool_progress"] == "off"
         assert raw["display"]["interim_assistant_messages"] is True
+
+
+class TestGovernanceTeamsMigration:
+    def test_v27_registers_referenced_teams_and_removes_legacy_default(self, tmp_path):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "_config_version": 26,
+                    "governance": {
+                        "default_file_policy": "allow",
+                        "teams": {"existing": {"label": "Existing"}},
+                        "users": {"slack:U1": {"teams": ["finance"]}},
+                        "team_file_roots": {"marketing": {"path": "/srv/marketing"}},
+                        "folder_policies": [
+                            {"path": "/srv/support", "read_teams": ["support"]}
+                        ],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path), "MAIA_HOME": str(tmp_path)}):
+            migrate_config(interactive=False, quiet=True)
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+        assert raw["_config_version"] == DEFAULT_CONFIG["_config_version"]
+        governance = raw["governance"]
+        assert "default_file_policy" not in governance
+        assert set(governance["teams"]) == {"existing", "finance", "marketing", "support"}
+        assert governance["teams"]["existing"] == {"label": "Existing"}
 
 
 class TestDiscordChannelPromptsConfig:

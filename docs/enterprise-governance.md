@@ -247,7 +247,7 @@ The policy is checked before `read_file`, `search_files`, `write_file`, `patch`,
 
 1. Ask each real user who needs dashboard or delegated file administration to run `/dashboard` in a private channel chat.
 2. Provision each `platform:user_id` in **Config / Governance** with the right roles and teams. This creates the `governance.users` mapping used by file policies; Dashboard Access is a later, separate login grant.
-3. Keep `governance.default_file_policy: deny` in production.
+3. Create the required teams in Governance before assigning them to people.
 4. Open **Dashboard -> File Access** to create the actual folder policies.
 
 ### System Admin Flow
@@ -255,12 +255,10 @@ The policy is checked before `read_file`, `search_files`, `write_file`, `patch`,
 Use this when you are deciding the maximum server folders Maia may ever touch.
 
 1. Log into the dashboard with the local admin token, a channel-issued `/dashboard` token whose role satisfies `dashboard.auth.admin_roles`, or a trusted header from an existing company SSO/proxy.
-2. Open **File Access**.
-3. Set **Default file policy** to `deny`.
-4. Add a policy for a shared folder only if all authenticated users should read it. Use **Read roles** / **Write roles** for broad tenant-wide grants; only admins can use role-wide fields.
-5. Add narrower policies for department folders. Use **Read teams** / **Write teams** for team-wide grants and **Read users** / **Write users** for named people.
-6. Add **Delegated team roots** when a team leader should manage day-to-day access inside one bounded folder. Fill **Team**, **Server root**, **Manager roles**, and optionally **Manager users**.
-7. Save, test with real approved users, and review `governance.file_access` audit events for denials.
+2. Open **People** for individual assignments and direct paths.
+3. Open **Teams** to create teams, add governed people, grant team paths, and configure delegated management roots.
+4. Open **File Access** for advanced role, deny, and write-approval policy fields.
+5. Save, test with real approved users, and review `governance.file_access` audit events for denials.
 
 ### Team Leader Flow
 
@@ -274,7 +272,7 @@ Team leaders use the same dashboard URL, but the File Access page is filtered by
 6. They use **Recursive directory policy** for folders. They turn it off for one exact file, such as a read-only PDF.
 7. They save and ask the affected user to retry the file operation.
 
-Team leaders cannot change the global default, cannot edit another team's root, cannot grant role-wide access such as `read_roles: [viewer]`, and cannot reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root, cannot grant role-wide access such as `read_roles: [viewer]`, and cannot reference users outside the managed team unless they also have system-admin dashboard access.
 
 ### Complete Marketing Example
 
@@ -306,7 +304,8 @@ dashboard:
 
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    marketing: {}
   users:
     "sso:ana@company.com":
       name: Ana Marketing Lead
@@ -357,7 +356,8 @@ governance:
 4. `deny_users` and `deny_teams` win over grants.
 5. For reads/searches, the actor must match `read_users`, `read_teams`, or `read_roles`.
 6. For writes/patches/deletes, the actor must match `write_users`, `write_teams`, or `write_roles`.
-7. If no policy matches and `default_file_policy` is `deny`, access is denied and audited.
+7. If no policy matches, access is denied and audited.
+8. A matching policy without an applicable read/write grant is also denied.
 8. If the nearest matching policy that declares `write_approval_roles` / `write_approval_users` has a non-empty requirement, a write by a grant-holder is **staged for approval** instead of applied (see below). Actors who satisfy the requirement themselves write directly.
 
 ### Staged Write Approvals (`write_approval_roles` / `write_approval_users`)
@@ -400,7 +400,7 @@ the agent finishes its turn immediately and nothing expires.
 
 | Dashboard field | YAML field | Meaning | Who can set it |
 |---|---|---|---|
-| Default file policy | `default_file_policy` | What happens when no folder policy matches. Use `deny` in production. | System admin only. |
+| Team registry | `teams` | Names available to select-only team assignment controls. | System admin only. |
 | Delegated team roots -> Team | `team_file_roots.<team>` | Team that may manage a bounded server root. | System admin only. |
 | Delegated team roots -> Server root | `team_file_roots.<team>.path` | Maximum path a team leader can administer. | System admin only. |
 | Delegated team roots -> Manager roles | `team_file_roots.<team>.manager_roles` | Roles within the team that can manage the root. | System admin only. |

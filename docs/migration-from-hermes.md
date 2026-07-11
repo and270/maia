@@ -43,7 +43,7 @@ Guarded migration does not:
 4. For corporate or team knowledge, use the dashboard Knowledge approval flow instead of copying directly into `<MAIA_HOME>/corporate/` or `<MAIA_HOME>/teams/`.
 5. Re-enter secrets through the dashboard Keys page or the managed `.env` workflow.
 6. Inspect imported MCP servers in `config.yaml`; only set `enabled: true` after reviewing command, URL, tool filters, and env requirements.
-7. Keep `governance.default_file_policy: deny` unless this is a local test profile.
+7. File access is always deny-by-default; add only the explicit folder policies required by the migrated users.
 
 ## Promoting Imported Knowledge
 

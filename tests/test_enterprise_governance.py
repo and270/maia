@@ -452,9 +452,8 @@ governance:
     assert "misconfigured" in reason
 
 
-def test_typo_default_file_policy_fails_closed(tmp_path, monkeypatch):
-    """A default_file_policy that isn't 'allow'/'deny' (e.g. a typo) must fail
-    closed rather than silently allowing."""
+def test_legacy_default_file_policy_is_ignored_and_fails_closed(tmp_path, monkeypatch):
+    """Legacy values cannot reopen the immutable deny default."""
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(
@@ -473,7 +472,52 @@ governance:
         actor=Actor(platform="slack", user_id="U1"),
     )
     assert allowed is False
-    assert "unrecognized value" in reason
+    assert "no folder policy allows write" in reason
+
+
+def test_legacy_allow_default_cannot_reopen_unmatched_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  default_file_policy: allow
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    allowed, reason = check_file_access(
+        "/anywhere/file.txt", "read", actor=Actor(platform="slack", user_id="U1")
+    )
+    assert allowed is False
+    assert "no folder policy allows read" in reason
+
+
+def test_empty_matching_policy_does_not_grant_access(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  folder_policies:
+    - path: /company/private
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    allowed, reason = check_file_access(
+        "/company/private/file.txt",
+        "read",
+        actor=Actor(platform="slack", user_id="U1"),
+    )
+    assert allowed is False
+    assert "has no read grant" in reason
 
 
 def test_wellformed_deny_default_still_denies_unmatched(tmp_path, monkeypatch):

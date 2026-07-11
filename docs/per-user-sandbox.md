@@ -63,9 +63,8 @@ Docker `-v host:container:mode` bind specs:
 - Container path = host path, so absolute paths inside the container match the
   host and reviewed diffs stay meaningful.
 - Default-deny by construction: only explicitly-granted folders are mounted.
-  The sandbox therefore *requires* `default_file_policy: deny` to be meaningful
-  (with `allow`, the host would grant more than the sandbox — the posture
-  health check already nudges toward deny).
+  Maia's immutable deny default keeps host authorization aligned with those
+  mounts; there is no permissive fallback outside the sandbox.
 
 This function is pure (config + filesystem existence checks only) and fully
 unit-tested without Docker.
@@ -138,7 +137,6 @@ Subtleties to resolve and validate on a Docker host before this is trusted:
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
   terminal:
     sandbox:
       enabled: true          # per-user Docker sandbox for gateway sessions

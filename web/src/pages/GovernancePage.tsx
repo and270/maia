@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   FileCheck,
   FolderTree,
+  Network,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -14,20 +16,27 @@ import {
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
-import { RoleMultiSelect, TeamsInput } from "@/components/GovernanceFields";
+import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
+import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
 import { H2 } from "@/components/NouiTypography";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/useToast";
-import { api, type GovernanceOverview, type GovernanceUser } from "@/lib/api";
+import {
+  api,
+  type GovernanceFileGrant,
+  type GovernanceOverview,
+  type GovernanceTeam,
+  type GovernanceUser,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
 import FileAccessPage from "@/pages/FileAccessPage";
 import FileApprovalsPage from "@/pages/FileApprovalsPage";
 
-const SECTIONS = ["people", "files", "approvals", "settings"] as const;
+const SECTIONS = ["people", "teams", "files", "approvals", "settings"] as const;
 type GovernanceSection = (typeof SECTIONS)[number];
 
 const SECTION_META: Record<
@@ -38,6 +47,11 @@ const SECTION_META: Record<
     label: "People",
     icon: Users,
     description: "Gateway identities, roles, teams, and access state.",
+  },
+  teams: {
+    label: "Teams",
+    icon: Network,
+    description: "Create teams, assign people, delegate roots, and grant paths.",
   },
   files: {
     label: "File access",
@@ -76,7 +90,12 @@ function UserStatus({ user }: { user: GovernanceUser }) {
   return <Badge tone="secondary">Governed identity</Badge>;
 }
 
-type UserDraft = { name: string; roles: string[]; teams: string };
+type UserDraft = {
+  name: string;
+  roles: string[];
+  teams: string[];
+  file_access: GovernanceFileGrant[];
+};
 
 function PeopleWorkspace({
   overview,
@@ -90,7 +109,12 @@ function PeopleWorkspace({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | "pending" | "active">("all");
   const [selectedKey, setSelectedKey] = useState(requestedKey);
-  const [draft, setDraft] = useState<UserDraft>({ name: "", roles: [], teams: "" });
+  const [draft, setDraft] = useState<UserDraft>({
+    name: "",
+    roles: [],
+    teams: [],
+    file_access: [],
+  });
   const [busy, setBusy] = useState(false);
   const { toast, showToast } = useToast();
 
@@ -117,7 +141,8 @@ function PeopleWorkspace({
     setDraft({
       name: selected.name,
       roles: selected.roles,
-      teams: selected.teams.join(", "),
+      teams: selected.teams,
+      file_access: selected.file_access.map((grant) => ({ ...grant })),
     });
   }, [selected]);
 
@@ -140,7 +165,8 @@ function PeopleWorkspace({
       await api.saveGovernanceUser(selected.actor_key, {
         name: draft.name.trim(),
         roles: draft.roles,
-        teams: textToList(draft.teams),
+        teams: draft.teams,
+        file_access: draft.file_access,
       });
       showToast(`${selected.actor_key} is active in Governance.`, "success");
       await reload();
@@ -301,12 +327,19 @@ function PeopleWorkspace({
                 <span className="text-xs text-muted-foreground">Used in audit and administration views.</span>
               </label>
               <div className="grid gap-2 normal-case">
-                <Label>Teams</Label>
-                <TeamsInput
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Teams</Label>
+                  <Link
+                    to="/governance?section=teams"
+                    className="text-xs font-semibold text-primary hover:underline"
+                  >
+                    Manage teams
+                  </Link>
+                </div>
+                <TeamMultiSelect
                   value={draft.teams}
                   onChange={(teams) => setDraft((current) => ({ ...current, teams }))}
                   options={overview.teams}
-                  listId={`governance-teams-${selected.user_id.replace(/[^a-z0-9]/gi, "-")}`}
                 />
                 <span className="text-xs text-muted-foreground">
                   Teams control shared knowledge and can receive file grants.
@@ -327,6 +360,14 @@ function PeopleWorkspace({
                 covers this person&apos;s work.
               </span>
             </div>
+
+            <GovernanceFileGrantEditor
+              grants={draft.file_access}
+              onChange={(file_access) =>
+                setDraft((current) => ({ ...current, file_access }))
+              }
+              description="These grants apply only to this identity and merge with team and role policies for the same path."
+            />
 
             <div className="grid gap-3 border-t border-border pt-5 sm:grid-cols-2">
               <div className="space-y-1 normal-case">
@@ -375,6 +416,361 @@ function PeopleWorkspace({
   );
 }
 
+type TeamDraft = {
+  members: string[];
+  file_access: GovernanceFileGrant[];
+  delegated_root: GovernanceTeam["delegated_root"];
+};
+
+function TeamsWorkspace({
+  overview,
+  reload,
+}: {
+  overview: GovernanceOverview;
+  reload: () => Promise<void>;
+}) {
+  const [params, setParams] = useSearchParams();
+  const requestedTeam = params.get("team") ?? "";
+  const [query, setQuery] = useState("");
+  const [selectedName, setSelectedName] = useState(requestedTeam);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<TeamDraft>({
+    members: [],
+    file_access: [],
+    delegated_root: null,
+  });
+  const { toast, showToast } = useToast();
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return overview.team_records.filter((team) =>
+      !needle
+        ? true
+        : [team.name, ...team.members, ...(team.file_access.map((grant) => grant.path))]
+            .join(" ")
+            .toLowerCase()
+            .includes(needle),
+    );
+  }, [overview.team_records, query]);
+
+  const selected =
+    overview.team_records.find((team) => team.name === selectedName) ??
+    filtered[0] ??
+    null;
+
+  useEffect(() => {
+    if (!selected) return;
+    // Keep the inspector aligned with the selected team after reloads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft({
+      members: [...selected.members],
+      file_access: selected.file_access.map((grant) => ({ ...grant })),
+      delegated_root: selected.delegated_root
+        ? {
+            ...selected.delegated_root,
+            manager_roles: [...(selected.delegated_root.manager_roles ?? [])],
+            managers: [...(selected.delegated_root.managers ?? [])],
+          }
+        : null,
+    });
+  }, [selected]);
+
+  const selectTeam = (name: string) => {
+    setSelectedName(name);
+    const next = new URLSearchParams(params);
+    next.set("section", "teams");
+    next.set("team", name);
+    next.delete("user");
+    setParams(next, { replace: true });
+  };
+
+  const create = async () => {
+    const name = newTeamName.trim();
+    if (!name) {
+      showToast("Enter a team name.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.createGovernanceTeam(name);
+      showToast(`${name} created.`, "success");
+      setNewTeamName("");
+      setSelectedName(name);
+      const next = new URLSearchParams(params);
+      next.set("section", "teams");
+      next.set("team", name);
+      setParams(next, { replace: true });
+      await reload();
+    } catch (error) {
+      showToast(`Could not create team: ${error}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await api.saveGovernanceTeam(selected.name, draft);
+      showToast(`${selected.name} saved.`, "success");
+      await reload();
+    } catch (error) {
+      showToast(`Could not save team: ${error}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!selected) return;
+    if (!window.confirm(`Delete team ${selected.name}? The team must be empty first.`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.removeGovernanceTeam(selected.name);
+      showToast(`${selected.name} deleted.`, "success");
+      setSelectedName("");
+      await reload();
+    } catch (error) {
+      showToast(`Could not delete team: ${error}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleMember = (actorKey: string) =>
+    setDraft((current) => ({
+      ...current,
+      members: current.members.includes(actorKey)
+        ? current.members.filter((key) => key !== actorKey)
+        : [...current.members, actorKey],
+    }));
+
+  const toggleRootManager = (actorKey: string) =>
+    setDraft((current) => {
+      if (!current.delegated_root) return current;
+      const managers = current.delegated_root.managers ?? [];
+      return {
+        ...current,
+        delegated_root: {
+          ...current.delegated_root,
+          managers: managers.includes(actorKey)
+            ? managers.filter((key) => key !== actorKey)
+            : [...managers, actorKey],
+        },
+      };
+    });
+
+  const governedUsers = overview.users.filter((user) => user.governed);
+
+  return (
+    <div className="grid min-h-[36rem] gap-0 border border-border lg:grid-cols-[minmax(18rem,0.8fr)_minmax(28rem,1.6fr)]">
+      <Toast toast={toast} />
+      <section className="border-b border-border bg-muted/10 lg:border-b-0 lg:border-r">
+        <div className="space-y-3 border-b border-border p-4">
+          <div>
+            <div className="text-sm font-semibold normal-case">Teams</div>
+            <div className="text-xs normal-case text-muted-foreground">
+              {overview.team_records.length} registered
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={newTeamName}
+              onChange={(event) => setNewTeamName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void create();
+              }}
+              placeholder="New team name"
+              aria-label="New team name"
+            />
+            <Button size="sm" onClick={create} disabled={busy}>
+              <Plus className="h-4 w-4" />
+              Create
+            </Button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search teams, people, or paths"
+              className="pl-8"
+            />
+          </div>
+        </div>
+        <div className="max-h-[54rem] overflow-y-auto">
+          {filtered.map((team) => (
+            <button
+              key={team.name}
+              type="button"
+              onClick={() => selectTeam(team.name)}
+              className={cn(
+                "grid w-full gap-1 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors",
+                selected?.name === team.name ? "bg-primary/10" : "hover:bg-muted/30",
+              )}
+            >
+              <span className="text-sm font-medium text-foreground">{team.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {team.members.length} people · {team.file_access.length} paths
+                {team.delegated_root ? " · delegated root" : ""}
+              </span>
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <div className="p-6 text-center text-sm normal-case text-muted-foreground">
+              No teams yet. Create one above.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="min-w-0 p-5 lg:p-6">
+        {selected ? (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <H2 variant="sm" className="normal-case text-foreground">{selected.name}</H2>
+                <p className="mt-1 text-xs normal-case text-muted-foreground">
+                  Membership and grants are saved together.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" ghost onClick={remove} disabled={busy}>
+                  <Trash2 className="h-4 w-4" />
+                  Delete team
+                </Button>
+                <Button size="sm" onClick={save} disabled={busy}>
+                  {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                  Save team
+                </Button>
+              </div>
+            </div>
+
+            <section className="space-y-3 normal-case">
+              <div>
+                <h3 className="text-sm font-semibold">People</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Only identities already granted a Governance role can join a team.
+                </p>
+              </div>
+              <div className="grid divide-y divide-border border border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                {governedUsers.map((user) => (
+                  <label key={user.actor_key} className="flex items-start gap-3 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={draft.members.includes(user.actor_key)}
+                      onChange={() => toggleMember(user.actor_key)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{user.name || user.actor_key}</span>
+                      <span className="block truncate font-mono-ui text-[0.7rem] text-muted-foreground">
+                        {user.actor_key}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+                {governedUsers.length === 0 && (
+                  <div className="p-4 text-sm text-muted-foreground">Grant a person a role first.</div>
+                )}
+              </div>
+            </section>
+
+            <GovernanceFileGrantEditor
+              grants={draft.file_access}
+              onChange={(file_access) => setDraft((current) => ({ ...current, file_access }))}
+              title="Team file and folder access"
+              description="These read/write grants apply to every governed member of this team."
+            />
+
+            <section className="space-y-4 border-t border-border pt-5 normal-case">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Delegated management root</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Optional boundary below which authorized team managers may edit advanced policies.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft.delegated_root)}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        delegated_root: event.target.checked
+                          ? { path: "", manager_roles: ["manager"], managers: [] }
+                          : null,
+                      }))
+                    }
+                  />
+                  Enable
+                </label>
+              </div>
+              {draft.delegated_root && (
+                <div className="grid gap-5 border border-border p-4 lg:grid-cols-2">
+                  <label className="grid gap-2 lg:col-span-2">
+                    <Label>Server root</Label>
+                    <Input
+                      value={draft.delegated_root.path}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          delegated_root: current.delegated_root
+                            ? { ...current.delegated_root, path: event.target.value }
+                            : null,
+                        }))
+                      }
+                      placeholder="/srv/company/marketing"
+                    />
+                  </label>
+                  <div className="grid gap-2">
+                    <Label>Manager roles</Label>
+                    <RoleMultiSelect
+                      value={draft.delegated_root.manager_roles ?? []}
+                      onChange={(manager_roles) =>
+                        setDraft((current) => ({
+                          ...current,
+                          delegated_root: current.delegated_root
+                            ? { ...current.delegated_root, manager_roles }
+                            : null,
+                        }))
+                      }
+                      options={overview.role_hierarchy}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Named managers</Label>
+                    <div className="max-h-36 overflow-y-auto border border-border">
+                      {governedUsers.map((user) => (
+                        <label key={user.actor_key} className="flex items-center gap-2 border-b border-border/70 px-3 py-2 text-xs last:border-b-0">
+                          <input
+                            type="checkbox"
+                            checked={(draft.delegated_root?.managers ?? []).includes(user.actor_key)}
+                            onChange={() => toggleRootManager(user.actor_key)}
+                          />
+                          <span className="truncate">{user.name || user.actor_key}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="flex min-h-80 items-center justify-center text-sm normal-case text-muted-foreground">
+            Create a team to assign people and file access.
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function SettingsWorkspace({
   overview,
   reload,
@@ -400,7 +796,6 @@ function SettingsWorkspace({
         tenant_id: draft.tenant_id,
         default_role: draft.default_role,
         role_hierarchy: draft.role_hierarchy,
-        default_file_policy: draft.default_file_policy,
         team_file_manager_roles: draft.team_file_manager_roles,
         gateway_group_sessions_per_user: draft.gateway.group_sessions_per_user,
         gateway_thread_sessions_per_user: draft.gateway.thread_sessions_per_user,
@@ -497,25 +892,18 @@ function SettingsWorkspace({
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>File and team defaults</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Team delegation</CardTitle></CardHeader>
           <CardContent className="grid gap-5">
-            <label className="grid gap-2 normal-case">
-              <Label>Unmatched file paths</Label>
-              <select
-                value={draft.default_file_policy}
-                onChange={(event) => setDraft((current) => ({ ...current, default_file_policy: event.target.value }))}
-                className="h-10 border border-border bg-background px-3 text-sm"
-              >
-                <option value="deny">Deny — recommended for production</option>
-                <option value="allow">Allow — compatibility mode</option>
-              </select>
-            </label>
             {roleSetting(
               "Roles that may manage delegated team roots",
               draft.team_file_manager_roles,
               (roles) => setDraft((current) => ({ ...current, team_file_manager_roles: roles })),
-              "These users remain limited to the server roots delegated to their teams.",
+              "Configure each root in Governance / Teams. These users remain limited to the root delegated to their team.",
             )}
+            <p className="text-xs normal-case leading-5 text-muted-foreground">
+              File access is always deny-by-default. There is no global allow mode;
+              every readable or writable path needs an explicit policy.
+            </p>
           </CardContent>
         </Card>
 
@@ -616,6 +1004,7 @@ export default function GovernancePage() {
     const next = new URLSearchParams(params);
     next.set("section", nextSection);
     if (nextSection !== "people") next.delete("user");
+    if (nextSection !== "teams") next.delete("team");
     setParams(next);
   };
 
@@ -679,6 +1068,7 @@ export default function GovernancePage() {
       </nav>
 
       {section === "people" && <PeopleWorkspace overview={overview} reload={load} />}
+      {section === "teams" && <TeamsWorkspace overview={overview} reload={load} />}
       {section === "files" && <FileAccessPage embedded />}
       {section === "approvals" && <FileApprovalsPage embedded />}
       {section === "settings" && <SettingsWorkspace overview={overview} reload={load} />}

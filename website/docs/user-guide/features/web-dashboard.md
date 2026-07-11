@@ -223,26 +223,26 @@ Create and manage scheduled cron jobs that run agent prompts on a recurring sche
 
 Manage the server-side folder policies that bound what Maia can read, search, write, patch, or delete. The page saves to `<MAIA_HOME>/config.yaml` under `governance`; the dashboard is the normal way to edit it.
 
+Governance is organized as **People → Teams → File access → Approvals → Settings**. People supports select-only team assignment and direct per-person paths. Teams supports creation, membership, team paths, and delegated management roots. File access opens directly on the policy list with **Add policy** and retains the advanced role, deny, and write-approval fields.
+
 There is one File Access page. The logged-in dashboard actor determines what it shows:
 
-- **System admins** can change `default_file_policy`, global shared folders, sensitive department folders, role-wide grants, and delegated team roots.
+- **System admins** manage registered teams, global shared folders, sensitive department folders, role-wide grants, and delegated team roots.
 - **Team leaders** can use the same page after a private `/dashboard` token, or trusted-header login from an existing company identity layer, but only for folders under a delegated team root such as `/srv/company/marketing`.
 - **Operators** normally do not use this page. They use CLI or gateway channels, and file tools are constrained by the policies saved here.
 
 Before using the page:
 
 1. Users who need dashboard or delegated file administration run `/dashboard` in a private channel.
-2. An admin approves the requests in **Dashboard Access** with roles and teams.
+2. An admin creates the required teams in **Governance → Teams**, then approves the requests with roles and registered teams.
 3. The approved mapping is saved under `governance.users`, for example `roles: [operator]` and `teams: [marketing]`.
 
 System admin workflow:
 
-1. Open **File Access** as an admin.
-2. Set **Default file policy** to `deny`.
-3. Add shared company roots only when the whole tenant should access them.
-4. Add sensitive department roots with **Read teams**, **Write teams**, **Read users**, or **Write users**.
-5. Add **Delegated team roots** for teams that should self-manage a bounded folder.
-6. Save and test with real approved users.
+1. Open **People** to manage roles, team membership, and individual paths.
+2. Open **Teams** to create teams, add people, grant team paths, and optionally delegate a management root.
+3. Open **File Access** for advanced role, deny, and write-approval rules.
+4. Save and test with real approved users.
 
 Team leader workflow:
 
@@ -253,14 +253,15 @@ Team leader workflow:
 5. Leave **Recursive directory policy** on for folders; turn it off for one exact file, such as a read-only brand guideline PDF.
 6. Save and ask the user to retry the file operation.
 
-Team leaders cannot change the global default, edit another team's root, grant role-wide access such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root, grant role-wide access such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
 Example backing YAML in `<MAIA_HOME>/config.yaml`:
 
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    marketing: {}
   users:
     "sso:ana@company.com":
       name: Ana Marketing Lead
@@ -306,10 +307,11 @@ Decision rules:
 3. `deny_users` and `deny_teams` override grants.
 4. Reads/searches require `read_users`, `read_teams`, or `read_roles`.
 5. Writes/patches/deletes require `write_users`, `write_teams`, or `write_roles`.
+6. Unmatched paths and matching policies without an applicable grant are denied.
 
 | Dashboard field | YAML field | Who can normally set it |
 |---|---|---|
-| Default file policy | `default_file_policy` | System admin only. |
+| Team registry | `teams` | System admin only. |
 | Delegated team roots | `team_file_roots` | System admin only. |
 | Server path | `folder_policies[].path` | Admin; team leader below delegated root. |
 | Recursive directory policy | `recursive` | Admin or delegated team leader. |

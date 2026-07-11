@@ -1,7 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
 
 /**
  * Shared building blocks for governance-aware forms, so every page offers
@@ -10,30 +8,7 @@ import { api } from "@/lib/api";
  * explain non-obvious values with links to where they are managed.
  */
 
-export const DEFAULT_ROLE_OPTIONS = ["viewer", "operator", "manager", "admin"];
-
-/** Fetch governance role/team vocabulary once for a page. */
-export function useGovernanceOptions(): { roles: string[]; teams: string[] } {
-  const [roles, setRoles] = useState<string[]>([]);
-  const [teams, setTeams] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getGovernanceOptions()
-      .then((resp) => {
-        if (cancelled) return;
-        setRoles(resp.roles ?? []);
-        setTeams(resp.teams ?? []);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { roles, teams };
-}
+const DEFAULT_ROLE_OPTIONS = ["viewer", "operator", "manager", "admin"];
 
 /** The small round "?" toggle used next to field labels. */
 export function HelpDot({
@@ -135,17 +110,17 @@ export function TeamsHelpContent({ existingTeams }: { existingTeams: string[] })
   return (
     <>
       <p>
-        Teams group users for shared knowledge and folder access. A team
-        exists as soon as something references it — just type a name
-        (comma-separate several). What each team can reach is managed in{" "}
-        <Link to="/governance?section=files" className="font-bold text-primary hover:underline">
-          Governance / File access
+        Teams group users for shared knowledge and folder access. Create teams
+        first, then assign them from select-only controls. Membership, delegated
+        roots, and direct file grants are managed in{" "}
+        <Link to="/governance?section=teams" className="font-bold text-primary hover:underline">
+          Governance / Teams
         </Link>{" "}
         and team knowledge in{" "}
         <Link to="/knowledge" className="font-bold text-primary hover:underline">
           Knowledge
         </Link>
-        ; assignments live under <code>governance.users</code> in{" "}
+        ; individual assignments also appear in{" "}
         <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
           Governance / People
         </Link>
@@ -158,37 +133,52 @@ export function TeamsHelpContent({ existingTeams }: { existingTeams: string[] })
   );
 }
 
-/** Teams text input with datalist suggestions from existing team names. */
-export function TeamsInput({
+/** Select-only team chips driven by the first-class governance registry. */
+export function TeamMultiSelect({
   value,
   onChange,
   options,
-  listId,
-  placeholder = "engineering, finance",
   disabled,
+  emptyHint = "Create a team before assigning membership",
 }: {
-  value: string;
-  onChange: (value: string) => void;
+  value: string[];
+  onChange: (value: string[]) => void;
   options: string[];
-  listId: string;
-  placeholder?: string;
   disabled?: boolean;
+  emptyHint?: string;
 }) {
+  const selected = new Set(value);
+  const all = [...options, ...value.filter((team) => !options.includes(team))];
   return (
-    <>
-      <Input
-        list={listId}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        autoComplete="off"
-        disabled={disabled}
-      />
-      <datalist id={listId}>
-        {options.map((team) => (
-          <option key={team} value={team} />
-        ))}
-      </datalist>
-    </>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {all.map((team) => {
+        const on = selected.has(team);
+        return (
+          <button
+            key={team}
+            type="button"
+            disabled={disabled}
+            aria-pressed={on}
+            className={
+              on
+                ? "border border-midground bg-midground px-2.5 py-1 font-mono-ui text-xs text-background-base"
+                : "border border-border bg-transparent px-2.5 py-1 font-mono-ui text-xs text-muted-foreground hover:border-primary hover:text-primary"
+            }
+            onClick={(event) => {
+              event.preventDefault();
+              const next = new Set(selected);
+              if (on) next.delete(team);
+              else next.add(team);
+              onChange([...next]);
+            }}
+          >
+            {team}
+          </button>
+        );
+      })}
+      {options.length === 0 && value.length === 0 && (
+        <span className="text-xs normal-case text-muted-foreground">{emptyHint}</span>
+      )}
+    </div>
   );
 }

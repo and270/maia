@@ -30,7 +30,8 @@ import {
   type OnboardingState,
 } from "@/lib/api";
 import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
-import { RoleMultiSelect, useGovernanceOptions } from "@/components/GovernanceFields";
+import { RoleMultiSelect } from "@/components/GovernanceFields";
+import { useGovernanceOptions } from "@/hooks/useGovernanceOptions";
 import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
 
@@ -425,7 +426,7 @@ function BaselineCard() {
       <CardContent className="flex flex-col gap-4 normal-case">
         <p className="text-sm leading-6 text-muted-foreground">
           Sets the recommended least-privilege posture in one step:
-          governance enabled, <code>default_file_policy: deny</code>, terminal
+          governance enabled, immutable deny-by-default file access, terminal
           access restricted by role, flagged commands routed to an approver
           role, audit logging on, and (optionally) smart command approvals.
           Existing users, folder policies, teams, and roles are preserved.
@@ -511,7 +512,7 @@ const NEXT_STEPS = [
   {
     icon: ShieldCheck,
     title: "Tenant and governance",
-    text: "Fine-tune governance.enabled, tenant_id, role_hierarchy, default_role, and production default_file_policy.",
+    text: "Fine-tune the tenant, role hierarchy, people, teams, and explicit file policies.",
     to: "/governance?section=settings",
     action: "Open Governance",
   },

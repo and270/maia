@@ -436,7 +436,7 @@ def _run_hermes_export_migration(args) -> None:
     print("Next steps:")
     print("  1. Review the migration report and staged skills before activation.")
     print("  2. Re-enter any secrets in .env or MCP server env blocks through the Keys panel.")
-    print("  3. Keep governance.default_file_policy: deny for production folder access.")
+    print("  3. File access is deny-by-default; add only the narrow folder policies you need.")
 
 
 # ---------------------------------------------------------------------------

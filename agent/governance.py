@@ -291,9 +291,9 @@ def _folder_policies_malformed(config: dict[str, Any]) -> Optional[str]:
     CLOSED. Without this, a ``folder_policies`` written as a mapping instead of
     a list, a non-mapping entry, or an entry whose ``path`` is missing/blank/
     unresolvable is silently dropped — so a policy meant to RESTRICT a folder
-    just vanishes and access falls through to ``default_file_policy`` (which
-    defaults to ``allow``). Better to deny-all and alert the admin than to
-    grant-all invisibly. Returns None when the structure is well-formed
+    just vanishes and access falls through to the immutable deny default.
+    Better to deny-all and alert the admin than to grant-all invisibly.
+    Returns None when the structure is well-formed
     (including simply absent).
     """
     if "folder_policies" not in config:
@@ -448,22 +448,9 @@ def check_file_access(
             )
 
     if policy is None:
-        raw_default = cfg.get("default_file_policy", "allow")
-        default_policy = str(raw_default).strip().lower()
-        if default_policy == "deny":
-            return _deny(
-                f"Access denied by governance: no folder policy allows {op} on {path!r} for {actor_display(who)}.",
-            )
-        # An explicitly-set default that isn't a recognized value is a
-        # misconfiguration (e.g. a "denyy" typo) — fail closed rather than
-        # silently treating it as allow.
-        if default_policy not in ("allow", ""):
-            return _deny(
-                "Access denied by governance: default_file_policy is set to an "
-                f"unrecognized value {raw_default!r} (expected 'allow' or 'deny'); "
-                f"failing closed for {op} on {path!r}.",
-            )
-        return True, ""
+        return _deny(
+            f"Access denied by governance: no folder policy allows {op} on {path!r} for {actor_display(who)}.",
+        )
 
     # deny_users/deny_teams (incl. ancestor cascade) were already enforced
     # above across all matching policies.
@@ -508,7 +495,11 @@ def check_file_access(
             f"for {actor_display(who)}.",
         )
 
-    return True, ""
+    return _deny(
+        "Access denied by governance: "
+        f"the matching folder policy for {path!r} has no {op} grant for "
+        f"{actor_display(who)}."
+    )
 
 
 def file_access_error(path: str, operation: str) -> Optional[str]:
@@ -827,20 +818,6 @@ def governance_posture_warnings(
 
     warnings: list[dict[str, Any]] = []
 
-    default_policy = str(
-        cfg.get("default_file_policy", "allow") or "allow"
-    ).strip().lower()
-    if default_policy != "deny":
-        warnings.append({
-            "severity": "warning",
-            "code": "default_file_policy_allow",
-            "message": (
-                "default_file_policy is not 'deny': paths with no matching "
-                "folder policy are allowed. Set it to 'deny' for least "
-                "privilege."
-            ),
-        })
-
     policies = cfg.get("folder_policies")
     has_policies = isinstance(policies, list) and len(policies) > 0
     roots = cfg.get("team_file_roots")
@@ -1063,7 +1040,7 @@ def render_self_configuration_context(
 
     managed_roots = _managed_team_roots_for_actor(who, cfg)
     managed_roots_text = str(managed_roots) if managed_roots else "none"
-    default_file_policy = str(cfg.get("default_file_policy", "allow") or "allow")
+    default_file_policy = "deny (fixed)"
 
     lines = [
         "## Live Maia Governance Context",

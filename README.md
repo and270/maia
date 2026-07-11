@@ -230,6 +230,9 @@ governance:
   tenant_id: acme-corp
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
+  teams:
+    finance: {}
+    marketing: {}
   users:
     "slack:U_FINANCE":
       name: Finance Manager
@@ -242,7 +245,6 @@ governance:
     "telegram:987654":
       name: Platform Admin
       roles: [admin]
-  default_file_policy: deny
   team_file_roots:
     marketing:
       path: "/srv/company/marketing"

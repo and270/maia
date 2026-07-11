@@ -15,7 +15,7 @@ governance:
   tenant_id: acme-corp
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
-  default_file_policy: deny
+  teams: {}
 ```
 
 Use stable gateway IDs such as `slack:U123` or `telegram:987654`:
@@ -78,7 +78,7 @@ Default built-in flow for team leaders:
 4. Ask the team leader to send `/dashboard` in a private/direct chat.
 5. Maia creates a pending request in **Dashboard Access**.
 6. Open **Dashboard Access**, review the actor key, assign roles and teams, then approve or deny the request.
-7. If the team leader should manage files, add a delegated root in **File Access**.
+7. If the team leader should manage files, add a delegated root under **Governance → Teams**.
 8. Ask the team leader to send `/dashboard` again.
 9. They paste the one-time token into the dashboard login form.
 
@@ -143,15 +143,15 @@ Corporate memory/skills apply to every conversation. Team memory/skills apply by
 
 Use **Dashboard -> File Access** for normal file authorization. The dashboard saves these settings to `<MAIA_HOME>/config.yaml` under `governance`; the YAML below is the backing shape, not a separate repo file. Direct YAML edits are for the server operator, infrastructure-as-code, backup restore, or break-glass recovery.
 
+The Governance tabs are **People → Teams → File access → Approvals → Settings**. Unmatched paths are always denied; there is no global allow switch.
+
 System admin workflow:
 
 1. Ask users who need dashboard or delegated file administration to run `/dashboard` in a private channel.
-2. Open **Dashboard Access** and approve each request with the right roles and teams.
-3. Open **File Access**.
-4. Set **Default file policy** to `deny`.
-5. Add shared folders with **Read roles** / **Write roles** only when the whole tenant should have access.
-6. Add department folders with **Read teams** / **Write teams** or named **Read users** / **Write users**.
-7. Add **Delegated team roots** when a team leader should manage one bounded folder.
+2. Create required teams in **Governance → Teams**.
+3. Open **Dashboard Access** and approve each request with the right roles and registered teams.
+4. Use **People** for individual paths and **Teams** for team paths and delegated roots.
+5. Open **File Access** for advanced role, deny, and write-approval rules.
 8. Save, test as real approved users, and review `governance.file_access` audit events.
 
 Team leader workflow:
@@ -163,14 +163,15 @@ Team leader workflow:
 5. They keep **Recursive directory policy** on for folders and turn it off for one exact file.
 6. They save and ask the affected user to retry.
 
-Team leaders cannot change `default_file_policy`, edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
 Marketing example:
 
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    marketing: {}
   users:
     "sso:ana@company.com":
       name: Ana Marketing Lead
@@ -213,11 +214,12 @@ Decision rules:
 3. `deny_users` and `deny_teams` override grants.
 4. Reads/searches require `read_users`, `read_teams`, or `read_roles`.
 5. Writes/patches/deletes require `write_users`, `write_teams`, or `write_roles`.
-6. If no policy matches and `default_file_policy` is `deny`, access is denied and audited.
+6. If no policy matches, access is denied and audited.
+7. A matching policy without an applicable read/write grant is also denied.
 
 | Dashboard field | YAML field | Typical owner |
 |---|---|---|
-| Default file policy | `default_file_policy` | System admin only. |
+| Team registry | `teams` | System admin only. |
 | Delegated team roots | `team_file_roots` | System admin only. |
 | Server path | `folder_policies[].path` | Admin; team leader below delegated root. |
 | Recursive directory policy | `recursive` | Admin or delegated team leader. |
