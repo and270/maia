@@ -707,6 +707,154 @@ def _normalise_folder_policy(raw: Dict[str, Any]) -> Dict[str, Any]:
     return policy
 
 
+def _governance_team_registry(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Return first-class teams plus legacy references, preserving spelling."""
+    registry: Dict[str, Dict[str, Any]] = {}
+    seen: set[str] = set()
+
+    def _add(raw_name: Any, metadata: Any = None) -> None:
+        name = str(raw_name or "").strip()
+        folded = name.casefold()
+        if not name or folded in seen:
+            return
+        seen.add(folded)
+        registry[name] = dict(metadata) if isinstance(metadata, dict) else {}
+
+    raw_registry = config.get("teams")
+    if isinstance(raw_registry, dict):
+        for name, metadata in raw_registry.items():
+            _add(name, metadata)
+    elif isinstance(raw_registry, list):
+        for name in raw_registry:
+            _add(name)
+
+    for name in _team_root_entries(config):
+        _add(name)
+
+    users = config.get("users")
+    if isinstance(users, dict):
+        for record in users.values():
+            if isinstance(record, dict):
+                for name in _coerce_role_list(record.get("teams") or record.get("team")):
+                    _add(name)
+
+    policies = config.get("folder_policies")
+    if isinstance(policies, list):
+        for policy in policies:
+            if not isinstance(policy, dict):
+                continue
+            for key in ("teams", "read_teams", "write_teams", "deny_teams"):
+                for name in _coerce_role_list(policy.get(key)):
+                    _add(name)
+    return registry
+
+
+def _subject_file_grants(
+    governance: Dict[str, Any], *, subject: str, subject_kind: str
+) -> List[Dict[str, Any]]:
+    generic_key = "users" if subject_kind == "user" else "teams"
+    read_key = "read_users" if subject_kind == "user" else "read_teams"
+    write_key = "write_users" if subject_kind == "user" else "write_teams"
+    result: List[Dict[str, Any]] = []
+    for raw_policy in governance.get("folder_policies", []) or []:
+        if not isinstance(raw_policy, dict):
+            continue
+        policy = _normalise_folder_policy(raw_policy)
+        path = str(policy.get("path") or "").strip()
+        if not path:
+            continue
+        generic = subject in _coerce_role_list(policy.get(generic_key))
+        can_read = generic or subject in _coerce_role_list(policy.get(read_key))
+        can_write = generic or subject in _coerce_role_list(policy.get(write_key))
+        if can_read or can_write:
+            result.append(
+                {
+                    "path": path,
+                    "recursive": bool(policy.get("recursive", True)),
+                    "read": can_read,
+                    "write": can_write,
+                }
+            )
+    return result
+
+
+def _replace_subject_file_grants(
+    governance: Dict[str, Any],
+    *,
+    subject: str,
+    subject_kind: str,
+    grants: List[Any],
+) -> None:
+    """Replace one user/team's grants without disturbing other policy fields."""
+    generic_key = "users" if subject_kind == "user" else "teams"
+    read_key = "read_users" if subject_kind == "user" else "read_teams"
+    write_key = "write_users" if subject_kind == "user" else "write_teams"
+    policies = [
+        _normalise_folder_policy(policy)
+        for policy in governance.get("folder_policies", []) or []
+        if isinstance(policy, dict)
+    ]
+
+    for policy in policies:
+        for key in (generic_key, read_key, write_key):
+            values = [value for value in _coerce_role_list(policy.get(key)) if value != subject]
+            if values:
+                policy[key] = values
+            else:
+                policy.pop(key, None)
+
+    policy_indexes: Dict[tuple[str, bool], int] = {}
+    for index, policy in enumerate(policies):
+        key = (str(policy.get("path") or "").strip(), bool(policy.get("recursive", True)))
+        policy_indexes.setdefault(key, index)
+
+    seen_grants: set[tuple[str, bool]] = set()
+    for grant in grants:
+        path = str(grant.path or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="Every file access grant needs a path")
+        if not grant.read and not grant.write:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File access for {path} must grant read, write, or both",
+            )
+        key = (path, bool(grant.recursive))
+        if key in seen_grants:
+            raise HTTPException(status_code=400, detail=f"Duplicate file access path: {path}")
+        seen_grants.add(key)
+        index = policy_indexes.get(key)
+        if index is None:
+            policies.append({"path": path, "recursive": bool(grant.recursive)})
+            index = len(policies) - 1
+            policy_indexes[key] = index
+        policy = policies[index]
+        if grant.read:
+            policy[read_key] = sorted(set(_coerce_role_list(policy.get(read_key))) | {subject})
+        if grant.write:
+            policy[write_key] = sorted(set(_coerce_role_list(policy.get(write_key))) | {subject})
+
+    governance["folder_policies"] = policies
+
+
+def _governance_team_payload(governance: Dict[str, Any], name: str) -> Dict[str, Any]:
+    users = governance.get("users")
+    users = users if isinstance(users, dict) else {}
+    members = [
+        str(actor_key)
+        for actor_key, record in users.items()
+        if isinstance(record, dict)
+        and name in _coerce_role_list(record.get("teams") or record.get("team"))
+    ]
+    return {
+        "name": name,
+        "members": sorted(members, key=str.lower),
+        "file_access": _subject_file_grants(
+            governance, subject=name, subject_kind="team"
+        ),
+        "delegated_root": _team_root_entries(governance).get(name),
+    }
+
+
 def _policy_matches_any_team_root(policy: Dict[str, Any], roots: Dict[str, Path]) -> bool:
     path = _safe_policy_path(policy.get("path"))
     if path is None:
@@ -1327,10 +1475,28 @@ class DiscordGatewayAccessUsersUpdate(BaseModel):
     users: List[DiscordGatewayAccessUser] = Field(default_factory=list)
 
 
+class GovernanceFileGrant(BaseModel):
+    path: str
+    recursive: bool = True
+    read: bool = False
+    write: bool = False
+
+
 class GovernanceUserUpdate(BaseModel):
     name: str = ""
     roles: List[str] = Field(default_factory=list)
     teams: List[str] = Field(default_factory=list)
+    file_access: Optional[List[GovernanceFileGrant]] = None
+
+
+class GovernanceTeamCreate(BaseModel):
+    name: str
+
+
+class GovernanceTeamUpdate(BaseModel):
+    members: List[str] = Field(default_factory=list)
+    file_access: List[GovernanceFileGrant] = Field(default_factory=list)
+    delegated_root: Optional[dict] = None
 
 
 class GovernanceSettingsUpdate(BaseModel):
@@ -1338,7 +1504,6 @@ class GovernanceSettingsUpdate(BaseModel):
     tenant_id: Optional[str] = None
     default_role: Optional[str] = None
     role_hierarchy: Optional[List[str]] = None
-    default_file_policy: Optional[str] = None
     team_file_manager_roles: Optional[List[str]] = None
     gateway_group_sessions_per_user: Optional[bool] = None
     gateway_thread_sessions_per_user: Optional[bool] = None
@@ -1382,9 +1547,7 @@ class DashboardAccessRevokeBody(BaseModel):
 
 
 class FolderPoliciesUpdate(BaseModel):
-    default_file_policy: Optional[str] = None
     folder_policies: List[dict] = []
-    team_file_roots: Optional[dict] = None
 
 
 def _normalize_discord_user_id(value: Any) -> str:
@@ -1544,6 +1707,7 @@ def _save_governance_user_from_dashboard_access(
     name: str,
     roles: List[str],
     teams: List[str],
+    file_access: Optional[List[GovernanceFileGrant]] = None,
 ) -> Dict[str, Any]:
     key = str(actor_key or "").strip()
     if not key:
@@ -1557,6 +1721,13 @@ def _save_governance_user_from_dashboard_access(
     governance = cfg.get("governance", {})
     if not isinstance(governance, dict):
         governance = {}
+    registered_teams = _governance_team_registry(governance)
+    unknown_teams = [team for team in teams if team not in registered_teams]
+    if unknown_teams:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown governance teams: {', '.join(unknown_teams)}",
+        )
     users = governance.get("users", {})
     if not isinstance(users, dict):
         users = {}
@@ -1572,6 +1743,13 @@ def _save_governance_user_from_dashboard_access(
         record.pop("team", None)
     users[key] = record
     governance["users"] = users
+    if file_access is not None:
+        _replace_subject_file_grants(
+            governance,
+            subject=key,
+            subject_kind="user",
+            grants=file_access,
+        )
     cfg["governance"] = governance
     save_config(cfg)
     return record
@@ -2722,7 +2900,7 @@ async def apply_governance_baseline(body: GovernanceBaseline, request: Request):
     governance = dict(governance) if isinstance(governance, dict) else {}
 
     governance["enabled"] = True
-    governance["default_file_policy"] = "deny"
+    governance.pop("default_file_policy", None)
 
     terminal = governance.get("terminal", {})
     terminal = dict(terminal) if isinstance(terminal, dict) else {}
@@ -2774,7 +2952,6 @@ async def apply_governance_baseline(body: GovernanceBaseline, request: Request):
         "ok": True,
         "applied": {
             "governance.enabled": True,
-            "governance.default_file_policy": "deny",
             "governance.terminal.allowed_roles": terminal["allowed_roles"],
             "governance.terminal.approver_roles": terminal["approver_roles"],
             "observability.audit_log_enabled": True,
@@ -2961,7 +3138,6 @@ async def get_folder_policies(request: Request):
 
     return {
         "enabled": bool(governance.get("enabled")),
-        "default_file_policy": governance.get("default_file_policy", "allow"),
         "folder_policies": policies,
         "team_file_roots": _team_root_entries(governance) if admin else {
             team: {"path": str(path)}
@@ -2990,15 +3166,16 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
     for policy in incoming:
         if not policy.get("path"):
             raise HTTPException(status_code=400, detail="Every folder policy needs a path.")
+        registered_teams = set(_governance_team_registry(governance))
+        for key in ("teams", "read_teams", "write_teams", "deny_teams"):
+            unknown = sorted(set(_coerce_role_list(policy.get(key))) - registered_teams)
+            if unknown:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown governance teams in {key}: {', '.join(unknown)}",
+                )
 
     if admin:
-        if body.default_file_policy is not None:
-            value = str(body.default_file_policy).strip().lower()
-            if value not in {"allow", "deny"}:
-                raise HTTPException(status_code=400, detail="default_file_policy must be allow or deny.")
-            governance["default_file_policy"] = value
-        if body.team_file_roots is not None:
-            governance["team_file_roots"] = body.team_file_roots
         governance["folder_policies"] = incoming
     else:
         managed_roots = _manageable_team_roots(request, governance)
@@ -3046,7 +3223,6 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
     return {
         "ok": True,
         "folder_policies": governance.get("folder_policies", []),
-        "default_file_policy": governance.get("default_file_policy", "allow"),
     }
 
 
@@ -3065,43 +3241,12 @@ def _governance_role_options() -> List[str]:
 
 
 def _governance_team_options() -> List[str]:
-    """Every team name referenced anywhere in governance config.
-
-    Teams are freeform labels: one exists as soon as a user, a delegated
-    team root, or a folder policy references it. Collected here so the
-    dashboard can suggest existing spellings instead of forcing recall.
-    """
+    """Every registered team, including references awaiting migration."""
     cfg = load_config()
     governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
     if not isinstance(governance, dict):
         governance = {}
-    teams: List[str] = []
-    seen: set[str] = set()
-
-    def _add(value: Any) -> None:
-        name = str(value or "").strip()
-        if name and name.lower() not in seen:
-            seen.add(name.lower())
-            teams.append(name)
-
-    roots = governance.get("team_file_roots")
-    if isinstance(roots, dict):
-        for team in roots:
-            _add(team)
-    users = governance.get("users")
-    if isinstance(users, dict):
-        for record in users.values():
-            if isinstance(record, dict):
-                for team in _coerce_role_list(record.get("teams") or record.get("team")):
-                    _add(team)
-    policies = governance.get("folder_policies")
-    if isinstance(policies, list):
-        for policy in policies:
-            if isinstance(policy, dict):
-                for key in ("read_teams", "write_teams"):
-                    for team in _coerce_role_list(policy.get(key)):
-                        _add(team)
-    return sorted(teams, key=str.lower)
+    return sorted(_governance_team_registry(governance), key=str.lower)
 
 
 @app.get("/api/governance/options")
@@ -3109,8 +3254,8 @@ async def get_governance_options():
     """Selectable governance vocabulary for dashboard forms.
 
     ``roles`` is the configured role_hierarchy (or the default set) and
-    ``teams`` is every team name referenced anywhere in governance, so
-    forms can offer dropdowns/suggestions instead of free-typed commas.
+    ``teams`` is the first-class team registry (plus legacy references until
+    migration), so forms can use select-only assignment.
     """
     return {
         "roles": _governance_role_options(),
@@ -3158,6 +3303,11 @@ def _governance_overview_payload() -> Dict[str, Any]:
             "gateway_allowed": bool(gateway_users.get(actor_key)),
         }
 
+    for actor_key, record in users.items():
+        record["file_access"] = _subject_file_grants(
+            governance, subject=actor_key, subject_kind="user"
+        )
+
     gateway_cfg = governance.get("gateway", {})
     gateway_cfg = gateway_cfg if isinstance(gateway_cfg, dict) else {}
     cron_cfg = governance.get("cron", {})
@@ -3167,12 +3317,13 @@ def _governance_overview_payload() -> Dict[str, Any]:
     roles = _governance_role_options()
     default_role = str(governance.get("default_role") or roles[0])
 
+    team_names = sorted(_governance_team_registry(governance), key=str.lower)
+
     return {
         "enabled": bool(governance.get("enabled")),
         "tenant_id": str(governance.get("tenant_id") or "default"),
         "default_role": default_role,
         "role_hierarchy": roles,
-        "default_file_policy": str(governance.get("default_file_policy") or "allow"),
         "team_file_manager_roles": _coerce_role_list(
             governance.get("team_file_manager_roles")
         ),
@@ -3193,7 +3344,10 @@ def _governance_overview_payload() -> Dict[str, Any]:
             "allowed_roles": _coerce_role_list(terminal_cfg.get("allowed_roles")),
             "approver_roles": _coerce_role_list(terminal_cfg.get("approver_roles")),
         },
-        "teams": _governance_team_options(),
+        "teams": team_names,
+        "team_records": [
+            _governance_team_payload(governance, name) for name in team_names
+        ],
         "users": sorted(users.values(), key=lambda item: (not item["governed"], item["actor_key"])),
     }
 
@@ -3228,6 +3382,178 @@ def _governance_admin_keys(users: Any) -> set[str]:
     return result
 
 
+def _require_governance_admin(request: Request) -> None:
+    if not _dashboard_actor_is_admin(request):
+        raise HTTPException(
+            status_code=403,
+            detail="System administrator access is required to manage teams",
+        )
+
+
+def _registered_team_name(governance: Dict[str, Any], raw_name: str) -> Optional[str]:
+    wanted = str(raw_name or "").strip().casefold()
+    for name in _governance_team_registry(governance):
+        if name.casefold() == wanted:
+            return name
+    return None
+
+
+@app.post("/api/governance/teams")
+async def create_governance_team(body: GovernanceTeamCreate, request: Request):
+    _require_governance_admin(request)
+    name = str(body.name or "").strip()
+    if not re.fullmatch(r"[^\s,][^,\r\n]{0,63}", name):
+        raise HTTPException(
+            status_code=400,
+            detail="Team names must be 1-64 characters and cannot contain commas or line breaks",
+        )
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = dict(governance) if isinstance(governance, dict) else {}
+    if _registered_team_name(governance, name):
+        raise HTTPException(status_code=409, detail=f"Team already exists: {name}")
+    registry = _governance_team_registry(governance)
+    registry[name] = {}
+    governance["teams"] = registry
+    cfg["governance"] = governance
+    save_config(cfg)
+    _audit_dashboard_event(
+        "governance.team_created",
+        request=request,
+        action="governance.team.create",
+        resource=name,
+        outcome="success",
+    )
+    return {"ok": True, "team": _governance_team_payload(governance, name)}
+
+
+@app.put("/api/governance/teams/{team_name}")
+async def update_governance_team(
+    team_name: str, body: GovernanceTeamUpdate, request: Request
+):
+    _require_governance_admin(request)
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = dict(governance) if isinstance(governance, dict) else {}
+    name = _registered_team_name(governance, team_name)
+    if not name:
+        raise HTTPException(status_code=404, detail=f"Unknown governance team: {team_name}")
+
+    users = governance.get("users")
+    users = dict(users) if isinstance(users, dict) else {}
+    requested_members = set(_coerce_role_list(body.members))
+    unknown_members = sorted(requested_members - set(str(key) for key in users))
+    if unknown_members:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Team members must already be governed identities: {', '.join(unknown_members)}",
+        )
+
+    for actor_key, raw_record in list(users.items()):
+        record = dict(raw_record) if isinstance(raw_record, dict) else {"roles": raw_record}
+        teams = [
+            team
+            for team in _coerce_role_list(record.get("teams") or record.get("team"))
+            if team.casefold() != name.casefold()
+        ]
+        if str(actor_key) in requested_members:
+            teams.append(name)
+        if teams:
+            record["teams"] = teams
+        else:
+            record.pop("teams", None)
+            record.pop("team", None)
+        users[actor_key] = record
+    governance["users"] = users
+
+    _replace_subject_file_grants(
+        governance,
+        subject=name,
+        subject_kind="team",
+        grants=body.file_access,
+    )
+
+    roots = _team_root_entries(governance)
+    if body.delegated_root is None:
+        roots.pop(name, None)
+    else:
+        entry = dict(body.delegated_root)
+        path = str(entry.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="A delegated team root needs a server path")
+        manager_roles = _validate_governance_roles(
+            _coerce_role_list(entry.get("manager_roles")),
+            _governance_role_options(),
+        )
+        managers = _coerce_role_list(entry.get("managers") or entry.get("manager_users"))
+        unknown_managers = sorted(set(managers) - set(str(key) for key in users))
+        if unknown_managers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Root managers must be governed identities: {', '.join(unknown_managers)}",
+            )
+        normalized_root: Dict[str, Any] = {"path": path}
+        if manager_roles:
+            normalized_root["manager_roles"] = manager_roles
+        if managers:
+            normalized_root["managers"] = managers
+        roots[name] = normalized_root
+    governance["team_file_roots"] = roots
+    governance["teams"] = _governance_team_registry(governance)
+    cfg["governance"] = governance
+    save_config(cfg)
+    _audit_dashboard_event(
+        "governance.team_updated",
+        request=request,
+        action="governance.team.update",
+        resource=name,
+        outcome="success",
+        metadata={
+            "member_count": len(requested_members),
+            "file_access_count": len(body.file_access),
+            "delegated_root": body.delegated_root is not None,
+        },
+    )
+    return {"ok": True, "team": _governance_team_payload(governance, name)}
+
+
+@app.delete("/api/governance/teams/{team_name}")
+async def delete_governance_team(team_name: str, request: Request):
+    _require_governance_admin(request)
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = dict(governance) if isinstance(governance, dict) else {}
+    name = _registered_team_name(governance, team_name)
+    if not name:
+        raise HTTPException(status_code=404, detail=f"Unknown governance team: {team_name}")
+    payload = _governance_team_payload(governance, name)
+    references: List[str] = []
+    if payload["members"]:
+        references.append(f"{len(payload['members'])} member(s)")
+    if payload["file_access"]:
+        references.append(f"{len(payload['file_access'])} file grant(s)")
+    if payload["delegated_root"]:
+        references.append("a delegated root")
+    if references:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Remove {', '.join(references)} before deleting team {name}",
+        )
+    registry = _governance_team_registry(governance)
+    registry.pop(name, None)
+    governance["teams"] = registry
+    cfg["governance"] = governance
+    save_config(cfg)
+    _audit_dashboard_event(
+        "governance.team_deleted",
+        request=request,
+        action="governance.team.delete",
+        resource=name,
+        outcome="success",
+    )
+    return {"ok": True, "removed": name}
+
+
 @app.put("/api/governance/users/{actor_key}")
 async def update_governance_user(
     actor_key: str, body: GovernanceUserUpdate, request: Request
@@ -3260,6 +3586,7 @@ async def update_governance_user(
         name=body.name,
         roles=roles,
         teams=teams,
+        file_access=body.file_access,
     )
     _audit_dashboard_event(
         "governance.user_updated",
@@ -3267,7 +3594,11 @@ async def update_governance_user(
         action="governance.user.update",
         resource=actor_key,
         outcome="success",
-        metadata={"roles": roles, "teams": teams},
+        metadata={
+            "roles": roles,
+            "teams": teams,
+            "file_access_count": len(body.file_access or []),
+        },
     )
     return {"ok": True, "actor_key": actor_key, "user": record}
 
@@ -3354,14 +3685,6 @@ async def update_governance_settings(
     ).strip()
     if default_role not in hierarchy:
         raise HTTPException(status_code=400, detail="Default role must exist in the role hierarchy")
-    default_file_policy = str(
-        body.default_file_policy
-        if body.default_file_policy is not None
-        else governance.get("default_file_policy") or "allow"
-    ).strip().lower()
-    if default_file_policy not in {"allow", "deny"}:
-        raise HTTPException(status_code=400, detail="default_file_policy must be allow or deny")
-
     if body.enabled is not None:
         governance["enabled"] = body.enabled
     if body.tenant_id is not None:
@@ -3371,7 +3694,7 @@ async def update_governance_settings(
         governance["tenant_id"] = tenant_id
     governance["role_hierarchy"] = hierarchy
     governance["default_role"] = default_role
-    governance["default_file_policy"] = default_file_policy
+    governance.pop("default_file_policy", None)
 
     if body.team_file_manager_roles is not None:
         governance["team_file_manager_roles"] = _validate_governance_roles(

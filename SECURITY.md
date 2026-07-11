@@ -9,7 +9,7 @@ Maia is an AmpliIA distribution intended for a private, one-tenant corporate ass
 - **Role hierarchy:** Later roles inherit earlier roles in `governance.role_hierarchy`; the default hierarchy is `viewer < operator < manager < admin`.
 - **Knowledge hierarchy:** Corporate memory/skills apply to every conversation, team memory/skills apply by `governance.users.*.teams`, and user memory/skills remain profile-level.
 - **Gateway sessions:** Regular group/channel conversations are isolated per user by default. Explicit threads/topics are shared by default for multi-user operational workflows.
-- **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. For production, set `governance.default_file_policy: deny` and explicitly allow company folders. Reads/searches require read grants; writes/patches/deletes require write grants.
+- **Filesystem access:** Folder policies are enforced by the file tools and lower-level file operations. Unmatched paths are always denied. Reads/searches require explicit read grants; writes/patches/deletes require explicit write grants.
 - **Team file delegation:** `governance.team_file_roots` lets a team leader manage policies only under their team's configured root from the dashboard.
 - **Dashboard access:** The dashboard is localhost-only by default. Intranet or public serving requires `dashboard.auth` unless an operator explicitly uses `--insecure` for temporary trusted-network testing.
 - **Dashboard identity:** Local token mode is for bootstrap/system-admin access. Team leaders request dashboard access through `/dashboard`; admins approve, deny, revoke, or restore that access in **Dashboard Access**. If the company already has SSO or an identity-aware proxy, Maia can also consume trusted headers mapped through `governance.users`.
@@ -35,7 +35,7 @@ dashboard:
 
 Set `MAIA_DASHBOARD_TOKEN` from the server environment or use `dashboard.auth.token_hash` with a `sha256:<hex>` hash. Maia does not provide SSO, VPN, zero-trust networking, or a reverse proxy. If the company already has that layer, configure `trusted_user_header` only behind a proxy that strips spoofed client headers, and prefer binding Maia to `127.0.0.1` behind that proxy.
 
-System admins can edit global folder policy, role-wide grants, and `team_file_roots`. Team leaders can save policies only under delegated roots, cannot change `default_file_policy`, cannot grant role-wide access, and cannot reference users outside the managed team.
+System admins manage teams, global folder policies, role-wide grants, and `team_file_roots`. Team leaders can save policies only under delegated roots, cannot grant role-wide access, and cannot reference users outside the managed team.
 
 Channel dashboard token baseline:
 
@@ -69,7 +69,8 @@ governance:
   tenant_id: acme-corp
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
-  default_file_policy: deny
+  teams:
+    marketing: {}
   team_file_roots:
     marketing:
       path: "/srv/company/marketing"

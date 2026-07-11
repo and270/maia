@@ -33,7 +33,7 @@ class TestGovernanceBaseline:
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["ok"] is True
-        assert data["applied"]["governance.default_file_policy"] == "deny"
+        assert "governance.default_file_policy" not in data["applied"]
         assert data["applied"]["approvals.mode"] == "smart"
 
         # Config on disk reflects the combo.
@@ -42,7 +42,7 @@ class TestGovernanceBaseline:
         cfg = load_config()
         gov = cfg["governance"]
         assert gov["enabled"] is True
-        assert gov["default_file_policy"] == "deny"
+        assert "default_file_policy" not in gov
         assert gov["terminal"]["allowed_roles"] == ["operator"]
         assert gov["terminal"]["approver_roles"] == ["manager"]
         assert cfg["observability"]["audit_log_enabled"] is True

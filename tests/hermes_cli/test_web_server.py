@@ -346,10 +346,11 @@ class TestWebServerEndpoints:
         assert users["sso:auditor@example.com"]["gateway_allowed"] is False
 
     def test_governance_user_can_be_granted_and_removed_without_changing_allowlist(self):
-        from hermes_cli.config import load_config, load_env, save_env_value
+        from hermes_cli.config import load_config, load_env, save_config, save_env_value
 
         actor_key = "discord:333333333333333333"
         save_env_value("DISCORD_ALLOWED_USERS", "333333333333333333")
+        save_config({"governance": {"teams": {"support": {}}}})
 
         grant = self.client.put(
             f"/api/governance/users/{actor_key}",
@@ -366,6 +367,126 @@ class TestWebServerEndpoints:
         assert remove.status_code == 200
         assert actor_key not in load_config()["governance"]["users"]
         assert load_env()["DISCORD_ALLOWED_USERS"] == "333333333333333333"
+
+    def test_governance_user_direct_access_merges_with_existing_policy(self):
+        from hermes_cli.config import load_config, save_config
+
+        actor_key = "slack:U123"
+        save_config(
+            {
+                "governance": {
+                    "teams": {"support": {}},
+                    "users": {actor_key: {"name": "Ana", "roles": ["operator"]}},
+                    "folder_policies": [
+                        {
+                            "path": "/srv/shared",
+                            "read_roles": ["viewer"],
+                            "write_approval_roles": ["admin"],
+                        }
+                    ],
+                }
+            }
+        )
+
+        response = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={
+                "name": "Ana",
+                "roles": ["operator"],
+                "teams": ["support"],
+                "file_access": [
+                    {
+                        "path": "/srv/shared",
+                        "recursive": True,
+                        "read": True,
+                        "write": True,
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        policy = load_config()["governance"]["folder_policies"][0]
+        assert policy["read_roles"] == ["viewer"]
+        assert policy["write_approval_roles"] == ["admin"]
+        assert policy["read_users"] == [actor_key]
+        assert policy["write_users"] == [actor_key]
+        overview = self.client.get("/api/governance/overview").json()
+        user = next(item for item in overview["users"] if item["actor_key"] == actor_key)
+        assert user["file_access"] == [
+            {
+                "path": "/srv/shared",
+                "recursive": True,
+                "read": True,
+                "write": True,
+            }
+        ]
+
+    def test_governance_team_lifecycle_manages_members_grants_and_root(self):
+        from hermes_cli.config import load_config, save_config
+
+        actor_key = "slack:U456"
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        actor_key: {"name": "Bruno", "roles": ["operator"]},
+                    }
+                }
+            }
+        )
+        created = self.client.post("/api/governance/teams", json={"name": "support"})
+        assert created.status_code == 200, created.text
+
+        updated = self.client.put(
+            "/api/governance/teams/support",
+            json={
+                "members": [actor_key],
+                "file_access": [
+                    {
+                        "path": "/srv/support",
+                        "recursive": True,
+                        "read": True,
+                        "write": False,
+                    }
+                ],
+                "delegated_root": {
+                    "path": "/srv/support",
+                    "manager_roles": ["manager"],
+                    "managers": [actor_key],
+                },
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        governance = load_config()["governance"]
+        assert governance["users"][actor_key]["teams"] == ["support"]
+        assert governance["folder_policies"][0]["read_teams"] == ["support"]
+        assert governance["team_file_roots"]["support"]["path"] == "/srv/support"
+
+        blocked = self.client.delete("/api/governance/teams/support")
+        assert blocked.status_code == 409
+
+        cleared = self.client.put(
+            "/api/governance/teams/support",
+            json={"members": [], "file_access": [], "delegated_root": None},
+        )
+        assert cleared.status_code == 200, cleared.text
+        removed = self.client.delete("/api/governance/teams/support")
+        assert removed.status_code == 200, removed.text
+
+    def test_governance_rejects_undeclared_team_assignments(self):
+        from hermes_cli.config import save_config
+
+        actor_key = "slack:U999"
+        save_config(
+            {"governance": {"users": {actor_key: {"roles": ["operator"]}}}}
+        )
+        response = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={"name": "Unknown", "roles": ["operator"], "teams": ["typo-team"]},
+        )
+        assert response.status_code == 400
+        assert "Unknown governance teams" in response.json()["detail"]
 
     def test_governance_settings_refuse_to_remove_role_still_in_use(self):
         from hermes_cli.config import save_config

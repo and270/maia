@@ -12,7 +12,7 @@ governance:
   tenant_id: acme-corp
   default_role: viewer
   role_hierarchy: [viewer, operator, manager, admin]
-  default_file_policy: deny
+  teams: {}
 ```
 
 Use `viewer` for read-only users, `operator` for normal write work, `manager` for sensitive department approval, and `admin` for platform administrators.
@@ -172,24 +172,24 @@ Shared corporate/team changes are proposal-first. The agent can stage a memory o
 
 Use **Dashboard -> File Access** for normal file authorization. The dashboard saves the same data to `<MAIA_HOME>/config.yaml` under `governance`, where `MAIA_HOME` defaults to `~/.maia` on the server. Direct YAML edits are for the server operator, infrastructure-as-code, backup restore, or break-glass recovery.
 
-File policies are checked before reads, searches, writes, patches, deletes, cron jobs, and dashboard-triggered actions. In production, start with default deny and add only the server folders the assistant should be allowed to touch.
+File policies are checked before reads, searches, writes, patches, deletes, cron jobs, and dashboard-triggered actions. Unmatched paths are always denied; add only the server folders the assistant should be allowed to touch.
 
 System admin workflow:
 
 1. Ask users who need dashboard or delegated file administration to run `/dashboard` from Slack, Discord, Telegram, WhatsApp, or the channel they use.
-2. Add each exact actor key with the right roles and teams in **Config / Governance**. This creates the `governance.users` entries that File Access policies use; approve Dashboard Access separately only for people who need the admin UI.
-3. Open **Dashboard -> File Access**.
-4. Set **Default file policy** to `deny`.
-5. Add shared folders with **Read roles** / **Write roles** only when the whole tenant should have access.
-6. Add department folders with **Read teams** / **Write teams** or named **Read users** / **Write users**.
-7. Save and test with real users, then review `governance.file_access` audit events.
+2. Create teams under **Governance → Teams**, then add each actor under **People** with roles and select-only team membership.
+3. Use **People** for individual paths and **Teams** for team paths and delegated roots.
+4. Open **File Access** for advanced role, deny, and write-approval rules.
+5. Save and test with real users, then review `governance.file_access` audit events.
 
 Example baseline:
 
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    finance: {}
+    marketing: {}
   users:
     "slack:U_FINANCE_LEAD":
       name: Finance Manager
@@ -233,14 +233,15 @@ Team leader workflow:
 5. They keep **Recursive directory policy** on for folders and turn it off for one exact file.
 6. They save and ask the affected user to retry the file operation.
 
-Team leaders cannot change `default_file_policy`, edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root, grant role-wide rules such as `read_roles: [viewer]`, or reference users outside the managed team unless they also have system-admin dashboard access.
 
 Marketing example, as saved in `<MAIA_HOME>/config.yaml`:
 
 ```yaml
 governance:
   enabled: true
-  default_file_policy: deny
+  teams:
+    marketing: {}
   users:
     "sso:ana@company.com":
       name: Ana Marketing Lead
@@ -286,7 +287,7 @@ Decision rules:
 
 | Dashboard field | YAML field | Typical owner |
 |---|---|---|
-| Default file policy | `default_file_policy` | System admin only. |
+| Team registry | `teams` | System admin only. |
 | Delegated team roots | `team_file_roots` | System admin only. |
 | Server path | `folder_policies[].path` | Admin; team leader below delegated root. |
 | Recursive directory policy | `recursive` | Admin or delegated team leader. |
@@ -343,7 +344,7 @@ This stages memories and skills for review, imports MCP servers disabled by defa
 - Governance is enabled.
 - Dashboard protected mode is enabled before binding to any non-loopback interface.
 - Dashboard channel tokens have a real intranet/public `dashboard_url`, `require_dm: true`, and approval required.
-- `default_file_policy` is `deny` in production.
+- Unmatched paths are always denied and every allowed operation has an explicit grant.
 - Every dashboard user was approved through **Dashboard Access** or reviewed YAML.
 - Users can run `/whoami` to verify their mapped identity, roles, and teams.
 - Team users have `governance.users.*.teams` assigned.

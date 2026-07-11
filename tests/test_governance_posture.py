@@ -23,8 +23,7 @@ def test_disabled_governance_has_no_warnings(tmp_path, monkeypatch):
 def test_enabled_but_permissive_flags_every_weakness(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    # Enabled, default allow, no policies, no terminal gate, approvals off,
-    # audit off — the maximally weak "governance on but does nothing" state.
+    # Enabled, no policies, no terminal gate, approvals off, audit off.
     _write_config(
         tmp_path,
         """
@@ -40,7 +39,6 @@ observability:
     from agent.governance import governance_posture_warnings
 
     codes = _codes(governance_posture_warnings())
-    assert "default_file_policy_allow" in codes
     assert "no_folder_policies" in codes
     assert "terminal_ungoverned" in codes
     assert "approvals_off" in codes

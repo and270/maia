@@ -1047,9 +1047,9 @@ display:
 # Enterprise Governance
 # =============================================================================
 # Enables role-aware gateway users, team/user folder access policies, and
-# human-in-the-loop cron authorization nodes. Production deployments should set
-# default_file_policy: deny and explicitly list allowed company folders.
-# Normal file access administration is done from Dashboard -> File Access; this
+# human-in-the-loop cron authorization nodes. File access is always denied
+# unless an explicit folder policy grants the operation.
+# Normal administration is done from Dashboard -> Governance; this
 # YAML is the backing shape saved in <MAIA_HOME>/config.yaml.
 #
 # governance:
@@ -1057,6 +1057,9 @@ display:
 #   tenant_id: acme-corp
 #   default_role: viewer
 #   role_hierarchy: [viewer, operator, manager, admin]
+#   teams:
+#     finance: {}
+#     marketing: {}
 #   users:
 #     "slack:U123":
 #       name: Finance Manager
@@ -1069,7 +1072,6 @@ display:
 #     "telegram:987654":
 #       name: Platform Admin
 #       roles: [admin]
-#   default_file_policy: deny
 #   team_file_roots:
 #     marketing:
 #       path: "/srv/company/marketing"

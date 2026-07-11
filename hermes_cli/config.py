@@ -923,9 +923,12 @@ DEFAULT_CONFIG = {
         #     roles: ["manager"]
         #     teams: ["finance"]
         "users": {},
-        # default_file_policy: allow keeps existing installs compatible.
-        # Set to "deny" in production and explicitly allow folders below.
-        "default_file_policy": "allow",
+        # First-class team registry. Membership remains on governance.users;
+        # this mapping lets an empty team exist before members or policies are
+        # assigned and provides the vocabulary used by dashboard selectors.
+        "teams": {},
+        # File access is always deny-by-default. Only explicit folder_policies
+        # can grant read or write access.
         # Example:
         # folder_policies:
         #   - path: "/srv/company/finance"
@@ -1494,7 +1497,7 @@ DEFAULT_CONFIG = {
     },
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 26,
+    "_config_version": 27,
 }
 
 # =============================================================================
@@ -3742,6 +3745,84 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
                         "  ✓ Seeded auxiliary.curator defaults in config.yaml: "
                         f"{', '.join(added_aux)}"
                     )
+
+    # ── Version 26 → 27: first-class teams + immutable file default deny ──
+    # Team names used to exist only as free-form references on users, roots,
+    # and folder policies. Seed a registry from those references so the
+    # dashboard can offer select-only membership without losing existing
+    # installations. The legacy default_file_policy switch is removed because
+    # unmatched file access now always fails closed in the runtime.
+    if current_ver < 27:
+        config = read_raw_config()
+        governance = config.get("governance")
+        if not isinstance(governance, dict):
+            governance = {}
+
+        raw_registry = governance.get("teams")
+        registry: Dict[str, Dict[str, Any]] = {}
+        seen_names: set[str] = set()
+
+        def _register_team(raw_name: Any, metadata: Any = None) -> None:
+            name = str(raw_name or "").strip()
+            folded = name.casefold()
+            if not name or folded in seen_names:
+                return
+            seen_names.add(folded)
+            registry[name] = dict(metadata) if isinstance(metadata, dict) else {}
+
+        if isinstance(raw_registry, dict):
+            for team_name, metadata in raw_registry.items():
+                _register_team(team_name, metadata)
+        elif isinstance(raw_registry, list):
+            for team_name in raw_registry:
+                _register_team(team_name)
+
+        roots = governance.get("team_file_roots")
+        if isinstance(roots, dict):
+            for team_name in roots:
+                _register_team(team_name)
+
+        users = governance.get("users")
+        if isinstance(users, dict):
+            for record in users.values():
+                if not isinstance(record, dict):
+                    continue
+                raw_teams = record.get("teams") or record.get("team") or []
+                if isinstance(raw_teams, str):
+                    raw_teams = [raw_teams]
+                if isinstance(raw_teams, (list, tuple, set)):
+                    for team_name in raw_teams:
+                        _register_team(team_name)
+
+        policies = governance.get("folder_policies")
+        if isinstance(policies, list):
+            for policy in policies:
+                if not isinstance(policy, dict):
+                    continue
+                for key in ("teams", "read_teams", "write_teams", "deny_teams"):
+                    raw_teams = policy.get(key) or []
+                    if isinstance(raw_teams, str):
+                        raw_teams = [raw_teams]
+                    if isinstance(raw_teams, (list, tuple, set)):
+                        for team_name in raw_teams:
+                            _register_team(team_name)
+
+        governance["teams"] = registry
+        removed_default = governance.pop("default_file_policy", None)
+        config["governance"] = governance
+        save_config(config)
+        results["config_added"].append(
+            f"governance.teams ({len(registry)} existing team(s) registered)"
+        )
+        if removed_default is not None:
+            results["config_added"].append(
+                "removed governance.default_file_policy (file access is always deny-by-default)"
+            )
+        if not quiet:
+            print(
+                "  ✓ Registered existing governance teams and enabled immutable "
+                "deny-by-default file access"
+            )
 
     if current_ver < latest_ver and not quiet:
         print(f"Config version: {current_ver} → {latest_ver}")
