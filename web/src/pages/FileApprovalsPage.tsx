@@ -82,7 +82,7 @@ function ApproverBadges({ approval }: { approval: FileChangeApproval }) {
   );
 }
 
-export default function FileApprovalsPage() {
+export default function FileApprovalsPage({ embedded = false }: { embedded?: boolean }) {
   const [approvals, setApprovals] = useState<FileChangeApproval[]>([]);
   const [status, setStatus] = useState<StatusFilter>("pending");
   const [loading, setLoading] = useState(true);
@@ -138,18 +138,20 @@ export default function FileApprovalsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PluginSlot name="file-approvals:top" />
+      {!embedded && <PluginSlot name="file-approvals:top" />}
       <Toast toast={toast} />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <H2
-            variant="sm"
-            className="flex items-center gap-2 text-muted-foreground"
-          >
-            <FileCheck className="h-4 w-4" />
-            File Change Approvals
-          </H2>
+          {!embedded && (
+            <H2
+              variant="sm"
+              className="flex items-center gap-2 text-muted-foreground"
+            >
+              <FileCheck className="h-4 w-4" />
+              File Change Approvals
+            </H2>
+          )}
           <div className="flex items-center gap-2">
             <div className="flex gap-1">
               {STATUS_FILTERS.map((filter) => (
@@ -175,8 +177,8 @@ export default function FileApprovalsPage() {
           the exact reviewed content; if the file changed on disk after
           staging, the request is marked stale instead. Which folders require
           approval, and who approves, is configured per policy in{" "}
-          <Link to="/file-access" className="font-bold text-primary hover:underline">
-            File Access
+          <Link to="/governance?section=files" className="font-bold text-primary hover:underline">
+            Governance / File access
           </Link>
           .
         </p>
@@ -281,7 +283,7 @@ export default function FileApprovalsPage() {
         </CardContent>
       </Card>
 
-      <PluginSlot name="file-approvals:bottom" />
+      {!embedded && <PluginSlot name="file-approvals:bottom" />}
     </div>
   );
 }

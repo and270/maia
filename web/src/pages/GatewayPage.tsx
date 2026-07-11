@@ -765,7 +765,7 @@ export default function GatewayPage() {
           {[
             "Choose Slack, Discord, Mattermost, or Matrix.",
             "Save bot credentials and gateway allowlists; new users remain pending.",
-            "Grant each human identity at least one role in Config / Governance.",
+            "Grant each human identity at least one role in Governance / People.",
             "Start or restart the gateway service.",
           ].map((item) => (
             <div key={item} className="flex items-start gap-2 border border-border/60 p-3">
@@ -1091,8 +1091,8 @@ function GatewayAccessUsersEditor({
           Saving this list writes <code>{allowKey}</code>, but allowlisting alone does not grant bot access.
           Every human user must also have an explicit role under <code>governance.users</code>. New IDs remain
           blocked until an admin grants that role in{" "}
-          <Link to="/config?search=governance" className="font-bold text-primary hover:underline">
-            Config / Governance
+          <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
+            Governance / People
           </Link>
           . On a completely fresh installation, Maia bootstraps only the first saved user as <code>admin</code>.
         </p>
@@ -1162,6 +1162,14 @@ function GatewayAccessUsersEditor({
                 <div className="border border-warning/40 bg-warning/5 px-3 py-2 text-muted-foreground">
                   <strong className="text-warning">Pending Governance</strong>
                   <div>This user cannot talk to Maia until an admin grants a role in Governance.</div>
+                  {row.user_id && (
+                    <Link
+                      to={`/governance?section=people&user=${encodeURIComponent(`${platform.id}:${row.user_id}`)}`}
+                      className="mt-1 inline-flex font-bold text-primary hover:underline"
+                    >
+                      Review this user in Governance
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
@@ -1182,7 +1190,7 @@ function GatewayAccessUsersEditor({
       <div className="mt-3 grid gap-2 text-xs normal-case leading-5 text-muted-foreground md:grid-cols-3">
         <div><strong>Multiple users:</strong> add one row per user ID; the saved allowlist is comma-separated automatically.</div>
         <div><strong>Pending means denied:</strong> pairing and allow-all do not bypass Governance membership.</div>
-        <div><strong>Grant access:</strong> add the platform ID and at least one role in <Link to="/config?search=governance" className="font-bold text-primary hover:underline">Config / Governance</Link>.</div>
+        <div><strong>Grant access:</strong> select the pending identity and assign at least one role in <Link to="/governance?section=people" className="font-bold text-primary hover:underline">Governance / People</Link>.</div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">

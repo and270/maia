@@ -494,8 +494,8 @@ function BaselineCard() {
               ))}
               <p className="text-xs leading-5 text-muted-foreground">
                 Add scoped grants in{" "}
-                <Link to="/file-access" className="underline">
-                  File Access
+                <Link to="/governance?section=files" className="underline">
+                  Governance / File access
                 </Link>
                 .
               </p>
@@ -512,8 +512,8 @@ const NEXT_STEPS = [
     icon: ShieldCheck,
     title: "Tenant and governance",
     text: "Fine-tune governance.enabled, tenant_id, role_hierarchy, default_role, and production default_file_policy.",
-    to: "/config?search=governance",
-    action: "Open Config",
+    to: "/governance?section=settings",
+    action: "Open Governance",
   },
   {
     icon: Database,
@@ -526,8 +526,8 @@ const NEXT_STEPS = [
     icon: FolderLock,
     title: "Folder access",
     text: "Set default deny, add company roots, then grant read/write access by role, team, or exact user under delegated folders.",
-    to: "/file-access",
-    action: "Open File Access",
+    to: "/governance?section=files",
+    action: "Open file policies",
   },
   {
     icon: Clock,

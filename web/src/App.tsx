@@ -25,7 +25,6 @@ import {
   Database,
   Download,
   Eye,
-  FileCheck,
   FileText,
   FolderTree,
   Globe,
@@ -70,8 +69,7 @@ import OnboardingPage from "@/pages/OnboardingPage";
 import GatewayPage from "@/pages/GatewayPage";
 import DashboardAccessPage from "@/pages/DashboardAccessPage";
 import KnowledgePage from "@/pages/KnowledgePage";
-import FileAccessPage from "@/pages/FileAccessPage";
-import FileApprovalsPage from "@/pages/FileApprovalsPage";
+import GovernancePage from "@/pages/GovernancePage";
 import CronPage from "@/pages/CronPage";
 import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
@@ -185,8 +183,8 @@ function DashboardAuthGate({ children }: { children: ReactNode }) {
 
   const trustedOnly =
     Boolean(status?.modes?.trusted_header) &&
-    !Boolean(status?.modes?.local_token) &&
-    !Boolean(status?.modes?.channel_token);
+    !status?.modes?.local_token &&
+    !status?.modes?.channel_token;
 
   return (
     <div className="font-mondwest flex min-h-dvh items-center justify-center bg-background-base px-6 text-midground antialiased">
@@ -278,9 +276,10 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/onboarding": OnboardingPage,
   "/gateway": GatewayPage,
   "/dashboard-access": DashboardAccessPage,
+  "/governance": GovernancePage,
   "/knowledge": KnowledgePage,
-  "/file-access": FileAccessPage,
-  "/file-approvals": FileApprovalsPage,
+  "/file-access": LegacyFileAccessRedirect,
+  "/file-approvals": LegacyFileApprovalsRedirect,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -299,6 +298,14 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
 // fire when the user navigates to /chat.
 function ChatRouteSink() {
   return null;
+}
+
+function LegacyFileAccessRedirect() {
+  return <Navigate to="/governance?section=files" replace />;
+}
+
+function LegacyFileApprovalsRedirect() {
+  return <Navigate to="/governance?section=approvals" replace />;
 }
 
 const BUILTIN_NAV_REST: NavItem[] = [
@@ -325,20 +332,15 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: ShieldCheck,
   },
   {
+    path: "/governance",
+    label: "Governance",
+    icon: Shield,
+  },
+  {
     path: "/knowledge",
     labelKey: "knowledge",
     label: "Knowledge",
     icon: Database,
-  },
-  {
-    path: "/file-access",
-    label: "File Access",
-    icon: FolderTree,
-  },
-  {
-    path: "/file-approvals",
-    label: "File Approvals",
-    icon: FileCheck,
   },
   {
     path: "/analytics",

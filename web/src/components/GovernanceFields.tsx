@@ -138,16 +138,16 @@ export function TeamsHelpContent({ existingTeams }: { existingTeams: string[] })
         Teams group users for shared knowledge and folder access. A team
         exists as soon as something references it — just type a name
         (comma-separate several). What each team can reach is managed in{" "}
-        <Link to="/file-access" className="font-bold text-primary hover:underline">
-          File Access
+        <Link to="/governance?section=files" className="font-bold text-primary hover:underline">
+          Governance / File access
         </Link>{" "}
         and team knowledge in{" "}
         <Link to="/knowledge" className="font-bold text-primary hover:underline">
           Knowledge
         </Link>
         ; assignments live under <code>governance.users</code> in{" "}
-        <Link to="/config?search=governance" className="font-bold text-primary hover:underline">
-          Config
+        <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
+          Governance / People
         </Link>
         .
       </p>
