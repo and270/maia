@@ -104,6 +104,34 @@ export type DiscordGatewayAccessUsersResponse = {
   teams?: string[];
 };
 
+export type GovernanceUser = {
+  actor_key: string;
+  platform: string;
+  user_id: string;
+  name: string;
+  roles: string[];
+  teams: string[];
+  governed: boolean;
+  gateway_allowed: boolean;
+};
+
+export type GovernanceOverview = {
+  enabled: boolean;
+  tenant_id: string;
+  default_role: string;
+  role_hierarchy: string[];
+  default_file_policy: string;
+  team_file_manager_roles: string[];
+  gateway: {
+    group_sessions_per_user: boolean;
+    thread_sessions_per_user: boolean;
+  };
+  cron: { default_authorizer_roles: string[] };
+  terminal: { allowed_roles: string[]; approver_roles: string[] };
+  teams: string[];
+  users: GovernanceUser[];
+};
+
 export type FolderPolicy = {
   path: string;
   recursive?: boolean;
@@ -288,6 +316,43 @@ export const api = {
   getOnboardingState: () => fetchJSON<OnboardingState>("/api/onboarding/state"),
   getGovernanceOptions: () =>
     fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
+  getGovernanceOverview: () =>
+    fetchJSON<GovernanceOverview>("/api/governance/overview"),
+  saveGovernanceUser: (
+    actorKey: string,
+    body: { name: string; roles: string[]; teams: string[] },
+  ) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/governance/users/${encodeURIComponent(actorKey)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  removeGovernanceUser: (actorKey: string) =>
+    fetchJSON<{ ok: boolean; removed: boolean }>(
+      `/api/governance/users/${encodeURIComponent(actorKey)}`,
+      { method: "DELETE" },
+    ),
+  saveGovernanceSettings: (body: {
+    enabled: boolean;
+    tenant_id: string;
+    default_role: string;
+    role_hierarchy: string[];
+    default_file_policy: string;
+    team_file_manager_roles: string[];
+    gateway_group_sessions_per_user: boolean;
+    gateway_thread_sessions_per_user: boolean;
+    cron_default_authorizer_roles: string[];
+    terminal_allowed_roles: string[];
+    terminal_approver_roles: string[];
+  }) =>
+    fetchJSON<GovernanceOverview>("/api/governance/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   setReasoningEffort: (effort: string) =>
     fetchJSON<{ ok: boolean; effort: string }>("/api/model/effort", {
       method: "POST",

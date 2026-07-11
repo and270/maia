@@ -1327,6 +1327,26 @@ class DiscordGatewayAccessUsersUpdate(BaseModel):
     users: List[DiscordGatewayAccessUser] = Field(default_factory=list)
 
 
+class GovernanceUserUpdate(BaseModel):
+    name: str = ""
+    roles: List[str] = Field(default_factory=list)
+    teams: List[str] = Field(default_factory=list)
+
+
+class GovernanceSettingsUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    tenant_id: Optional[str] = None
+    default_role: Optional[str] = None
+    role_hierarchy: Optional[List[str]] = None
+    default_file_policy: Optional[str] = None
+    team_file_manager_roles: Optional[List[str]] = None
+    gateway_group_sessions_per_user: Optional[bool] = None
+    gateway_thread_sessions_per_user: Optional[bool] = None
+    cron_default_authorizer_roles: Optional[List[str]] = None
+    terminal_allowed_roles: Optional[List[str]] = None
+    terminal_approver_roles: Optional[List[str]] = None
+
+
 class ModelAssignment(BaseModel):
     """Payload for POST /api/model/set — assign a provider/model to a slot.
 
@@ -3096,6 +3116,306 @@ async def get_governance_options():
         "roles": _governance_role_options(),
         "teams": _governance_team_options(),
     }
+
+
+def _governance_overview_payload() -> Dict[str, Any]:
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = governance if isinstance(governance, dict) else {}
+    configured_users = governance.get("users", {})
+    configured_users = configured_users if isinstance(configured_users, dict) else {}
+
+    gateway_users: Dict[str, Dict[str, Any]] = {}
+    for platform in _GATEWAY_ACCESS_PLATFORMS:
+        for record in _load_gateway_access_users(platform):
+            actor_key = f"{platform}:{record['user_id']}"
+            gateway_users[actor_key] = {
+                "actor_key": actor_key,
+                "platform": platform,
+                "user_id": record["user_id"],
+                "name": record.get("name", ""),
+                "roles": record.get("roles", []),
+                "teams": record.get("teams", []),
+                "governed": bool(record.get("governed")),
+                "gateway_allowed": True,
+            }
+
+    users: Dict[str, Dict[str, Any]] = dict(gateway_users)
+    for raw_key, raw_record in configured_users.items():
+        actor_key = str(raw_key or "").strip()
+        if not actor_key:
+            continue
+        record = raw_record if isinstance(raw_record, dict) else {"roles": raw_record}
+        platform, separator, user_id = actor_key.partition(":")
+        users[actor_key] = {
+            "actor_key": actor_key,
+            "platform": platform if separator else "custom",
+            "user_id": user_id if separator else actor_key,
+            "name": str(record.get("name") or ""),
+            "roles": _coerce_role_list(record.get("roles")),
+            "teams": _coerce_role_list(record.get("teams") or record.get("team")),
+            "governed": bool(_coerce_role_list(record.get("roles"))),
+            "gateway_allowed": bool(gateway_users.get(actor_key)),
+        }
+
+    gateway_cfg = governance.get("gateway", {})
+    gateway_cfg = gateway_cfg if isinstance(gateway_cfg, dict) else {}
+    cron_cfg = governance.get("cron", {})
+    cron_cfg = cron_cfg if isinstance(cron_cfg, dict) else {}
+    terminal_cfg = governance.get("terminal", {})
+    terminal_cfg = terminal_cfg if isinstance(terminal_cfg, dict) else {}
+    roles = _governance_role_options()
+    default_role = str(governance.get("default_role") or roles[0])
+
+    return {
+        "enabled": bool(governance.get("enabled")),
+        "tenant_id": str(governance.get("tenant_id") or "default"),
+        "default_role": default_role,
+        "role_hierarchy": roles,
+        "default_file_policy": str(governance.get("default_file_policy") or "allow"),
+        "team_file_manager_roles": _coerce_role_list(
+            governance.get("team_file_manager_roles")
+        ),
+        "gateway": {
+            "group_sessions_per_user": bool(
+                gateway_cfg.get("group_sessions_per_user", True)
+            ),
+            "thread_sessions_per_user": bool(
+                gateway_cfg.get("thread_sessions_per_user", False)
+            ),
+        },
+        "cron": {
+            "default_authorizer_roles": _coerce_role_list(
+                cron_cfg.get("default_authorizer_roles")
+            ) or ["admin"],
+        },
+        "terminal": {
+            "allowed_roles": _coerce_role_list(terminal_cfg.get("allowed_roles")),
+            "approver_roles": _coerce_role_list(terminal_cfg.get("approver_roles")),
+        },
+        "teams": _governance_team_options(),
+        "users": sorted(users.values(), key=lambda item: (not item["governed"], item["actor_key"])),
+    }
+
+
+@app.get("/api/governance/overview")
+async def get_governance_overview():
+    """Return the admin Governance workspace without exposing unrelated config."""
+    return _governance_overview_payload()
+
+
+def _validate_governance_roles(roles: List[str], hierarchy: List[str]) -> List[str]:
+    normalized = _coerce_role_list(roles)
+    unknown = [role for role in normalized if role not in hierarchy]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown governance roles: {', '.join(unknown)}",
+        )
+    return normalized
+
+
+def _governance_admin_keys(users: Any) -> set[str]:
+    if not isinstance(users, dict):
+        return set()
+    result: set[str] = set()
+    for raw_key, raw_record in users.items():
+        roles = _coerce_role_list(
+            raw_record.get("roles") if isinstance(raw_record, dict) else raw_record
+        )
+        if "admin" in roles:
+            result.add(str(raw_key))
+    return result
+
+
+@app.put("/api/governance/users/{actor_key}")
+async def update_governance_user(
+    actor_key: str, body: GovernanceUserUpdate, request: Request
+):
+    actor_key = str(actor_key or "").strip()
+    if not actor_key:
+        raise HTTPException(status_code=400, detail="actor_key is required")
+    hierarchy = _governance_role_options()
+    roles = _validate_governance_roles(body.roles, hierarchy)
+    if not roles:
+        raise HTTPException(status_code=400, detail="At least one role is required")
+    current_cfg = load_config()
+    current_governance = (
+        current_cfg.get("governance", {}) if isinstance(current_cfg, dict) else {}
+    )
+    current_users = (
+        current_governance.get("users", {})
+        if isinstance(current_governance, dict)
+        else {}
+    )
+    admin_keys = _governance_admin_keys(current_users)
+    if actor_key in admin_keys and "admin" not in roles and admin_keys == {actor_key}:
+        raise HTTPException(
+            status_code=409,
+            detail="Grant another administrator before removing the last admin role",
+        )
+    teams = _coerce_role_list(body.teams)
+    record = _save_governance_user_from_dashboard_access(
+        actor_key=actor_key,
+        name=body.name,
+        roles=roles,
+        teams=teams,
+    )
+    _audit_dashboard_event(
+        "governance.user_updated",
+        request=request,
+        action="governance.user.update",
+        resource=actor_key,
+        outcome="success",
+        metadata={"roles": roles, "teams": teams},
+    )
+    return {"ok": True, "actor_key": actor_key, "user": record}
+
+
+@app.delete("/api/governance/users/{actor_key}")
+async def delete_governance_user(actor_key: str, request: Request):
+    actor_key = str(actor_key or "").strip()
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = dict(governance) if isinstance(governance, dict) else {}
+    users = governance.get("users", {})
+    users = dict(users) if isinstance(users, dict) else {}
+    admin_keys = _governance_admin_keys(users)
+    if actor_key in admin_keys and admin_keys == {actor_key}:
+        raise HTTPException(
+            status_code=409,
+            detail="Grant another administrator before removing the last admin",
+        )
+    existed = actor_key in users
+    users.pop(actor_key, None)
+    governance["users"] = users
+    cfg["governance"] = governance
+    save_config(cfg)
+    _audit_dashboard_event(
+        "governance.user_removed",
+        request=request,
+        action="governance.user.remove",
+        resource=actor_key,
+        outcome="success",
+        metadata={"existed": existed, "gateway_admission_preserved": True},
+    )
+    return {"ok": True, "actor_key": actor_key, "removed": existed}
+
+
+def _roles_referenced_by_governance(governance: Dict[str, Any]) -> set[str]:
+    referenced: set[str] = set()
+    users = governance.get("users", {})
+    if isinstance(users, dict):
+        for record in users.values():
+            value = record.get("roles") if isinstance(record, dict) else record
+            referenced.update(_coerce_role_list(value))
+    for policy in governance.get("folder_policies", []) or []:
+        if not isinstance(policy, dict):
+            continue
+        for key in ("roles", "read_roles", "write_roles", "write_approval_roles"):
+            referenced.update(_coerce_role_list(policy.get(key)))
+    for entry in (governance.get("team_file_roots", {}) or {}).values():
+        if isinstance(entry, dict):
+            referenced.update(_coerce_role_list(entry.get("manager_roles")))
+    referenced.update(_coerce_role_list(governance.get("team_file_manager_roles")))
+    for section, key in (
+        ("cron", "default_authorizer_roles"),
+        ("terminal", "allowed_roles"),
+        ("terminal", "approver_roles"),
+    ):
+        value = governance.get(section, {})
+        if isinstance(value, dict):
+            referenced.update(_coerce_role_list(value.get(key)))
+    return referenced
+
+
+@app.put("/api/governance/settings")
+async def update_governance_settings(
+    body: GovernanceSettingsUpdate, request: Request
+):
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = dict(governance) if isinstance(governance, dict) else {}
+    current_hierarchy = _governance_role_options()
+    hierarchy = _coerce_role_list(body.role_hierarchy) if body.role_hierarchy is not None else current_hierarchy
+    if not hierarchy:
+        raise HTTPException(status_code=400, detail="Role hierarchy cannot be empty")
+
+    removed = set(current_hierarchy) - set(hierarchy)
+    in_use = removed.intersection(_roles_referenced_by_governance(governance))
+    if in_use:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot remove roles that are still in use: {', '.join(sorted(in_use))}",
+        )
+
+    default_role = str(
+        body.default_role if body.default_role is not None else governance.get("default_role") or hierarchy[0]
+    ).strip()
+    if default_role not in hierarchy:
+        raise HTTPException(status_code=400, detail="Default role must exist in the role hierarchy")
+    default_file_policy = str(
+        body.default_file_policy
+        if body.default_file_policy is not None
+        else governance.get("default_file_policy") or "allow"
+    ).strip().lower()
+    if default_file_policy not in {"allow", "deny"}:
+        raise HTTPException(status_code=400, detail="default_file_policy must be allow or deny")
+
+    if body.enabled is not None:
+        governance["enabled"] = body.enabled
+    if body.tenant_id is not None:
+        tenant_id = body.tenant_id.strip()
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id cannot be empty")
+        governance["tenant_id"] = tenant_id
+    governance["role_hierarchy"] = hierarchy
+    governance["default_role"] = default_role
+    governance["default_file_policy"] = default_file_policy
+
+    if body.team_file_manager_roles is not None:
+        governance["team_file_manager_roles"] = _validate_governance_roles(
+            body.team_file_manager_roles, hierarchy
+        )
+    gateway_cfg = governance.get("gateway", {})
+    gateway_cfg = dict(gateway_cfg) if isinstance(gateway_cfg, dict) else {}
+    if body.gateway_group_sessions_per_user is not None:
+        gateway_cfg["group_sessions_per_user"] = body.gateway_group_sessions_per_user
+    if body.gateway_thread_sessions_per_user is not None:
+        gateway_cfg["thread_sessions_per_user"] = body.gateway_thread_sessions_per_user
+    governance["gateway"] = gateway_cfg
+
+    cron_cfg = governance.get("cron", {})
+    cron_cfg = dict(cron_cfg) if isinstance(cron_cfg, dict) else {}
+    if body.cron_default_authorizer_roles is not None:
+        cron_cfg["default_authorizer_roles"] = _validate_governance_roles(
+            body.cron_default_authorizer_roles, hierarchy
+        )
+    governance["cron"] = cron_cfg
+
+    terminal_cfg = governance.get("terminal", {})
+    terminal_cfg = dict(terminal_cfg) if isinstance(terminal_cfg, dict) else {}
+    if body.terminal_allowed_roles is not None:
+        terminal_cfg["allowed_roles"] = _validate_governance_roles(
+            body.terminal_allowed_roles, hierarchy
+        )
+    if body.terminal_approver_roles is not None:
+        terminal_cfg["approver_roles"] = _validate_governance_roles(
+            body.terminal_approver_roles, hierarchy
+        )
+    governance["terminal"] = terminal_cfg
+
+    cfg["governance"] = governance
+    save_config(cfg)
+    _audit_dashboard_event(
+        "governance.settings_updated",
+        request=request,
+        action="governance.settings.update",
+        resource="governance",
+        outcome="success",
+        metadata={"enabled": governance.get("enabled"), "tenant_id": governance.get("tenant_id")},
+    )
+    return {"ok": True, **_governance_overview_payload()}
 
 
 @app.get("/api/gateway/{platform}/access-users")

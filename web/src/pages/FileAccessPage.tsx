@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
 import { api, type FolderPoliciesResponse, type FolderPolicy } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
 
@@ -95,11 +96,12 @@ function teamRootDraftsToConfig(
   return result;
 }
 
-export default function FileAccessPage() {
+export default function FileAccessPage({ embedded = false }: { embedded?: boolean }) {
   const [data, setData] = useState<FolderPoliciesResponse | null>(null);
   const [policies, setPolicies] = useState<FolderPolicy[]>([]);
   const [teamRoots, setTeamRoots] = useState<TeamRootDraft[]>([]);
   const [defaultFilePolicy, setDefaultFilePolicy] = useState("deny");
+  const [selectedPolicyIndex, setSelectedPolicyIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
@@ -122,17 +124,6 @@ export default function FileAccessPage() {
       .
     </>
   );
-  const approvalHelp = (
-    <>
-      Even users with a write grant get their changes staged as a pending
-      diff on paths with approval requirements — someone with one of these
-      roles (or one of the exact users) must approve each change in{" "}
-      <Link to="/file-approvals" className="font-bold text-primary hover:underline">
-        File Approvals
-      </Link>
-      . Leave empty for direct writes.
-    </>
-  );
   const serverPathHelp = (
     <>
       A path on the machine running Maia, e.g.{" "}
@@ -149,6 +140,11 @@ export default function FileAccessPage() {
       .then((resp) => {
         setData(resp);
         setPolicies(resp.folder_policies);
+        setSelectedPolicyIndex((current) =>
+          resp.folder_policies.length === 0
+            ? 0
+            : Math.min(current, resp.folder_policies.length - 1),
+        );
         setTeamRoots(teamRootsToDrafts(resp.team_file_roots));
         setDefaultFilePolicy(resp.default_file_policy || "deny");
       })
@@ -169,6 +165,7 @@ export default function FileAccessPage() {
   const addPolicy = () => {
     const firstTeam = data?.actor.managed_teams[0];
     const root = firstTeam ? data?.team_file_roots[firstTeam]?.path : "";
+    setSelectedPolicyIndex(policies.length);
     setPolicies((current) => [
       ...current,
       {
@@ -181,6 +178,12 @@ export default function FileAccessPage() {
 
   const removePolicy = (index: number) => {
     setPolicies((current) => current.filter((_, idx) => idx !== index));
+    setSelectedPolicyIndex((current) => {
+      const nextLength = Math.max(0, policies.length - 1);
+      if (nextLength === 0) return 0;
+      if (current > index) return current - 1;
+      return Math.min(current, nextLength - 1);
+    });
   };
 
   const updateTeamRoot = (index: number, patch: Partial<TeamRootDraft>) => {
@@ -231,7 +234,7 @@ export default function FileAccessPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PluginSlot name="file-access:top" />
+      {!embedded && <PluginSlot name="file-access:top" />}
       <Toast toast={toast} />
 
       <section className="flex flex-col gap-3">
@@ -249,10 +252,12 @@ export default function FileAccessPage() {
           ))}
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <H2 variant="sm" className="flex items-center gap-2 text-muted-foreground">
-            <FolderTree className="h-4 w-4" />
-            File Access
-          </H2>
+          {!embedded && (
+            <H2 variant="sm" className="flex items-center gap-2 text-muted-foreground">
+              <FolderTree className="h-4 w-4" />
+              File Access
+            </H2>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={load} disabled={loading}>
               <RefreshCw className="h-4 w-4" />
@@ -283,7 +288,7 @@ export default function FileAccessPage() {
         <CardContent className="grid gap-3 normal-case text-sm leading-6 text-muted-foreground md:grid-cols-3">
           <div>
             <span className="font-medium text-foreground">1. Provision identities</span>
-            <p>Admins add each platform:user_id with roles and teams in Config / Governance before the user can access the bot.</p>
+            <p>Admins grant each platform:user_id roles and teams in Governance / People before the user can access the bot.</p>
           </div>
           <div>
             <span className="font-medium text-foreground">2. Delegate roots</span>
@@ -411,9 +416,40 @@ export default function FileAccessPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4">
+      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="border border-border bg-muted/10">
+          <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Governed paths
+          </div>
+          {policies.map((policy, index) => (
+            <button
+              key={`policy-nav-${policy.path}-${index}`}
+              type="button"
+              onClick={() => setSelectedPolicyIndex(index)}
+              className={cn(
+                "grid w-full gap-1 border-b border-border/70 px-3 py-3 text-left normal-case transition-colors",
+                selectedPolicyIndex === index ? "bg-primary/10" : "hover:bg-muted/30",
+              )}
+            >
+              <span className="break-all font-mono-ui text-xs text-foreground">
+                {policy.path || "New policy"}
+              </span>
+              <span className="text-[0.7rem] text-muted-foreground">
+                {(policy.read_roles?.length ?? 0) + (policy.read_teams?.length ?? 0) + (policy.read_users?.length ?? 0)} read grants ·{" "}
+                {(policy.write_roles?.length ?? 0) + (policy.write_teams?.length ?? 0) + (policy.write_users?.length ?? 0)} write grants
+                {(policy.write_approval_roles?.length ?? 0) + (policy.write_approval_users?.length ?? 0) > 0 ? " · approval required" : ""}
+              </span>
+            </button>
+          ))}
+          {policies.length === 0 && (
+            <div className="p-4 text-xs normal-case leading-5 text-muted-foreground">
+              No paths configured. Add a policy to grant narrow file access.
+            </div>
+          )}
+        </aside>
+        <div className="min-w-0">
         {policies.map((policy, index) => (
-          <Card key={`${policy.path}-${index}`}>
+          selectedPolicyIndex === index ? <Card key={`${policy.path}-${index}`}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-3 text-sm">
                 <span className="truncate">{policy.path || "New policy"}</span>
@@ -443,6 +479,20 @@ export default function FileAccessPage() {
                 />
                 Recursive directory policy
               </label>
+
+              {canAdmin && (
+                <div className="lg:col-span-2">
+                  <RoleAccessMatrix
+                    roles={roleOptions}
+                    readRoles={policy.read_roles ?? []}
+                    writeRoles={policy.write_roles ?? []}
+                    approvalRoles={policy.write_approval_roles ?? []}
+                    onChange={(key, roles) =>
+                      updatePolicy(index, { ...policy, [key]: roles })
+                    }
+                  />
+                </div>
+              )}
 
               <Field
                 label="Read teams"
@@ -487,16 +537,6 @@ export default function FileAccessPage() {
                 placeholder="marketing"
                 list="fileaccess-team-options"
               />
-              <RoleField
-                label="Write approval roles"
-                help={approvalHelp}
-                value={policy.write_approval_roles ?? []}
-                onChange={(roles) =>
-                  updatePolicy(index, { ...policy, write_approval_roles: roles })
-                }
-                options={roleOptions}
-                emptyHint="empty = direct writes"
-              />
               <Field
                 label="Write approval users"
                 value={listToText(policy.write_approval_users)}
@@ -536,31 +576,10 @@ export default function FileAccessPage() {
                   requirement for this subtree.
                 </p>
               </div>
-              {canAdmin && (
-                <>
-                  <RoleField
-                    label="Read roles"
-                    value={policy.read_roles ?? []}
-                    onChange={(roles) =>
-                      updatePolicy(index, { ...policy, read_roles: roles })
-                    }
-                    options={roleOptions}
-                    emptyHint="no role-based read grant"
-                  />
-                  <RoleField
-                    label="Write roles"
-                    value={policy.write_roles ?? []}
-                    onChange={(roles) =>
-                      updatePolicy(index, { ...policy, write_roles: roles })
-                    }
-                    options={roleOptions}
-                    emptyHint="no role-based write grant"
-                  />
-                </>
-              )}
             </CardContent>
-          </Card>
+          </Card> : null
         ))}
+        </div>
       </div>
 
       <datalist id="fileaccess-team-options">
@@ -572,41 +591,89 @@ export default function FileAccessPage() {
   );
 }
 
-function RoleField({
-  label,
-  help,
-  value,
+function RoleAccessMatrix({
+  roles,
+  readRoles,
+  writeRoles,
+  approvalRoles,
   onChange,
-  options,
-  emptyHint,
 }: {
-  label: string;
-  help?: ReactNode;
-  value: string[];
-  onChange: (roles: string[]) => void;
-  options: string[];
-  emptyHint?: string;
+  roles: string[];
+  readRoles: string[];
+  writeRoles: string[];
+  approvalRoles: string[];
+  onChange: (
+    key: "read_roles" | "write_roles" | "write_approval_roles",
+    roles: string[],
+  ) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const toggle = (
+    key: "read_roles" | "write_roles" | "write_approval_roles",
+    current: string[],
+    role: string,
+  ) => {
+    onChange(
+      key,
+      current.includes(role)
+        ? current.filter((item) => item !== role)
+        : [...current, role],
+    );
+  };
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <Label>{label}</Label>
-        {help ? (
-          <HelpDot
-            ariaLabel={`Help for ${label}`}
-            open={open}
-            onToggle={() => setOpen((o) => !o)}
-          />
-        ) : null}
+    <div className="border border-border">
+      <div className="border-b border-border px-3 py-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Access by role
+        </div>
+        <p className="mt-1 text-xs normal-case leading-5 text-muted-foreground">
+          Read and write grant access to this path. Approve writes identifies who may accept staged changes;
+          selecting an approver also turns on human confirmation for other writers.
+        </p>
       </div>
-      {help && open ? <HelpBox>{help}</HelpBox> : null}
-      <RoleMultiSelect
-        value={value}
-        onChange={onChange}
-        options={options}
-        emptyHint={emptyHint}
-      />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[32rem] normal-case text-sm">
+          <thead className="bg-muted/20 text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Role</th>
+              <th className="px-3 py-2 text-center font-medium">Read</th>
+              <th className="px-3 py-2 text-center font-medium">Write</th>
+              <th className="px-3 py-2 text-center font-medium">Approve writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roles.map((role) => (
+              <tr key={role} className="border-t border-border/70">
+                <td className="px-3 py-2 font-mono-ui text-xs">{role}</td>
+                <td className="px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label={`${role} may read`}
+                    checked={readRoles.includes(role)}
+                    onChange={() => toggle("read_roles", readRoles, role)}
+                  />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label={`${role} may write`}
+                    checked={writeRoles.includes(role)}
+                    onChange={() => toggle("write_roles", writeRoles, role)}
+                  />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label={`${role} may approve writes`}
+                    checked={approvalRoles.includes(role)}
+                    onChange={() => toggle("write_approval_roles", approvalRoles, role)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

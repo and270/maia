@@ -681,12 +681,12 @@ export default function SessionsPage() {
               ))}
               <p className="text-xs leading-5 text-muted-foreground normal-case">
                 Review{" "}
-                <Link to="/file-access" className="underline">
-                  File Access
+                <Link to="/governance?section=files" className="underline">
+                  Governance / File access
                 </Link>{" "}
                 and{" "}
-                <Link to="/config?search=governance" className="underline">
-                  Config
+                <Link to="/governance?section=settings" className="underline">
+                  Governance settings
                 </Link>
                 , or run <code>maia doctor</code>.
               </p>

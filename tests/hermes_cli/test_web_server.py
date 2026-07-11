@@ -312,6 +312,104 @@ class TestWebServerEndpoints:
             }
         ]
 
+    def test_governance_overview_combines_active_and_pending_gateway_users(self):
+        from hermes_cli.config import save_config, save_env_value
+
+        save_env_value("DISCORD_ALLOWED_USERS", "111111111111111111,222222222222222222")
+        save_config(
+            {
+                "governance": {
+                    "enabled": True,
+                    "users": {
+                        "discord:111111111111111111": {
+                            "name": "Ana Admin",
+                            "roles": ["admin"],
+                            "teams": ["leadership"],
+                        },
+                        "sso:auditor@example.com": {
+                            "name": "Audit User",
+                            "roles": ["viewer"],
+                        },
+                    },
+                }
+            }
+        )
+
+        resp = self.client.get("/api/governance/overview")
+
+        assert resp.status_code == 200
+        users = {user["actor_key"]: user for user in resp.json()["users"]}
+        assert users["discord:111111111111111111"]["governed"] is True
+        assert users["discord:111111111111111111"]["gateway_allowed"] is True
+        assert users["discord:222222222222222222"]["governed"] is False
+        assert users["discord:222222222222222222"]["gateway_allowed"] is True
+        assert users["sso:auditor@example.com"]["gateway_allowed"] is False
+
+    def test_governance_user_can_be_granted_and_removed_without_changing_allowlist(self):
+        from hermes_cli.config import load_config, load_env, save_env_value
+
+        actor_key = "discord:333333333333333333"
+        save_env_value("DISCORD_ALLOWED_USERS", "333333333333333333")
+
+        grant = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={"name": "Bruno", "roles": ["operator"], "teams": ["support"]},
+        )
+        assert grant.status_code == 200
+        assert load_config()["governance"]["users"][actor_key] == {
+            "name": "Bruno",
+            "roles": ["operator"],
+            "teams": ["support"],
+        }
+
+        remove = self.client.delete(f"/api/governance/users/{actor_key}")
+        assert remove.status_code == 200
+        assert actor_key not in load_config()["governance"]["users"]
+        assert load_env()["DISCORD_ALLOWED_USERS"] == "333333333333333333"
+
+    def test_governance_settings_refuse_to_remove_role_still_in_use(self):
+        from hermes_cli.config import save_config
+
+        save_config(
+            {
+                "governance": {
+                    "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+                    "users": {"slack:U123": {"roles": ["operator"]}},
+                }
+            }
+        )
+
+        resp = self.client.put(
+            "/api/governance/settings",
+            json={"role_hierarchy": ["viewer", "manager", "admin"]},
+        )
+
+        assert resp.status_code == 409
+        assert "operator" in resp.json()["detail"]
+
+    def test_governance_refuses_to_remove_or_demote_last_admin(self):
+        from hermes_cli.config import save_config
+
+        actor_key = "discord:999999999999999999"
+        save_config(
+            {
+                "governance": {
+                    "users": {actor_key: {"name": "Only Admin", "roles": ["admin"]}},
+                }
+            }
+        )
+
+        demote = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={"name": "Only Admin", "roles": ["manager"], "teams": []},
+        )
+        remove = self.client.delete(f"/api/governance/users/{actor_key}")
+
+        assert demote.status_code == 409
+        assert remove.status_code == 409
+        assert "last admin" in demote.json()["detail"].lower()
+        assert "last admin" in remove.json()["detail"].lower()
+
     def test_reveal_env_var(self, tmp_path):
         """POST /api/env/reveal should return the real unredacted value."""
         from hermes_cli.config import save_env_value
