@@ -618,16 +618,9 @@ def _governance_user_keys_by_team(config: Dict[str, Any], teams: List[str]) -> s
 
 
 def _team_root_entries(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    raw = config.get("team_file_roots", {})
-    if not isinstance(raw, dict):
-        return {}
-    entries: Dict[str, Dict[str, Any]] = {}
-    for team, value in raw.items():
-        if isinstance(value, str):
-            entries[str(team)] = {"path": value}
-        elif isinstance(value, dict):
-            entries[str(team)] = dict(value)
-    return entries
+    from agent.governance_admin import team_root_entries
+
+    return team_root_entries(config)
 
 
 def _manageable_team_roots(request: Request, config: Dict[str, Any]) -> Dict[str, Path]:
@@ -685,97 +678,27 @@ _FOLDER_POLICY_KEEP_EMPTY_KEYS = frozenset(
 
 
 def _normalise_folder_policy(raw: Dict[str, Any]) -> Dict[str, Any]:
-    policy: Dict[str, Any] = {}
-    path = str(raw.get("path") or "").strip()
-    if path:
-        policy["path"] = path
-    if "recursive" in raw:
-        policy["recursive"] = bool(raw.get("recursive"))
-    if raw.get("label"):
-        policy["label"] = str(raw.get("label")).strip()
-    if raw.get("description"):
-        policy["description"] = str(raw.get("description")).strip()
-    for key in _FOLDER_POLICY_LIST_KEYS:
-        values = _coerce_role_list(raw.get(key))
-        if values:
-            policy[key] = values
-        elif (
-            key in _FOLDER_POLICY_KEEP_EMPTY_KEYS
-            and isinstance(raw.get(key), (list, tuple))
-        ):
-            policy[key] = []
-    return policy
+    from agent.governance_admin import normalize_folder_policy
+
+    return normalize_folder_policy(raw)
 
 
 def _governance_team_registry(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """Return first-class teams plus legacy references, preserving spelling."""
-    registry: Dict[str, Dict[str, Any]] = {}
-    seen: set[str] = set()
+    from agent.governance_admin import governance_team_registry
 
-    def _add(raw_name: Any, metadata: Any = None) -> None:
-        name = str(raw_name or "").strip()
-        folded = name.casefold()
-        if not name or folded in seen:
-            return
-        seen.add(folded)
-        registry[name] = dict(metadata) if isinstance(metadata, dict) else {}
-
-    raw_registry = config.get("teams")
-    if isinstance(raw_registry, dict):
-        for name, metadata in raw_registry.items():
-            _add(name, metadata)
-    elif isinstance(raw_registry, list):
-        for name in raw_registry:
-            _add(name)
-
-    for name in _team_root_entries(config):
-        _add(name)
-
-    users = config.get("users")
-    if isinstance(users, dict):
-        for record in users.values():
-            if isinstance(record, dict):
-                for name in _coerce_role_list(record.get("teams") or record.get("team")):
-                    _add(name)
-
-    policies = config.get("folder_policies")
-    if isinstance(policies, list):
-        for policy in policies:
-            if not isinstance(policy, dict):
-                continue
-            for key in ("teams", "read_teams", "write_teams", "deny_teams"):
-                for name in _coerce_role_list(policy.get(key)):
-                    _add(name)
-    return registry
+    return governance_team_registry(config)
 
 
 def _subject_file_grants(
     governance: Dict[str, Any], *, subject: str, subject_kind: str
 ) -> List[Dict[str, Any]]:
-    generic_key = "users" if subject_kind == "user" else "teams"
-    read_key = "read_users" if subject_kind == "user" else "read_teams"
-    write_key = "write_users" if subject_kind == "user" else "write_teams"
-    result: List[Dict[str, Any]] = []
-    for raw_policy in governance.get("folder_policies", []) or []:
-        if not isinstance(raw_policy, dict):
-            continue
-        policy = _normalise_folder_policy(raw_policy)
-        path = str(policy.get("path") or "").strip()
-        if not path:
-            continue
-        generic = subject in _coerce_role_list(policy.get(generic_key))
-        can_read = generic or subject in _coerce_role_list(policy.get(read_key))
-        can_write = generic or subject in _coerce_role_list(policy.get(write_key))
-        if can_read or can_write:
-            result.append(
-                {
-                    "path": path,
-                    "recursive": bool(policy.get("recursive", True)),
-                    "read": can_read,
-                    "write": can_write,
-                }
-            )
-    return result
+    from agent.governance_admin import subject_file_grants
+
+    return subject_file_grants(
+        governance,
+        subject=subject,
+        subject_kind=subject_kind,
+    )
 
 
 def _replace_subject_file_grants(
@@ -785,74 +708,23 @@ def _replace_subject_file_grants(
     subject_kind: str,
     grants: List[Any],
 ) -> None:
-    """Replace one user/team's grants without disturbing other policy fields."""
-    generic_key = "users" if subject_kind == "user" else "teams"
-    read_key = "read_users" if subject_kind == "user" else "read_teams"
-    write_key = "write_users" if subject_kind == "user" else "write_teams"
-    policies = [
-        _normalise_folder_policy(policy)
-        for policy in governance.get("folder_policies", []) or []
-        if isinstance(policy, dict)
-    ]
+    from agent.governance_admin import GovernanceAdminError, replace_subject_file_grants
 
-    for policy in policies:
-        for key in (generic_key, read_key, write_key):
-            values = [value for value in _coerce_role_list(policy.get(key)) if value != subject]
-            if values:
-                policy[key] = values
-            else:
-                policy.pop(key, None)
-
-    policy_indexes: Dict[tuple[str, bool], int] = {}
-    for index, policy in enumerate(policies):
-        key = (str(policy.get("path") or "").strip(), bool(policy.get("recursive", True)))
-        policy_indexes.setdefault(key, index)
-
-    seen_grants: set[tuple[str, bool]] = set()
-    for grant in grants:
-        path = str(grant.path or "").strip()
-        if not path:
-            raise HTTPException(status_code=400, detail="Every file access grant needs a path")
-        if not grant.read and not grant.write:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File access for {path} must grant read, write, or both",
-            )
-        key = (path, bool(grant.recursive))
-        if key in seen_grants:
-            raise HTTPException(status_code=400, detail=f"Duplicate file access path: {path}")
-        seen_grants.add(key)
-        index = policy_indexes.get(key)
-        if index is None:
-            policies.append({"path": path, "recursive": bool(grant.recursive)})
-            index = len(policies) - 1
-            policy_indexes[key] = index
-        policy = policies[index]
-        if grant.read:
-            policy[read_key] = sorted(set(_coerce_role_list(policy.get(read_key))) | {subject})
-        if grant.write:
-            policy[write_key] = sorted(set(_coerce_role_list(policy.get(write_key))) | {subject})
-
-    governance["folder_policies"] = policies
+    try:
+        replace_subject_file_grants(
+            governance,
+            subject=subject,
+            subject_kind=subject_kind,
+            grants=grants,
+        )
+    except GovernanceAdminError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _governance_team_payload(governance: Dict[str, Any], name: str) -> Dict[str, Any]:
-    users = governance.get("users")
-    users = users if isinstance(users, dict) else {}
-    members = [
-        str(actor_key)
-        for actor_key, record in users.items()
-        if isinstance(record, dict)
-        and name in _coerce_role_list(record.get("teams") or record.get("team"))
-    ]
-    return {
-        "name": name,
-        "members": sorted(members, key=str.lower),
-        "file_access": _subject_file_grants(
-            governance, subject=name, subject_kind="team"
-        ),
-        "delegated_root": _team_root_entries(governance).get(name),
-    }
+    from agent.governance_admin import governance_team_payload
+
+    return governance_team_payload(governance, name)
 
 
 def _policy_matches_any_team_root(policy: Dict[str, Any], roots: Dict[str, Path]) -> bool:

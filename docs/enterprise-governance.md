@@ -45,17 +45,32 @@ The `/whoami` command is still useful for troubleshooting because it shows the e
 
 Channel identity and Maia authorization are separate: Discord, Telegram, Slack, WhatsApp, or another provider authenticates the sender account; Maia requires both gateway admission and an explicit Governance role before a human sender can reach the bot.
 
+## Govern Maia From a Conversation
+
+An authorized user can request common administration in a private gateway conversation. Maia uses the structured `maia_admin` tool for gateway admission, governed users, roles, teams, direct file grants, delegated roots, and folder policies. It does not edit `config.yaml` or `.env` through terminal/file tools for these requests.
+
+The requester is always derived from the authenticated gateway event, never from prompt text or a tool argument. Authorization is checked again for every action: system admins can manage people, teams, admission, and global policies; team managers can only change file policies below their delegated team roots and can reference only their own teams and members. Every success or denial is audited. Provider secrets and dashboard login credentials remain server-only.
+
+This means a company can keep the dashboard local and still handle most day-to-day governance from Discord, Slack, WhatsApp, Telegram, or another configured gateway. Governed write approvals can also be decided with the existing message approval controls.
+
 ## Dashboard Access
 
 The dashboard is a server administration surface. It can read and change `config.yaml`, `.env`, governed folder policies, cron jobs, knowledge approvals, and plugin settings.
 
-By default it binds only to `127.0.0.1`:
+By default, both `maia` and `maia dashboard` bind it only to `127.0.0.1`, so only that computer can connect:
 
 ```bash
 maia dashboard
 ```
 
 For intranet or public access, enable `dashboard.auth` before binding to a non-loopback interface. Maia refuses network binding unless protected mode is configured, unless the operator explicitly uses `--insecure` for temporary trusted-network testing.
+
+Recommended access boundaries:
+
+- [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) for a private dashboard reachable only by authorized tailnet devices/users.
+- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/) when an identity-aware public endpoint is required.
+
+Keep Maia dashboard auth enabled behind either solution, use TLS, restrict the upstream to the access layer, and do not use `--insecure` as a permanent mode. If the dashboard is not needed remotely, leave it on localhost and administer Maia through an authorized gateway conversation instead.
 
 ```yaml
 dashboard:

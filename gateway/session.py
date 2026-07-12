@@ -329,6 +329,14 @@ def build_session_context_prompt(
             )
             if roles:
                 lines.append(f"**Governance roles:** {', '.join(roles)}")
+            lines.append(
+                "**Governed administration:** When the `maia_admin` tool is available, "
+                "use it for requested changes to gateway admission, people, teams, and "
+                "file-access policies. Never edit Maia's config.yaml or .env with file or "
+                "terminal tools for these requests. The tool derives the requesting human "
+                "from this gateway message and rechecks their authorization for every action. "
+                "Provider secrets and dashboard authentication credentials remain server-only."
+            )
             tenant = str(governance_cfg.get("tenant_id", "")).strip()
             if tenant:
                 lines.append(f"**Tenant:** {tenant}")

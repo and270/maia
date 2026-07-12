@@ -14,7 +14,7 @@ The web dashboard is a browser-based UI for managing your Maia installation. Ins
 maia dashboard
 ```
 
-This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine and binds to localhost by default.
+This starts a local web server and opens `http://127.0.0.1:9119` in your browser. The dashboard runs entirely on your machine and binds to localhost by default. The plain `maia` command opens this same localhost dashboard and its browser chat; neither command exposes it to another computer by default.
 
 ### Options
 
@@ -42,6 +42,10 @@ maia dashboard --no-open
 The dashboard is an administrative surface, not the normal employee interface. Most users should talk to Maia through a configured gateway; expose the dashboard only to admins, auditors, managers, or delegated team leads who need web administration.
 
 The dashboard can read and change `.env`, `config.yaml`, server folder policies, cron jobs, knowledge approvals, plugins, and model settings. Maia refuses to bind the dashboard to a non-loopback interface unless protected dashboard auth is configured, unless the operator explicitly uses `--insecure`.
+
+You can usually leave it local. From an authenticated private gateway conversation, a system admin can ask Maia to manage admitted users, roles, teams, direct grants, delegated roots, and folder policies. Maia derives the requester from the message and rechecks Governance on every action. Team managers stay limited to delegated roots, and provider secrets/dashboard credentials are not exposed to this flow. Governed write approvals can also use the message application's approval controls.
+
+If remote browser access is necessary, [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) is a simple private-network option. For an identity-aware public URL, use an access layer such as [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) plus [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/). Keep Maia auth enabled, use TLS, restrict who can reach the upstream, and never treat `--insecure` as a permanent configuration.
 
 Token-based protected mode:
 

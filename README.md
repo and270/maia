@@ -170,13 +170,13 @@ maia --help
 
 ## Dashboard Access
 
-Local setup:
+Local setup (`maia` opens the same local dashboard and browser chat; `maia dashboard` starts the dashboard explicitly):
 
 ```bash
 maia dashboard
 ```
 
-The dashboard binds to `127.0.0.1` by default. It can edit `.env`, `config.yaml`, folder policies, cron jobs, knowledge approvals, plugins, and model settings, so configure protected mode before serving it on an intranet or public interface:
+Both commands bind the dashboard to `127.0.0.1` by default. Only a browser on that computer can reach it. It can edit `.env`, `config.yaml`, folder policies, cron jobs, knowledge approvals, plugins, and model settings, so configure protected mode before serving it on an intranet or public interface:
 
 ```yaml
 dashboard:
@@ -194,7 +194,9 @@ export MAIA_DASHBOARD_TOKEN="$(openssl rand -base64 32)"
 maia dashboard --host 0.0.0.0 --no-open
 ```
 
-Use a TLS reverse proxy or private network boundary for public access. Maia refuses non-loopback dashboard binding unless `dashboard.auth` is configured, unless `--insecure` is explicitly used for temporary trusted-network testing.
+For a small private deployment, [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) is a practical way to publish the localhost service only inside a tailnet. For an identity-aware public endpoint, [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) plus [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/) is another option. Keep Maia's own dashboard authentication enabled behind either boundary, terminate TLS at the access layer, and never use `--insecure` as a permanent deployment mode.
+
+You often do not need to publish the dashboard at all. An authorized admin can ask Maia in a private gateway conversation to admit a user, assign roles and teams, or change file/folder policies. Maia uses the authenticated sender identity and rechecks Governance for every operation. Team managers are limited to delegated roots; provider secrets and dashboard credentials remain server-only. Existing message approval buttons also let authorized managers approve governed writes from the messaging application.
 
 Use the local token for bootstrap and system-admin access. Default built-in flow for team leaders is dashboard-first:
 
@@ -275,7 +277,7 @@ What this enforces today:
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
 - `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Maia may access for any channel, cron job, or dashboard-triggered action.
-- Admins manage global file access from dashboard **File Access** or server-side YAML. Team leaders use the same page after dashboard login, but only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
+- Admins manage gateway admission, people, teams, and global file access from the dashboard or by asking Maia in an authenticated private gateway conversation. Team leaders can manage file policy only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.
 - Cron jobs can pause at an authorization node until an allowed user or role approves them.
@@ -284,11 +286,11 @@ What this enforces today:
 
 Maia keeps the upstream `hermes-agent` skill, but extends it with a live governance block rendered at skill load time. The block includes the current actor, roles, teams, tenant, dashboard read/manage/admin gates, delegated team file roots, shared-knowledge approval roles, and cron authorization defaults.
 
-This makes the agent aware of what it may configure for the current user:
+This makes the agent aware of what it may configure for the current user. For people, teams, gateway admission, and file policies, Maia uses the structured `maia_admin` tool instead of editing `config.yaml` or `.env`; the runtime derives the requester from the gateway event and authorizes every call again:
 
 - Operators and viewers can do assigned work only inside enabled tools and allowed folders. They must not change global config, secrets, models, providers, dashboard auth, roles, folder policies, plugins, MCP servers, toolsets, or gateway settings.
 - Managers can act only inside the configured management surface: approval decisions, shared-knowledge approvals allowed by role, and delegated File Access roots.
-- Admins can perform global self-configuration when requested, but should preserve dashboard auth, audit logging, human approvals, and default-deny file policy unless a reviewed change explicitly says otherwise.
+- Admins can manage governed users, gateway admission, teams, direct file grants, delegated roots, and global folder policies when requested. They cannot use this channel tool to change provider secrets or dashboard credentials.
 
 Corporate and team memory/skill changes are still proposal-first. The skill tells the agent to use `memory(scope="team"|"corporate", ...)` or `skill_manage(scope="team"|"corporate", ...)` with an `approval_note`, not to edit shared knowledge files directly. Server-side governance remains authoritative: if a file operation, dashboard action, or cron approval is denied, the model must ask an authorized manager/admin instead of bypassing the policy.
 

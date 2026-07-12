@@ -28,17 +28,25 @@ governance:
 
 Roles drive authorization. Teams are first-class Governance records used for membership, approved team knowledge, delegated roots, and group file grants.
 
-Provision the stable ID in **Gateway**, then add the same `platform:user_id` with a role in **Config / Governance**. On a completely fresh installation, the Gateway editor bootstraps only the first saved identity as `admin`; every later identity requires this explicit grant. After provisioning, `/whoami` shows the current mapping and `/dashboard` can create a separate dashboard-login request for users who need the admin surface.
+Provision the stable ID in **Gateway**, then add the same `platform:user_id` with a role in **Governance**. On a completely fresh installation, the Gateway editor bootstraps only the first saved identity as `admin`; every later identity requires this explicit grant. After provisioning, `/whoami` shows the current mapping and `/dashboard` can create a separate dashboard-login request for users who need the admin surface.
+
+## Govern Maia Through Messages
+
+An authorized admin can ask Maia in a private gateway conversation to admit a user, assign roles or teams, manage direct file grants, create delegated roots, or update folder policies. Maia uses the structured `maia_admin` tool, derives the requester from the authenticated message, and rechecks Governance for each operation. Team managers are limited to their delegated roots and members; provider secrets and dashboard login credentials cannot be changed through this tool. Successes and denials are audit events.
+
+This is the normal alternative when you do not want to publish the dashboard. Existing message approval controls also let authorized managers decide governed write requests without opening the web UI.
 
 ## Dashboard Access
 
-The dashboard can change config, secrets, server folder policies, cron jobs, approval decisions, plugins, and model settings. It binds to localhost by default:
+The dashboard can change config, secrets, server folder policies, cron jobs, approval decisions, plugins, and model settings. Both `maia` and `maia dashboard` bind it to `127.0.0.1` by default, so it is reachable only from that computer:
 
 ```bash
 maia dashboard
 ```
 
 For intranet or public serving, configure protected mode first. Maia refuses non-loopback binding without dashboard auth unless `--insecure` is explicitly used.
+
+For private remote access, consider [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve). For an identity-aware public endpoint, consider [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) together with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/). Keep Maia's dashboard auth enabled behind either service, use TLS, and never make `--insecure` permanent.
 
 ```yaml
 dashboard:
