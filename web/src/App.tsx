@@ -327,14 +327,14 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: Globe,
   },
   {
-    path: "/dashboard-access",
-    label: "Access",
-    icon: ShieldCheck,
-  },
-  {
     path: "/governance",
     label: "Governance",
     icon: Shield,
+  },
+  {
+    path: "/dashboard-access",
+    label: "Dashboard Access",
+    icon: ShieldCheck,
   },
   {
     path: "/knowledge",
