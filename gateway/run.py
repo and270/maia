@@ -915,8 +915,8 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
     """Resolve the Maia CLI command as argv parts.
 
     Tries in order:
-    1. the ``maia`` / ``coorporate`` console script next to the running
-       interpreter (venv) or on ``PATH`` — the renamed entry points
+    1. the ``maia`` console script next to the running interpreter (venv)
+       or on ``PATH`` — the renamed entry point
        (there is no ``hermes`` command on a Maia install)
     2. ``sys.executable -m hermes_cli.main`` — fallback when running from a
        module invocation and no console script is on PATH
@@ -926,13 +926,12 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
     import shutil
 
     exe_dir = Path(sys.executable).resolve().parent
-    for name in ("maia", "coorporate"):
-        for cand in (exe_dir / name, exe_dir / f"{name}.exe"):
-            if cand.is_file() and os.access(cand, os.X_OK):
-                return [str(cand)]
-        found = shutil.which(name)
-        if found:
-            return [found]
+    for cand in (exe_dir / "maia", exe_dir / "maia.exe"):
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return [str(cand)]
+    found = shutil.which("maia")
+    if found:
+        return [found]
 
     try:
         import importlib.util

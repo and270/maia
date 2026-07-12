@@ -1,4 +1,3 @@
 # Keep executable scripts runnable from Unix/WSL checkouts.
 *.sh text eol=lf
 maia text eol=lf
-coorporate text eol=lf

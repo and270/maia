@@ -434,9 +434,7 @@ COMMAND_LINK_DIR="$(get_command_link_dir)"
 COMMAND_LINK_DISPLAY_DIR="$(get_command_link_display_dir "$COMMAND_LINK_DIR")"
 mkdir -p "$COMMAND_LINK_DIR"
 ln -sf "$MAIA_BIN" "$COMMAND_LINK_DIR/maia"
-ln -sf "$MAIA_BIN" "$COMMAND_LINK_DIR/coorporate"
 echo -e "${GREEN}✓${NC} Symlinked maia -> $COMMAND_LINK_DISPLAY_DIR/maia"
-echo -e "${GREEN}✓${NC} Legacy alias coorporate -> $COMMAND_LINK_DISPLAY_DIR/coorporate"
 
 if is_termux; then
     export PATH="$COMMAND_LINK_DIR:$PATH"
