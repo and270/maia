@@ -430,9 +430,11 @@ the agent finishes its turn immediately and nothing expires.
 
 ## Terminal Governance
 
-Folder policies gate the file tools, but shell commands and sandboxed code run
-with the host process's OS permissions — a terminal command can touch paths its
-requester holds no grant for. Two optional controls close that gap:
+Governance is always active. For gateway actors, file tools enforce policies
+directly and shell/`execute_code` calls run in a per-session Docker environment
+that mounts only explicitly granted paths. No policies means no mounted company
+files. Subagents inherit the same environment, and Docker/setup failure blocks
+execution instead of falling back to host access.
 
 ```yaml
 governance:
@@ -443,10 +445,10 @@ governance:
     approver_users: []
 ```
 
-- `allowed_roles` / `allowed_users` — actors outside the list cannot use the
+- `allowed_roles` / `allowed_users` are an additional tool gate: actors outside the list cannot use the
   terminal or execute_code tools at all. Denials are audited
   (`governance.terminal_access`). Unset means no restriction (backward
-  compatible).
+  compatible). They do not grant any files.
 - `approver_roles` / `approver_users` — when set, dangerous-command approvals
   raised in gateway sessions by an actor who does not satisfy the requirement
   can only be APPROVED by someone who does: the approval prompt pings the

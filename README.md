@@ -22,7 +22,7 @@ Maia is a private one-tenant corporate AI assistant by [AmpliIA](https://ampliia
 
 | | |
 |---|---|
-| 🗂️ **Governed file access:** folder policies by role, team, or user; default-deny for production; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals:** file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
+| 🗂️ **Governed file access:** always-on, deny-by-default folder policies by role, team, or user; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals:** file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
 | 🧠 **Layered knowledge:** corporate, team, and user memories/skills with explicit precedence; shared layers change only through approval. | 💬 **Multi-channel gateway:** Slack, Discord, Mattermost, Matrix, Telegram, WhatsApp, and more, with per-user sessions and `platform:user_id` identity mapping. |
 | 🔁 **Model agnostic:** major cloud APIs, OpenAI-compatible endpoints, or fully local models on your servers, with multi-provider fallback. | 📜 **Audit & observability:** append-only audit JSONL for every allow, deny, and approval, plus optional SIEM webhook export. |
 
@@ -275,8 +275,9 @@ governance:
 What this enforces today:
 
 - Gateway users can be mapped to roles by `platform:user_id`.
+- Governance cannot be disabled. A gateway role admits the person to Maia but grants no files by itself; with no matching policy, every file path is denied.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, `patch`, and the lower-level file operation layer check configured folder policies. These policies are the server-side maximum directories Maia may access for any channel, cron job, or dashboard-triggered action.
+- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. If secure isolation is unavailable, Maia refuses execution instead of using the host.
 - Admins manage gateway admission, people, teams, and global file access from the dashboard or by asking Maia in an authenticated private gateway conversation. Team leaders can manage file policy only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.

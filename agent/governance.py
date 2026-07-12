@@ -1,15 +1,16 @@
 """Enterprise governance helpers for Maia.
 
 This module keeps identity, role hierarchy, folder policies, and cron
-authorization checks in one place.  The runtime remains backward compatible:
-governance is inert until ``governance.enabled`` is true and a matching policy
-is configured.  Malformed governance configuration fails closed for sensitive
-authorization decisions.
+authorization checks in one place. Governance is an always-on Maia security
+boundary: non-local actors fail closed unless an explicit policy grants the
+requested operation. Malformed configuration also fails closed.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +18,12 @@ from typing import Any, Optional
 import yaml
 
 _CONFIG_ERROR_KEY = "__config_load_error__"
+GOVERNANCE_DENIAL_CODE = "governance_access_denied"
+_ACCESS_REQUEST_GUIDANCE = (
+    "Do not try another tool or alternate path. Tell the requester that Maia "
+    "Governance does not grant them access to this resource and that they must "
+    "ask an authorized manager or administrator for access."
+)
 
 
 @dataclass(frozen=True)
@@ -109,8 +116,41 @@ def load_governance_config() -> dict[str, Any]:
 
 
 def is_enabled(config: Optional[dict[str, Any]] = None) -> bool:
-    cfg = load_governance_config() if config is None else config
-    return bool(cfg.get("enabled"))
+    """Return the immutable Maia governance posture.
+
+    ``governance.enabled`` existed while the distribution was opt-in. Maia is
+    now governed by construction, so even a missing or legacy ``false`` value
+    cannot turn authorization checks into allow-all behavior. The config
+    migration still rewrites the persisted value to ``true`` so the dashboard
+    and backups accurately describe the runtime posture.
+    """
+
+    return True
+
+
+def governance_tool_error(
+    reason: str,
+    *,
+    operation: str = "",
+    resource: str = "",
+) -> str:
+    """Return a structured denial that models can explain consistently."""
+
+    message = str(reason or "Access denied by Maia Governance.").strip()
+    if _ACCESS_REQUEST_GUIDANCE not in message:
+        message = f"{message} {_ACCESS_REQUEST_GUIDANCE}"
+    payload: dict[str, Any] = {
+        "error": message,
+        "code": GOVERNANCE_DENIAL_CODE,
+        "denied_by": "maia_governance",
+        "retryable": False,
+        "user_guidance": _ACCESS_REQUEST_GUIDANCE,
+    }
+    if operation:
+        payload["operation"] = operation
+    if resource:
+        payload["resource"] = resource
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def current_actor() -> Actor:
@@ -149,6 +189,25 @@ def _user_record(config: dict[str, Any], actor: Actor) -> dict[str, Any]:
         if isinstance(record, list):
             return {"roles": _coerce_list(record)}
     return {}
+
+
+def is_trusted_local_operator(
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Return whether *actor* is the unscoped local maintenance authority.
+
+    Gateway, API, cron-origin, and explicitly configured local identities are
+    governed. The person operating Maia directly on its host remains the
+    bootstrap/break-glass authority unless they deliberately add a ``local``
+    governance record, in which case normal policies apply to that identity.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    who = current_actor() if actor is None else actor
+    if str(who.platform or "local").strip().lower() != "local":
+        return False
+    return not bool(_user_record(cfg, who))
 
 
 def explicit_user_record(
@@ -274,14 +333,32 @@ def actor_has_any_role(
     )
 
 
-def _resolve_policy_path(raw: Any) -> Optional[Path]:
+def resolve_governed_path(raw: Any) -> Optional[Path]:
+    """Resolve native, WSL, and Windows-style paths to one host identity."""
+
     text = str(raw or "").strip()
     if not text:
         return None
+    # Maia commonly runs in WSL while administrators paste a Windows path in
+    # the dashboard or Discord. pathlib on Linux treats ``C:\\...`` as a
+    # relative filename; translate it to the actual WSL mount first. Also
+    # recover it when a caller already prefixed the current directory.
+    match = re.search(r"(?:^|/)([A-Za-z]):[\\/](.+)$", text)
+    if match and os.name != "nt":
+        drive, remainder = match.groups()
+        text = f"/mnt/{drive.lower()}/{remainder.replace(chr(92), '/')}"
+    elif os.name == "nt" and text.startswith("/mnt/") and len(text) > 7:
+        drive = text[5]
+        if text[6] == "/":
+            text = f"{drive.upper()}:/{text[7:]}"
     try:
         return Path(text).expanduser().resolve(strict=False)
     except (OSError, RuntimeError):
         return None
+
+
+def _resolve_policy_path(raw: Any) -> Optional[Path]:
+    return resolve_governed_path(raw)
 
 
 def _folder_policies_malformed(config: dict[str, Any]) -> Optional[str]:
@@ -327,8 +404,10 @@ def _all_matching_folder_policies(
     re-granted by a narrower child policy (least privilege).
     """
     try:
-        target = Path(path).expanduser().resolve(strict=False)
+        target = resolve_governed_path(path)
     except (OSError, RuntimeError):
+        return []
+    if target is None:
         return []
     matches: list[tuple[int, dict[str, Any]]] = []
     policies = config.get("folder_policies", [])
@@ -399,6 +478,8 @@ def check_file_access(
     op = "write" if operation in {"write", "delete", "move", "patch"} else "read"
 
     def _deny(reason: str) -> tuple[bool, str]:
+        if _ACCESS_REQUEST_GUIDANCE not in reason:
+            reason = f"{reason} {_ACCESS_REQUEST_GUIDANCE}"
         _audit_file_access(who, path, op, False, reason)
         return False, reason
 
@@ -410,7 +491,7 @@ def check_file_access(
             f"configuration is fixed. {config_error}",
         )
 
-    if not is_enabled(cfg):
+    if is_trusted_local_operator(who, cfg):
         return True, ""
 
     # Malformed folder_policies must fail closed, matching the top-level
@@ -526,14 +607,9 @@ def can_authorize(
             f"{config_error}",
         )
 
-    # When governance is disabled there is no role hierarchy to enforce and the
-    # local operator is the trust authority (mirrors check_file_access). Allow
-    # approval so an authorization checkpoint set on a job WITHOUT full
-    # governance configured can still be approved by a human via the tool/CLI,
-    # instead of wedging in awaiting_authorization forever. This does NOT
-    # auto-approve — the job still pauses and waits for an explicit authorize
-    # action; this only lets that action succeed.
-    if not is_enabled(cfg):
+    # The unscoped local operator is the bootstrap/break-glass authority. This
+    # does not auto-approve: the job still waits for an explicit decision.
+    if is_trusted_local_operator(who, cfg):
         return True, ""
 
     users = _coerce_list(authorization.get("users") or authorization.get("user"))
@@ -576,7 +652,7 @@ def can_approve_file_change(
             "be loaded until the governance configuration is fixed. "
             f"{config_error}",
         )
-    if not is_enabled(cfg):
+    if is_trusted_local_operator(who, cfg):
         return True, ""
 
     users = _coerce_list(requirement.get("users"))
@@ -607,8 +683,8 @@ def file_write_approval_requirement(
     declaring both keys empty on a child policy explicitly opts its subtree
     out of an ancestor's requirement.
 
-    Returns ``None`` when no approval is needed: governance disabled or
-    misconfigured (``check_file_access`` already fails closed on config
+    Returns ``None`` when no approval is needed: governance is misconfigured
+    (``check_file_access`` already fails closed on config
     errors, so this helper stays quiet), no matching policy declares a
     requirement, or *actor* satisfies the requirement themselves —
     self-approval would be a no-op, so approvers write directly.
@@ -696,8 +772,8 @@ def terminal_access_error(
 ) -> Optional[str]:
     """Return a denial reason when *actor* may not run shell commands at all.
 
-    Folder policies only gate the file tools; shell and sandboxed-code
-    execution run with the host process's OS permissions. When
+    Gateway shell and sandboxed-code execution are isolated to policy-derived
+    Docker mounts. This function is the additional whole-tool gate. When
     ``governance.terminal.allowed_roles`` / ``allowed_users`` is configured,
     actors outside it cannot use the terminal or execute_code tools. Unset
     means no restriction (backward compatible).
@@ -707,6 +783,8 @@ def terminal_access_error(
     who = current_actor() if actor is None else actor
 
     def _deny(reason: str) -> str:
+        if _ACCESS_REQUEST_GUIDANCE not in reason:
+            reason = f"{reason} {_ACCESS_REQUEST_GUIDANCE}"
         try:
             from agent.audit_log import record_audit_event
 
@@ -729,7 +807,7 @@ def terminal_access_error(
             "loaded, so command execution is blocked until the governance "
             f"configuration is fixed. {config_error}"
         )
-    if not is_enabled(cfg):
+    if is_trusted_local_operator(who, cfg):
         return None
 
     terminal_cfg = _terminal_config(cfg)
@@ -759,8 +837,8 @@ def terminal_approval_requirement(
     When ``governance.terminal.approver_roles`` / ``approver_users`` is set,
     dangerous-command approvals raised in gateway sessions must be decided by
     an actor satisfying the requirement — the requesting user can no longer
-    self-approve. Returns ``None`` when governance is disabled/misconfigured
-    (the terminal access gate handles config errors), when no requirement is
+    self-approve. Returns ``None`` when governance is misconfigured (the
+    terminal access gate handles config errors), when no requirement is
     configured, or when *actor* satisfies it themselves (managers and admins
     keep the existing self-approval flow).
     """
@@ -827,9 +905,9 @@ def governance_posture_warnings(
             "severity": "warning",
             "code": "no_folder_policies",
             "message": (
-                "No folder policies or delegated team roots are configured, "
-                "so file access is not actually scoped. Add policies in the "
-                "File Access panel."
+                "No folder policies or delegated team roots are configured. "
+                "All gateway file access is denied until an administrator "
+                "adds explicit grants in the File Access panel."
             ),
         })
 

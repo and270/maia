@@ -508,6 +508,21 @@ class TestWebServerEndpoints:
         assert resp.status_code == 409
         assert "operator" in resp.json()["detail"]
 
+    def test_governance_settings_cannot_disable_enforcement(self):
+        from hermes_cli.config import load_config, save_config
+
+        save_config({"governance": {"enabled": False}})
+        resp = self.client.put(
+            "/api/governance/settings",
+            json={"enabled": False, "tenant_id": "default"},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["enabled"] is True
+        governance = load_config()["governance"]
+        assert governance["enabled"] is True
+        assert governance["terminal"]["sandbox"]["enabled"] is True
+
     def test_governance_refuses_to_remove_or_demote_last_admin(self):
         from hermes_cli.config import save_config
 

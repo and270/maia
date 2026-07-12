@@ -41,6 +41,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from contextvars import copy_context
 import time
 import uuid
 
@@ -493,8 +494,8 @@ def _get_or_create_env(task_id: str):
                 return _active_environments[effective_task_id], _get_env_config()["env_type"]
 
         config = _get_env_config()
-        env_type = config["env_type"]
         overrides = _task_env_overrides.get(effective_task_id, {})
+        env_type = overrides.get("env_type") or config["env_type"]
 
         if env_type == "docker":
             image = overrides.get("docker_image") or config["docker_image"]
@@ -519,7 +520,11 @@ def _get_or_create_env(task_id: str):
                 "vercel_runtime": config.get("vercel_runtime", ""),
                 # Per-task override wins so sandboxed scripts get the same
                 # per-user sandbox mount set as the shell (agent/sandbox.py).
-                "docker_volumes": overrides.get("docker_volumes") or config.get("docker_volumes", []),
+                "docker_volumes": (
+                    overrides["docker_volumes"]
+                    if "docker_volumes" in overrides
+                    else config.get("docker_volumes", [])
+                ),
                 "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
             }
 
@@ -805,10 +810,11 @@ def _execute_remote(
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
 
         # Start RPC polling thread
+        rpc_context = copy_context()
         rpc_thread = threading.Thread(
-            target=_rpc_poll_loop,
+            target=rpc_context.run,
             args=(
-                env, f"{sandbox_dir}/rpc", effective_task_id,
+                _rpc_poll_loop, env, f"{sandbox_dir}/rpc", effective_task_id,
                 tool_call_log, tool_call_counter, max_tool_calls,
                 sandbox_tools, stop_event,
             ),
@@ -965,17 +971,26 @@ def execute_code(
     # Governance: sandboxed scripts can call tools and touch the host
     # filesystem, so the terminal role restriction applies here too.
     try:
-        from agent.governance import terminal_access_error
+        from agent.governance import governance_tool_error, terminal_access_error
 
         _gov_error = terminal_access_error()
     except Exception:
         _gov_error = None
     if _gov_error:
-        return tool_error(_gov_error)
+        return governance_tool_error(
+            _gov_error, operation="execute", resource="execute_code"
+        )
 
     # Dispatch: remote backends use file-based RPC, local uses UDS
-    from tools.terminal_tool import _get_env_config
-    env_type = _get_env_config()["env_type"]
+    from tools.terminal_tool import (
+        _get_env_config,
+        _resolve_container_task_id,
+        _task_env_overrides,
+    )
+    effective_task_id = _resolve_container_task_id(task_id)
+    env_type = _task_env_overrides.get(effective_task_id, {}).get(
+        "env_type"
+    ) or _get_env_config()["env_type"]
 
     # Fail closed: per-user sandbox enabled for a gateway actor but not on the
     # Docker backend → cannot isolate, so refuse.
@@ -986,10 +1001,29 @@ def execute_code(
     except Exception:
         _sandbox_error = None
     if _sandbox_error:
-        return tool_error(_sandbox_error)
+        from agent.governance import governance_tool_error
+
+        return governance_tool_error(
+            _sandbox_error, operation="execute", resource="execute_code"
+        )
 
     if env_type != "local":
-        return _execute_remote(code, task_id, enabled_tools)
+        try:
+            return _execute_remote(code, task_id, enabled_tools)
+        except Exception:
+            if _task_env_overrides.get(effective_task_id, {}).get(
+                "governance_sandbox"
+            ):
+                from agent.governance import governance_tool_error
+
+                return governance_tool_error(
+                    "Secure execution is unavailable, so Maia refused to run "
+                    "code outside the governed sandbox. Ask an administrator "
+                    "to make the Docker sandbox available.",
+                    operation="execute",
+                    resource="execute_code",
+                )
+            raise
 
     # --- Local execution path (UDS) --- below this line is unchanged ---
 
@@ -1039,10 +1073,11 @@ def execute_code(
         os.chmod(sock_path, 0o600)
         server_sock.listen(1)
 
+        rpc_context = copy_context()
         rpc_thread = threading.Thread(
-            target=_rpc_server_loop,
+            target=rpc_context.run,
             args=(
-                server_sock, task_id, tool_call_log,
+                _rpc_server_loop, server_sock, task_id, tool_call_log,
                 tool_call_counter, max_tool_calls, sandbox_tools,
             ),
             daemon=True,

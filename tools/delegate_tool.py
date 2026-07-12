@@ -1460,6 +1460,9 @@ def _run_single_child(
 
         child_task_id = _subagent_id or f"subagent-{task_index}-{_uuid.uuid4().hex[:8]}"
         parent_task_id = getattr(parent_agent, "_current_task_id", None)
+        from tools.terminal_tool import register_task_env_parent
+
+        register_task_env_parent(child_task_id, parent_task_id)
         wall_start = time.time()
         parent_reads_snapshot = (
             list(file_state.known_reads(parent_task_id)) if parent_task_id else []
@@ -1480,10 +1483,14 @@ def _run_single_child(
         # Capture the worker thread so the timeout diagnostic can dump its
         # Python stack (see #14726 — 0-API-call hangs are opaque without it).
         _worker_thread_holder: Dict[str, Optional[threading.Thread]] = {"t": None}
+        from contextvars import copy_context
+
+        _child_context = copy_context()
 
         def _run_with_thread_capture():
             _worker_thread_holder["t"] = threading.current_thread()
-            return child.run_conversation(
+            return _child_context.run(
+                child.run_conversation,
                 user_message=goal,
                 task_id=child_task_id,
             )
@@ -1819,6 +1826,14 @@ def _run_single_child(
         }
 
     finally:
+        try:
+            from tools.terminal_tool import clear_task_env_parent
+
+            if "child_task_id" in locals():
+                clear_task_env_parent(child_task_id)
+        except Exception:
+            logger.debug("Failed to clear delegated sandbox inheritance", exc_info=True)
+
         # Stop the heartbeat thread so it doesn't keep touching parent activity
         # after the child has finished (or failed).
         _heartbeat_stop.set()

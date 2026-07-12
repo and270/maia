@@ -10,14 +10,15 @@ def _codes(warnings):
     return {w["code"] for w in warnings}
 
 
-def test_disabled_governance_has_no_warnings(tmp_path, monkeypatch):
+def test_legacy_disabled_governance_is_still_assessed(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(tmp_path, "governance:\n  enabled: false\n")
 
     from agent.governance import governance_posture_warnings
 
-    assert governance_posture_warnings() == []
+    codes = {warning["code"] for warning in governance_posture_warnings()}
+    assert "no_folder_policies" in codes
 
 
 def test_enabled_but_permissive_flags_every_weakness(tmp_path, monkeypatch):

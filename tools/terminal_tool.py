@@ -931,6 +931,7 @@ _cleanup_running = False
 # This is never exposed to the model -- only infrastructure code calls it.
 # Thread-safe because each task_id is unique per rollout.
 _task_env_overrides: Dict[str, Dict[str, Any]] = {}
+_task_env_parents: Dict[str, str] = {}
 
 
 def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
@@ -949,7 +950,8 @@ def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
         task_id: The rollout's unique task identifier
         overrides: Dict of config keys to override
     """
-    _task_env_overrides[task_id] = overrides
+    with _env_lock:
+        _task_env_overrides[task_id] = overrides
 
 
 def clear_task_env_overrides(task_id: str):
@@ -958,7 +960,26 @@ def clear_task_env_overrides(task_id: str):
 
     Called during cleanup to avoid stale entries accumulating.
     """
-    _task_env_overrides.pop(task_id, None)
+    with _env_lock:
+        _task_env_overrides.pop(task_id, None)
+
+
+def register_task_env_parent(task_id: str, parent_task_id: Optional[str]) -> bool:
+    """Make a delegated task inherit its parent's isolated environment."""
+
+    if not task_id or not parent_task_id:
+        return False
+    parent = _resolve_container_task_id(parent_task_id)
+    with _env_lock:
+        if parent not in _task_env_overrides:
+            return False
+        _task_env_parents[task_id] = parent
+    return True
+
+
+def clear_task_env_parent(task_id: str) -> None:
+    with _env_lock:
+        _task_env_parents.pop(task_id, None)
 
 
 def _resolve_container_task_id(task_id: Optional[str]) -> str:
@@ -980,8 +1001,19 @@ def _resolve_container_task_id(task_id: Optional[str]) -> str:
     rollouts need their own isolated sandbox, which is the whole point of
     the override.
     """
-    if task_id and task_id in _task_env_overrides:
-        return task_id
+    if task_id:
+        current = task_id
+        visited: set[str] = set()
+        while current and current not in visited:
+            visited.add(current)
+            with _env_lock:
+                parent = _task_env_parents.get(current)
+                has_override = current in _task_env_overrides
+            if has_override:
+                return current
+            if not parent:
+                break
+            current = parent
     return "default"
 
 
@@ -1689,16 +1721,17 @@ def terminal_tool(
         except Exception:
             _gov_error = None
         if _gov_error:
-            return json.dumps({
-                "output": "",
-                "exit_code": -1,
-                "error": _gov_error,
-                "status": "error",
-            }, ensure_ascii=False)
+            from agent.governance import governance_tool_error
+
+            return governance_tool_error(
+                _gov_error, operation="execute", resource="terminal"
+            )
 
         # Get configuration
         config = _get_env_config()
-        env_type = config["env_type"]
+        effective_task_id = _resolve_container_task_id(task_id)
+        overrides = _task_env_overrides.get(effective_task_id, {})
+        env_type = overrides.get("env_type") or config["env_type"]
 
         # Fail closed: if the per-user sandbox is enabled for a gateway actor
         # but the backend is not Docker, commands cannot be isolated to the
@@ -1710,23 +1743,16 @@ def terminal_tool(
         except Exception:
             _sandbox_error = None
         if _sandbox_error:
-            return json.dumps({
-                "output": "",
-                "exit_code": -1,
-                "error": _sandbox_error,
-                "status": "error",
-            }, ensure_ascii=False)
+            from agent.governance import governance_tool_error
+
+            return governance_tool_error(
+                _sandbox_error, operation="execute", resource="terminal"
+            )
 
         # Use task_id for environment isolation. By default all subagent
         # task_ids collapse back to "default" so the top-level agent and
         # every delegate_task child share one container; only task_ids with
         # a registered env override (RL benchmarks) get isolated sandboxes.
-        effective_task_id = _resolve_container_task_id(task_id)
-
-        # Check per-task overrides (set by environments like TerminalBench2Env)
-        # before falling back to global env var config
-        overrides = _task_env_overrides.get(effective_task_id, {})
-        
         # Select image based on env type, with per-task override support
         if env_type == "docker":
             image = overrides.get("docker_image") or config["docker_image"]
@@ -1822,7 +1848,11 @@ def terminal_tool(
                                 "vercel_runtime": config.get("vercel_runtime", ""),
                                 # Per-task override wins so a registered per-user
                                 # sandbox mount set takes effect (see agent/sandbox.py).
-                                "docker_volumes": overrides.get("docker_volumes") or config.get("docker_volumes", []),
+                                "docker_volumes": (
+                                    overrides["docker_volumes"]
+                                    if "docker_volumes" in overrides
+                                    else config.get("docker_volumes", [])
+                                ),
                                 "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
                                 "docker_forward_env": config.get("docker_forward_env", []),
                                 "docker_env": config.get("docker_env", {}),
@@ -2140,6 +2170,16 @@ def terminal_tool(
         import traceback
         tb_str = traceback.format_exc()
         logger.error("terminal_tool exception:\n%s", tb_str)
+        if "overrides" in locals() and overrides.get("governance_sandbox"):
+            from agent.governance import governance_tool_error
+
+            return governance_tool_error(
+                "Secure execution is unavailable, so Maia refused to run this "
+                "command outside the governed sandbox. Ask an administrator "
+                "to make the Docker sandbox available.",
+                operation="execute",
+                resource="terminal",
+            )
         return json.dumps({
             "output": "",
             "exit_code": -1,

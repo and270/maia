@@ -1372,7 +1372,6 @@ class GovernanceTeamUpdate(BaseModel):
 
 
 class GovernanceSettingsUpdate(BaseModel):
-    enabled: Optional[bool] = None
     tenant_id: Optional[str] = None
     default_role: Optional[str] = None
     role_hierarchy: Optional[List[str]] = None
@@ -2947,7 +2946,7 @@ def get_onboarding_state():
             "current_effort": str(agent_cfg.get("reasoning_effort", "") or ""),
             "valid_efforts": list(VALID_REASONING_EFFORTS),
             "gateway_configured": bool(gateway_configured),
-            "governance_configured": bool(governance_cfg.get("enabled")),
+            "governance_configured": True,
             "dashboard_auth_configured": bool(auth_cfg.get("enabled")),
             "providers_catalog": catalog,
         }
@@ -3009,7 +3008,7 @@ async def get_folder_policies(request: Request):
         ]
 
     return {
-        "enabled": bool(governance.get("enabled")),
+        "enabled": True,
         "folder_policies": policies,
         "team_file_roots": _team_root_entries(governance) if admin else {
             team: {"path": str(path)}
@@ -3192,7 +3191,7 @@ def _governance_overview_payload() -> Dict[str, Any]:
     team_names = sorted(_governance_team_registry(governance), key=str.lower)
 
     return {
-        "enabled": bool(governance.get("enabled")),
+        "enabled": True,
         "tenant_id": str(governance.get("tenant_id") or "default"),
         "default_role": default_role,
         "role_hierarchy": roles,
@@ -3557,8 +3556,7 @@ async def update_governance_settings(
     ).strip()
     if default_role not in hierarchy:
         raise HTTPException(status_code=400, detail="Default role must exist in the role hierarchy")
-    if body.enabled is not None:
-        governance["enabled"] = body.enabled
+    governance["enabled"] = True
     if body.tenant_id is not None:
         tenant_id = body.tenant_id.strip()
         if not tenant_id:
@@ -3598,6 +3596,10 @@ async def update_governance_settings(
         terminal_cfg["approver_roles"] = _validate_governance_roles(
             body.terminal_approver_roles, hierarchy
         )
+    sandbox_cfg = terminal_cfg.get("sandbox", {})
+    sandbox_cfg = dict(sandbox_cfg) if isinstance(sandbox_cfg, dict) else {}
+    sandbox_cfg["enabled"] = True
+    terminal_cfg["sandbox"] = sandbox_cfg
     governance["terminal"] = terminal_cfg
 
     cfg["governance"] = governance

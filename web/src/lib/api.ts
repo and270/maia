@@ -385,7 +385,6 @@ export const api = {
       { method: "DELETE" },
     ),
   saveGovernanceSettings: (body: {
-    enabled: boolean;
     tenant_id: string;
     default_role: string;
     role_hierarchy: string[];

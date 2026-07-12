@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 
 from agent.file_safety import get_read_block_error
-from agent.governance import file_access_error
+from agent.governance import file_access_error, governance_tool_error
 from tools.binary_extensions import has_binary_extension
 from tools.file_operations import (
     ShellFileOperations,
@@ -370,8 +370,17 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
             from tools.terminal_tool import _task_env_overrides
 
             config = _get_env_config()
-            env_type = config["env_type"]
             overrides = _task_env_overrides.get(task_id, {})
+            # Direct file tools have deterministic path-level Governance
+            # checks and may keep using the configured backend. The forced
+            # Docker override is specifically the security boundary for raw
+            # shell/execute_code, so it must not make safe file operations
+            # depend on Docker being installed.
+            env_type = (
+                config["env_type"]
+                if overrides.get("governance_sandbox")
+                else overrides.get("env_type") or config["env_type"]
+            )
 
             if env_type == "docker":
                 image = overrides.get("docker_image") or config["docker_image"]
@@ -397,7 +406,11 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
                     "vercel_runtime": config.get("vercel_runtime", ""),
                     # Per-task override wins so file ops land in the same
                     # per-user sandbox mount set as the shell (agent/sandbox.py).
-                    "docker_volumes": overrides.get("docker_volumes") or config.get("docker_volumes", []),
+                    "docker_volumes": (
+                        overrides["docker_volumes"]
+                        if "docker_volumes" in overrides
+                        else config.get("docker_volumes", [])
+                    ),
                     "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
                     "docker_forward_env": config.get("docker_forward_env", []),
                     "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
@@ -471,6 +484,12 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
             })
 
         _resolved = _resolve_path_for_task(path, task_id)
+
+        governance_error = file_access_error(str(_resolved), "read")
+        if governance_error:
+            return governance_tool_error(
+                governance_error, operation="read", resource=str(_resolved)
+            )
 
         # ── Binary file guard ─────────────────────────────────────────
         # Block binary files by extension (no I/O).
@@ -858,7 +877,9 @@ def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
 
     governance_error = file_access_error(_resolved or path, "write")
     if governance_error:
-        return tool_error(governance_error)
+        return governance_tool_error(
+            governance_error, operation="write", resource=_resolved or path
+        )
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
         return tool_error(sensitive_err)
@@ -940,7 +961,9 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
             _governance_path = _p
         governance_error = file_access_error(_governance_path, "write")
         if governance_error:
-            return tool_error(governance_error)
+            return governance_tool_error(
+                governance_error, operation="write", resource=_governance_path
+            )
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
@@ -1127,7 +1150,9 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             _resolved_path = path
         governance_error = file_access_error(_resolved_path, "read")
         if governance_error:
-            return tool_error(governance_error)
+            return governance_tool_error(
+                governance_error, operation="search", resource=_resolved_path
+            )
         block_error = get_read_block_error(_resolved_path)
         if block_error:
             return json.dumps({"error": block_error}, ensure_ascii=False)

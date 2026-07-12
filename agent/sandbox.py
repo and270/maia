@@ -5,8 +5,8 @@ specs so their shell / execute_code commands run in a container that can only
 reach the folders they are actually granted. See docs/per-user-sandbox.md.
 
 The resolver is pure (config + filesystem existence checks) and safe to unit
-test without Docker. It is inert until the gateway wiring registers it, so
-importing this module changes no behavior on its own.
+test without Docker. Gateway sessions register its output before the agent
+starts.
 """
 
 from __future__ import annotations
@@ -21,27 +21,16 @@ from agent.governance import (
     check_file_access,
     current_actor,
     file_write_approval_requirement,
-    is_enabled,
+    is_trusted_local_operator,
     load_governance_config,
+    resolve_governed_path,
 )
 
 
 def sandbox_enabled(config: Optional[dict[str, Any]] = None) -> bool:
-    """Return whether the per-user terminal sandbox is turned on.
+    """Return the immutable per-user gateway sandbox posture."""
 
-    Controlled by ``governance.terminal.sandbox.enabled``. Requires governance
-    to be enabled; a config load error reads as disabled here (the terminal
-    access gate is what fails closed on config errors).
-    """
-
-    cfg = load_governance_config() if config is None else config
-    if _governance_config_error(cfg) or not is_enabled(cfg):
-        return False
-    terminal = cfg.get("terminal", {})
-    terminal = terminal if isinstance(terminal, dict) else {}
-    sandbox = terminal.get("sandbox", {})
-    sandbox = sandbox if isinstance(sandbox, dict) else {}
-    return bool(sandbox.get("enabled"))
+    return True
 
 
 def _policy_paths(config: dict[str, Any]) -> list[str]:
@@ -68,22 +57,26 @@ def resolve_sandbox_mounts(
     bypass staged approval. The container path equals the host path so absolute
     paths resolve identically inside and outside the container.
 
-    Returns an empty list when governance is disabled/misconfigured — the
+    Returns an empty list when governance is misconfigured — the
     caller must treat "no mounts" as "nothing granted" (fail closed), never as
     "mount everything".
     """
 
     cfg = load_governance_config() if config is None else config
-    if _governance_config_error(cfg) or not is_enabled(cfg):
+    if _governance_config_error(cfg):
         return []
 
     who = current_actor() if actor is None else actor
+    if is_trusted_local_operator(who, cfg):
+        return []
     modes: dict[str, str] = {}
 
     for raw_path in _policy_paths(cfg):
         try:
-            resolved = Path(raw_path).expanduser().resolve(strict=False)
+            resolved = resolve_governed_path(raw_path)
         except (OSError, RuntimeError):
+            continue
+        if resolved is None:
             continue
         host = str(resolved)
         # Don't mount non-existent paths: docker -v would auto-create a
@@ -129,6 +122,8 @@ def build_sandbox_overrides(
     """
 
     return {
+        "env_type": "docker",
+        "governance_sandbox": True,
         "docker_volumes": resolve_sandbox_mounts(actor=actor, config=config),
         "cwd": "/workspace",
     }
@@ -153,7 +148,7 @@ def sandbox_backend_error(
     if not sandbox_enabled(cfg):
         return None
     who = current_actor() if actor is None else actor
-    if (who.platform or "local").strip().lower() == "local":
+    if is_trusted_local_operator(who, cfg):
         return None
     if str(env_type or "").strip().lower() != "docker":
         return (

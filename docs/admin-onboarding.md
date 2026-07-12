@@ -4,7 +4,8 @@ Maia is an AmpliIA distribution for private, one-tenant company deployments. The
 
 ## 1. Set the Tenant Baseline
 
-Start from default-deny file access in production:
+File access is always deny-by-default; `enabled: false` is migrated to `true`
+and cannot disable enforcement. Start by naming the tenant and roles:
 
 ```yaml
 governance:
@@ -25,7 +26,7 @@ The dashboard can change config, secrets, server folder policies, cron jobs, and
 maia dashboard
 ```
 
-After Governance is enabled, an authenticated admin can also ask Maia in a private gateway conversation to add admitted users, assign roles/teams, or manage file policies. Maia uses the sender identity supplied by the gateway and rechecks authorization on every action; team managers remain confined to delegated roots. Do not send provider secrets or dashboard credentials through chat.
+An authenticated admin can also ask Maia in a private gateway conversation to add admitted users, assign roles/teams, or manage file policies. Maia uses the sender identity supplied by the gateway and rechecks authorization on every action; team managers remain confined to delegated roots. Do not send provider secrets or dashboard credentials through chat.
 
 If remote dashboard access is required, prefer a private boundary such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve), or use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/). Keep Maia auth and TLS enabled and reserve `--insecure` for temporary trusted-network diagnostics.
 

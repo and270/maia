@@ -21,14 +21,14 @@ def _mode_for(mounts, path):
     return None
 
 
-def test_sandbox_disabled_by_default(tmp_path, monkeypatch):
+def test_sandbox_enabled_by_default(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(tmp_path, "governance:\n  enabled: true\n")
 
     from agent.sandbox import sandbox_enabled
 
-    assert sandbox_enabled() is False
+    assert sandbox_enabled() is True
 
 
 def test_sandbox_enabled_flag(tmp_path, monkeypatch):
@@ -182,7 +182,7 @@ def _sandbox_on(tmp_path):
     )
 
 
-def test_backend_error_none_when_sandbox_off(tmp_path, monkeypatch):
+def test_backend_error_fails_closed_when_legacy_sandbox_setting_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(tmp_path, "governance:\n  enabled: true\n")
@@ -190,10 +190,9 @@ def test_backend_error_none_when_sandbox_off(tmp_path, monkeypatch):
     from agent.governance import Actor
     from agent.sandbox import sandbox_backend_error
 
-    assert (
-        sandbox_backend_error("local", actor=Actor(platform="slack", user_id="U1"))
-        is None
-    )
+    assert "blocked" in sandbox_backend_error(
+        "local", actor=Actor(platform="slack", user_id="U1")
+    ).lower()
 
 
 def test_backend_error_exempts_local_operator(tmp_path, monkeypatch):
@@ -266,7 +265,17 @@ governance:
 
     overrides = build_sandbox_overrides(actor=Actor(platform="slack", user_id="U1"))
     assert overrides["cwd"] == "/workspace"
+    assert overrides["env_type"] == "docker"
     assert any(str(shared) in spec for spec in overrides["docker_volumes"])
+
+
+def test_windows_policy_path_resolves_to_wsl_mount(monkeypatch):
+    monkeypatch.setattr("agent.governance.os.name", "posix")
+
+    from agent.governance import resolve_governed_path
+
+    resolved = resolve_governed_path(r"C:\Users\andre\Documents\Finance")
+    assert str(resolved) == "/mnt/c/Users/andre/Documents/Finance"
 
 
 def test_terminal_tool_fails_closed_without_docker(tmp_path, monkeypatch):
