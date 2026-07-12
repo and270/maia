@@ -19,11 +19,15 @@ Use `viewer` for read-only users, `operator` for normal write work, `manager` fo
 
 ## 2. Protect the Dashboard
 
-The dashboard can change config, secrets, server folder policies, cron jobs, and approval decisions. There is one dashboard application; the logged-in identity decides which controls are available. Keep it local during first setup:
+The dashboard can change config, secrets, server folder policies, cron jobs, and approval decisions. There is one dashboard application; the logged-in identity decides which controls are available. Both `maia` and `maia dashboard` bind it to `127.0.0.1` by default, so keep it local during first setup:
 
 ```bash
 maia dashboard
 ```
+
+After Governance is enabled, an authenticated admin can also ask Maia in a private gateway conversation to add admitted users, assign roles/teams, or manage file policies. Maia uses the sender identity supplied by the gateway and rechecks authorization on every action; team managers remain confined to delegated roots. Do not send provider secrets or dashboard credentials through chat.
+
+If remote dashboard access is required, prefer a private boundary such as [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve), or use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/). Keep Maia auth and TLS enabled and reserve `--insecure` for temporary trusted-network diagnostics.
 
 For intranet or public access, configure protected mode first. Token mode is best for bootstrap and platform-admin access from the server environment:
 
