@@ -549,7 +549,7 @@ const NEXT_STEPS = [
     title: "Channel dashboard tokens",
     text: "Keep channel tokens short-lived and approval-based so users get one-time login tokens only after admin review.",
     to: "/dashboard-access",
-    action: "Open Access",
+    action: "Open Dashboard Access",
   },
   {
     icon: FileKey2,
@@ -627,8 +627,8 @@ export default function OnboardingPage() {
         icon={Users}
         title="Set up governance and dashboard access"
         text="Apply the security baseline below, then approve /dashboard requests, assign roles and teams, and keep admin access narrow. This is what makes Maia safe to share with the whole company."
-        to="/dashboard-access"
-        action="Open Access"
+        to="/governance"
+        action="Open Governance"
       />
 
       <BaselineCard />
