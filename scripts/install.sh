@@ -1169,10 +1169,6 @@ EOF
     chmod +x "$command_link_dir/maia"
     log_success "Installed maia launcher → $command_link_display_dir/maia"
 
-    # Legacy alias kept for existing corporate deployments and scripts.
-    ln -sf "$command_link_dir/maia" "$command_link_dir/coorporate"
-    log_success "Legacy alias coorporate → $command_link_display_dir/coorporate"
-
     if [ "$DISTRO" = "termux" ]; then
         export PATH="$command_link_dir:$PATH"
         log_info "$command_link_display_dir is the native Termux command path"

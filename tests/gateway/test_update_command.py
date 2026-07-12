@@ -157,10 +157,10 @@ class TestHandleUpdateCommand:
         """_resolve_hermes_bin returns argv parts from shutil.which when available."""
         from gateway.run import _resolve_hermes_bin
 
-        with patch("shutil.which", return_value="/custom/path/hermes"):
+        with patch("shutil.which", return_value="/custom/path/maia"):
             result = _resolve_hermes_bin()
 
-        assert result == ["/custom/path/hermes"]
+        assert result == ["/custom/path/maia"]
 
     @pytest.mark.asyncio
     async def test_resolve_hermes_bin_fallback(self):

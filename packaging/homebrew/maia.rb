@@ -24,7 +24,7 @@ class Maia < Formula
 
     pkgshare.install "skills", "optional-skills"
 
-    %w[maia maia-agent maia-acp coorporate coorporate-agent coorporate-acp].each do |exe|
+    %w[maia maia-agent maia-acp].each do |exe|
       next unless (libexec/"bin"/exe).exist?
 
       (bin/exe).write_env_script(

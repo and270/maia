@@ -3569,14 +3569,14 @@ def _rotate_worker_log(log_path: Path, max_bytes: int) -> None:
 def _worker_cli_base_cmd() -> list[str]:
     """Resolve the base command used to spawn a kanban worker.
 
-    The renamed console script is ``maia`` (with a legacy ``coorporate``
-    alias); there is NO ``hermes`` command on a Maia install, so the old
+    The renamed console script is ``maia``; there is NO ``hermes`` command
+    on a Maia install, so the old
     hard-coded ``["hermes", ...]`` broke worker spawning with
     ``FileNotFoundError`` on every clean deployment. Resolve robustly:
 
       1. an explicit override via ``MAIA_CLI`` / ``HERMES_CLI`` (space-split),
-      2. a ``maia`` / ``coorporate`` console script next to the running
-         interpreter (venv ``Scripts``/``bin``) or on ``PATH``,
+      2. a ``maia`` console script next to the running interpreter (venv
+         ``Scripts``/``bin``) or on ``PATH``,
       3. fall back to ``python -m hermes_cli.main`` — always importable
          because it is this very package's entry point.
     """
@@ -3587,13 +3587,12 @@ def _worker_cli_base_cmd() -> list[str]:
         return override.split()
 
     exe_dir = Path(sys.executable).resolve().parent
-    for name in ("maia", "coorporate"):
-        for cand in (exe_dir / name, exe_dir / f"{name}.exe"):
-            if cand.is_file() and os.access(cand, os.X_OK):
-                return [str(cand)]
-        found = shutil.which(name)
-        if found:
-            return [found]
+    for cand in (exe_dir / "maia", exe_dir / "maia.exe"):
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return [str(cand)]
+    found = shutil.which("maia")
+    if found:
+        return [found]
 
     # Last resort: invoke the package entry point directly. Works in any
     # venv/layout because the module is guaranteed present.
