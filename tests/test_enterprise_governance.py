@@ -6,6 +6,14 @@ def _write_config(home, content: str) -> None:
     (home / "config.yaml").write_text(content, encoding="utf-8")
 
 
+def test_maia_default_config_enforces_governance_and_gateway_sandbox():
+    from hermes_cli.config import DEFAULT_CONFIG
+
+    governance = DEFAULT_CONFIG["governance"]
+    assert governance["enabled"] is True
+    assert governance["terminal"]["sandbox"]["enabled"] is True
+
+
 def test_folder_policy_uses_role_hierarchy(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -265,6 +273,9 @@ governance:
     result = json.loads(read_file_tool("secret.txt"))
     assert "error" in result
     assert "Access denied by governance" in result["error"]
+    assert result["code"] == "governance_access_denied"
+    assert result["operation"] == "read"
+    assert "manager or administrator" in result["user_guidance"]
 
 
 def test_cron_authorization_respects_governance_roles(tmp_path, monkeypatch):
@@ -588,10 +599,8 @@ governance:
     assert ok is True
 
 
-def test_cron_authorization_approvable_when_governance_disabled(tmp_path, monkeypatch):
-    """With governance disabled there is no role hierarchy to enforce, so a
-    local operator can approve an authorization checkpoint via the tool/CLI
-    instead of the job wedging in awaiting_authorization forever."""
+def test_local_operator_can_approve_with_legacy_disabled_value(tmp_path, monkeypatch):
+    """The trusted local operator remains the bootstrap approval authority."""
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _write_config(tmp_path, "governance:\n  enabled: false\n")

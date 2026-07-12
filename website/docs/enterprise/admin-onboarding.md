@@ -143,7 +143,7 @@ Corporate memory/skills apply to every conversation. Team memory/skills apply by
 
 Use **Dashboard -> File Access** for normal file authorization. The dashboard saves these settings to `<MAIA_HOME>/config.yaml` under `governance`; the YAML below is the backing shape, not a separate repo file. Direct YAML edits are for the server operator, infrastructure-as-code, backup restore, or break-glass recovery.
 
-The Governance tabs are **People → Teams → File access → Approvals → Settings**. Unmatched paths are always denied; there is no global allow switch.
+The Governance tabs are **People → Teams → File access → Approvals → Settings**. Governance cannot be disabled: a role admits the identity to Maia but grants no files. Unmatched paths are always denied; there is no global allow switch. Gateway shell and code execution are also isolated to the explicitly granted paths and fail closed if the Docker sandbox is unavailable.
 
 System admin workflow:
 

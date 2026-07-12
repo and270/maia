@@ -15215,6 +15215,30 @@ class GatewayRunner:
 
         _notify_task = asyncio.create_task(_notify_long_running())
 
+        # A gateway identity never receives the host filesystem. Register a
+        # dedicated Docker environment whose bind mounts are derived only
+        # from this actor's explicit Governance folder grants. The session ID
+        # is also the top-level task id used by tool dispatch.
+        _governance_sandbox_registered = False
+        if session_id:
+            from agent.governance import Actor, load_governance_config
+            from agent.sandbox import build_sandbox_overrides
+            from tools.terminal_tool import register_task_env_overrides
+
+            _sandbox_actor = Actor(
+                platform=str(source.platform.value),
+                user_id=str(source.user_id),
+                user_name=str(getattr(source, "user_name", "") or ""),
+            )
+            register_task_env_overrides(
+                session_id,
+                build_sandbox_overrides(
+                    actor=_sandbox_actor,
+                    config=load_governance_config(),
+                ),
+            )
+            _governance_sandbox_registered = True
+
         try:
             # Run in thread pool to not block.  Use an *inactivity*-based
             # timeout instead of a wall-clock limit: the agent can run for
@@ -15613,6 +15637,10 @@ class GatewayRunner:
                     channel_prompt=next_channel_prompt,
                 )
         finally:
+            if _governance_sandbox_registered:
+                from tools.terminal_tool import clear_task_env_overrides
+
+                clear_task_env_overrides(session_id)
             # Stop progress sender, interrupt monitor, and notification task
             if progress_task:
                 progress_task.cancel()

@@ -792,7 +792,6 @@ function SettingsWorkspace({
     setBusy(true);
     try {
       await api.saveGovernanceSettings({
-        enabled: draft.enabled,
         tenant_id: draft.tenant_id,
         default_role: draft.default_role,
         role_hierarchy: draft.role_hierarchy,
@@ -847,17 +846,14 @@ function SettingsWorkspace({
         <Card>
           <CardHeader><CardTitle>Tenant and roles</CardTitle></CardHeader>
           <CardContent className="grid gap-5 normal-case">
-            <label className="flex items-start justify-between gap-4">
+            <div className="border border-emerald-500/30 bg-emerald-500/5 p-3">
               <span>
-                <span className="block text-sm font-medium">Governance enabled</span>
-                <span className="mt-1 block text-xs text-muted-foreground">Fail closed for human gateway users.</span>
+                <span className="block text-sm font-medium">Governance is always enforced</span>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                  Human gateway users fail closed. Roles admit a person to the bot; only explicit policies grant file or folder access.
+                </span>
               </span>
-              <input
-                type="checkbox"
-                checked={draft.enabled}
-                onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))}
-              />
-            </label>
+            </div>
             <label className="grid gap-2">
               <Label>Tenant ID</Label>
               <Input value={draft.tenant_id} onChange={(event) => setDraft((current) => ({ ...current, tenant_id: event.target.value }))} />

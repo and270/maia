@@ -24,10 +24,14 @@ from tools import terminal_tool
 def _clean_overrides():
     """Ensure no stray overrides from other tests leak in."""
     before = dict(terminal_tool._task_env_overrides)
+    parents_before = dict(terminal_tool._task_env_parents)
     terminal_tool._task_env_overrides.clear()
+    terminal_tool._task_env_parents.clear()
     yield
     terminal_tool._task_env_overrides.clear()
     terminal_tool._task_env_overrides.update(before)
+    terminal_tool._task_env_parents.clear()
+    terminal_tool._task_env_parents.update(parents_before)
 
 
 def test_none_task_id_maps_to_default():
@@ -75,6 +79,21 @@ def test_cleared_override_collapses_again():
     assert terminal_tool._resolve_container_task_id("tb2-x") == "tb2-x"
     terminal_tool.clear_task_env_overrides("tb2-x")
     assert terminal_tool._resolve_container_task_id("tb2-x") == "default"
+
+
+def test_subagent_inherits_governed_parent_override():
+    terminal_tool.register_task_env_overrides(
+        "gateway-session", {"env_type": "docker", "docker_volumes": []}
+    )
+    assert terminal_tool.register_task_env_parent(
+        "subagent-0-secure", "gateway-session"
+    ) is True
+    assert (
+        terminal_tool._resolve_container_task_id("subagent-0-secure")
+        == "gateway-session"
+    )
+    terminal_tool.clear_task_env_parent("subagent-0-secure")
+    assert terminal_tool._resolve_container_task_id("subagent-0-secure") == "default"
 
 
 def test_get_active_env_reads_shared_container_from_subagent_id():

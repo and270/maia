@@ -215,9 +215,7 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                   File Access
                 </H2>
               )}
-              <Badge tone={data?.enabled ? "success" : "destructive"}>
-                Governance {data?.enabled ? "enabled" : "disabled"}
-              </Badge>
+              <Badge tone="success">Governance enforced</Badge>
               <Badge tone={canAdmin ? "warning" : "secondary"}>
                 {canAdmin ? "System admin" : "Team manager"}
               </Badge>

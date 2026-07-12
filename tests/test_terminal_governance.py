@@ -62,7 +62,7 @@ def test_terminal_access_denied_below_required_role(tmp_path, monkeypatch):
     )
 
 
-def test_terminal_access_unrestricted_when_unset_or_disabled(tmp_path, monkeypatch):
+def test_terminal_access_unrestricted_when_unset_but_legacy_disabled_cannot_bypass(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
 
@@ -75,15 +75,14 @@ def test_terminal_access_unrestricted_when_unset_or_disabled(tmp_path, monkeypat
         is None
     )
 
-    # Governance disabled entirely.
+    # A legacy disabled value cannot turn the gate off.
     _write_config(
         tmp_path,
         "governance:\n  enabled: false\n  terminal:\n    allowed_roles: [admin]\n",
     )
-    assert (
-        terminal_access_error(actor=Actor(platform="slack", user_id="U_ANYONE"))
-        is None
-    )
+    assert "denied" in terminal_access_error(
+        actor=Actor(platform="slack", user_id="U_ANYONE")
+    ).lower()
 
 
 def test_terminal_tool_blocks_denied_actor(tmp_path, monkeypatch):
@@ -97,6 +96,33 @@ def test_terminal_tool_blocks_denied_actor(tmp_path, monkeypatch):
 
     result = json.loads(terminal_tool(command="echo hi"))
     assert "Terminal access denied by governance" in (result.get("error") or "")
+    assert result["code"] == "governance_access_denied"
+    assert "manager or administrator" in result["user_guidance"]
+
+
+def test_terminal_tool_fails_closed_without_any_file_grant(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("MAIA_USER_ID", "U_OPERATOR")
+    monkeypatch.setenv("MAIA_USER_PLATFORM", "slack")
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: false
+  users:
+    "slack:U_OPERATOR":
+      roles: [operator]
+  folder_policies: []
+""",
+    )
+
+    from tools.terminal_tool import terminal_tool
+
+    result = json.loads(terminal_tool(command="echo should-not-run"))
+    assert result["code"] == "governance_access_denied"
+    assert result["resource"] == "terminal"
+    assert result["retryable"] is False
 
 
 # ---------------------------------------------------------------------------

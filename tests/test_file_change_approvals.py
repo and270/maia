@@ -100,7 +100,7 @@ def test_child_policy_with_empty_lists_opts_out(tmp_path, monkeypatch):
     )
 
 
-def test_requirement_absent_when_governance_disabled(tmp_path, monkeypatch):
+def test_requirement_survives_legacy_disabled_value(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     governed = tmp_path / "finance"
@@ -118,13 +118,12 @@ governance:
 
     from agent.governance import Actor, file_write_approval_requirement
 
-    assert (
-        file_write_approval_requirement(
-            str(governed / "report.md"),
-            actor=Actor(platform="slack", user_id="U_WRITER"),
-        )
-        is None
+    requirement = file_write_approval_requirement(
+        str(governed / "report.md"),
+        actor=Actor(platform="slack", user_id="U_WRITER"),
     )
+    assert requirement is not None
+    assert requirement["roles"] == ["manager"]
 
 
 def test_eligible_approvers_resolved_from_role_map(tmp_path, monkeypatch):

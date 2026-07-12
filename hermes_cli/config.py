@@ -902,13 +902,12 @@ DEFAULT_CONFIG = {
         "redact_pii": False,  # When True, hash user IDs and strip phone numbers from LLM context
     },
 
-    # Enterprise governance for private one-tenant deployments.
-    #
-    # When enabled, gateway identities can be mapped to roles, folder policies
+    # Always-on governance for private one-tenant deployments.
+    # Gateway identities can be mapped to roles, folder policies
     # can gate read/write tools, and cron jobs can pause on human
     # authorization nodes before executing.
     "governance": {
-        "enabled": False,
+        "enabled": True,
         "tenant_id": "default",
         "default_role": "viewer",
         # Later roles inherit earlier roles.
@@ -959,6 +958,9 @@ DEFAULT_CONFIG = {
             # If a cron authorization node omits roles, these roles may
             # approve/deny the node.  Role hierarchy is honored.
             "default_authorizer_roles": ["admin"],
+        },
+        "terminal": {
+            "sandbox": {"enabled": True},
         },
     },
 
@@ -1497,7 +1499,7 @@ DEFAULT_CONFIG = {
     },
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 27,
+    "_config_version": 28,
 }
 
 # =============================================================================
@@ -3822,6 +3824,34 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
             print(
                 "  ✓ Registered existing governance teams and enabled immutable "
                 "deny-by-default file access"
+            )
+
+    # Version 27 -> 28: governance and gateway filesystem isolation cannot be
+    # disabled. Rewrite legacy profiles so persisted state matches runtime.
+    if current_ver < 28:
+        config = read_raw_config()
+        governance = config.get("governance")
+        if not isinstance(governance, dict):
+            governance = {}
+        governance["enabled"] = True
+        terminal = governance.get("terminal")
+        if not isinstance(terminal, dict):
+            terminal = {}
+        sandbox = terminal.get("sandbox")
+        if not isinstance(sandbox, dict):
+            sandbox = {}
+        sandbox["enabled"] = True
+        terminal["sandbox"] = sandbox
+        governance["terminal"] = terminal
+        config["governance"] = governance
+        save_config(config)
+        results["config_added"].append(
+            "governance.enabled=true and governance.terminal.sandbox.enabled=true"
+        )
+        if not quiet:
+            print(
+                "  Governance and the gateway filesystem sandbox are now "
+                "always enforced"
             )
 
     if current_ver < latest_ver and not quiet:
