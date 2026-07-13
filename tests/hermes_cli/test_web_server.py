@@ -345,6 +345,67 @@ class TestWebServerEndpoints:
         assert users["discord:222222222222222222"]["gateway_allowed"] is True
         assert users["sso:auditor@example.com"]["gateway_allowed"] is False
 
+    def test_governance_server_paths_lists_directories_before_files(self, tmp_path):
+        folder = tmp_path / "Finance"
+        folder.mkdir()
+        file_path = tmp_path / "plan.pdf"
+        file_path.write_text("quarterly plan", encoding="utf-8")
+
+        response = self.client.get(
+            "/api/governance/server-paths", params={"path": str(tmp_path)}
+        )
+
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["current_path"] == str(tmp_path.resolve())
+        assert payload["selected_path"] is None
+        assert payload["truncated"] is False
+        listed = {(entry["name"], entry["kind"]) for entry in payload["entries"]}
+        assert ("Finance", "directory") in listed
+        assert ("plan.pdf", "file") in listed
+        kinds = [entry["kind"] for entry in payload["entries"]]
+        assert kinds == sorted(kinds, key=lambda kind: kind != "directory")
+        assert payload["breadcrumbs"][-1] == {
+            "label": tmp_path.name,
+            "path": str(tmp_path.resolve()),
+        }
+        assert payload["locations"]
+
+    def test_governance_server_paths_opens_a_file_in_its_parent(self, tmp_path):
+        file_path = tmp_path / "Finance.xlsx"
+        file_path.write_bytes(b"workbook")
+
+        response = self.client.get(
+            "/api/governance/server-paths", params={"path": str(file_path)}
+        )
+
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["current_path"] == str(tmp_path.resolve())
+        assert payload["selected_path"] == str(file_path.resolve())
+
+    def test_governance_server_paths_rejects_missing_paths(self, tmp_path):
+        missing = tmp_path / "not-created"
+
+        response = self.client.get(
+            "/api/governance/server-paths", params={"path": str(missing)}
+        )
+
+        assert response.status_code == 404
+        assert "does not exist" in response.json()["detail"]
+
+    def test_governance_server_paths_requires_system_admin(self, monkeypatch, tmp_path):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(web_server, "_dashboard_actor_is_admin", lambda _request: False)
+
+        response = self.client.get(
+            "/api/governance/server-paths", params={"path": str(tmp_path)}
+        )
+
+        assert response.status_code == 403
+        assert "System administrator" in response.json()["detail"]
+
     def test_governance_user_can_be_granted_and_removed_without_changing_allowlist(self):
         from hermes_cli.config import load_config, load_env, save_config, save_env_value
 

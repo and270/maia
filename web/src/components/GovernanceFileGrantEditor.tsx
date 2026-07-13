@@ -1,5 +1,7 @@
-import { Plus, Trash2 } from "lucide-react";
+import { useCallback, useState } from "react";
+import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
+import { GovernancePathPicker } from "@/components/GovernancePathPicker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { GovernanceFileGrant } from "@/lib/api";
@@ -17,6 +19,9 @@ export function GovernanceFileGrantEditor({
   description?: string;
   disabled?: boolean;
 }) {
+  const [browseIndex, setBrowseIndex] = useState<number | null>(null);
+  const closeBrowser = useCallback(() => setBrowseIndex(null), []);
+
   const add = () =>
     onChange([
       ...grants,
@@ -57,15 +62,29 @@ export function GovernanceFileGrantEditor({
               key={`${grant.path}-${index}`}
               className="grid gap-3 p-3 md:grid-cols-[minmax(14rem,1fr)_auto_auto_auto_auto] md:items-end"
             >
-              <label className="grid gap-2">
-                <Label>Server path</Label>
-                <Input
-                  value={grant.path}
-                  onChange={(event) => update(index, { path: event.target.value })}
-                  placeholder="/srv/company/finance or /srv/company/plan.pdf"
-                  disabled={disabled}
-                />
-              </label>
+              <div className="grid gap-2">
+                <Label htmlFor={`governance-server-path-${index}`}>Server path</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id={`governance-server-path-${index}`}
+                    value={grant.path}
+                    onChange={(event) => update(index, { path: event.target.value })}
+                    placeholder="/srv/company/finance or /srv/company/plan.pdf"
+                    disabled={disabled}
+                  />
+                  <Button
+                    size="sm"
+                    outlined
+                    className="shrink-0"
+                    onClick={() => setBrowseIndex(index)}
+                    disabled={disabled}
+                    aria-label={`Browse server files for ${grant.path || "new path"}`}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Browse
+                  </Button>
+                </div>
+              </div>
               <GrantToggle
                 label="Read"
                 checked={grant.read}
@@ -102,6 +121,14 @@ export function GovernanceFileGrantEditor({
             </div>
           ))}
         </div>
+      )}
+
+      {browseIndex !== null && grants[browseIndex] && (
+        <GovernancePathPicker
+          initialPath={grants[browseIndex].path}
+          onClose={closeBrowser}
+          onSelect={(path) => update(browseIndex, { path })}
+        />
       )}
     </section>
   );
