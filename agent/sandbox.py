@@ -11,6 +11,7 @@ starts.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +26,42 @@ from agent.governance import (
     load_governance_config,
     resolve_governed_path,
 )
+
+
+SECURE_EXECUTION_UNAVAILABLE_CODE = "secure_execution_unavailable"
+_SECURE_EXECUTION_GUIDANCE = (
+    "Do not tell the requester to ask for another file grant. Explain that Maia "
+    "did not run the command because its secure Docker sandbox is unavailable, "
+    "that no file was changed, and that an administrator must restore the "
+    "sandbox runtime. Once it is ready, retry the same request; a new chat thread "
+    "is not required."
+)
+
+
+def secure_execution_tool_error(
+    reason: str,
+    *,
+    operation: str = "execute",
+    resource: str = "terminal",
+    runtime_status: str = "unavailable",
+) -> str:
+    """Return a retryable runtime failure distinct from an access denial."""
+
+    message = str(reason or "Secure execution is unavailable.").strip()
+    return json.dumps(
+        {
+            "error": message,
+            "code": SECURE_EXECUTION_UNAVAILABLE_CODE,
+            "blocked_by": "maia_secure_sandbox",
+            "retryable": True,
+            "permission_status": "unchanged",
+            "runtime_status": runtime_status,
+            "operation": operation,
+            "resource": resource,
+            "user_guidance": _SECURE_EXECUTION_GUIDANCE,
+        },
+        ensure_ascii=False,
+    )
 
 
 def sandbox_enabled(config: Optional[dict[str, Any]] = None) -> bool:

@@ -121,6 +121,21 @@ export type GovernanceFileGrant = {
   recursive: boolean;
   read: boolean;
   write: boolean;
+  write_approval_roles?: string[];
+  write_approval_users?: string[];
+};
+
+export type GovernanceSandboxStatus = {
+  ready: boolean;
+  status:
+    | "ready"
+    | "not_found"
+    | "not_executable"
+    | "daemon_timeout"
+    | "daemon_unavailable"
+    | "wsl_integration_disabled";
+  message: string;
+  remediation: string;
 };
 
 export type GovernanceServerPathEntry = {
@@ -356,6 +371,8 @@ export const api = {
     fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
   getGovernanceOverview: () =>
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
+  getGovernanceSandboxStatus: () =>
+    fetchJSON<GovernanceSandboxStatus>("/api/governance/sandbox-status"),
   browseGovernanceServerPaths: (path?: string) => {
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
     return fetchJSON<GovernanceServerPathsResponse>(

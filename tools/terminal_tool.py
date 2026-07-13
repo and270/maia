@@ -915,6 +915,7 @@ Do NOT use vim/nano/interactive tools without pty=true — they hang without a p
 
 # Global state for environment lifecycle management
 _active_environments: Dict[str, Any] = {}
+_active_environment_override_signatures: Dict[str, Any] = {}
 _last_activity: Dict[str, float] = {}
 _env_lock = threading.Lock()
 _creation_locks: Dict[str, threading.Lock] = {}  # Per-task locks for sandbox creation
@@ -934,6 +935,66 @@ _task_env_overrides: Dict[str, Dict[str, Any]] = {}
 _task_env_parents: Dict[str, str] = {}
 
 
+def _environment_override_signature(value: Any) -> Any:
+    """Return an immutable, order-stable snapshot of environment overrides."""
+
+    if isinstance(value, dict):
+        return tuple(
+            (str(key), _environment_override_signature(item))
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_environment_override_signature(item) for item in value)
+    if isinstance(value, set):
+        return tuple(
+            sorted(
+                (_environment_override_signature(item) for item in value),
+                key=repr,
+            )
+        )
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
+
+
+def _retire_stale_environment_for_overrides(
+    task_id: str,
+    overrides: Dict[str, Any],
+) -> bool:
+    """Retire a cached environment whose security-relevant config changed.
+
+    Governed file tools deliberately use deterministic host-side operations
+    instead of Docker. They must never leave that local helper environment in
+    the shared cache for a later terminal or execute_code call to reuse.
+    Requiring the override signature here closes that cross-tool cache path as
+    well as refreshing Docker mounts after grants or revocations.
+    """
+
+    expected_signature = _environment_override_signature(overrides)
+    retired_env = None
+    with _env_lock:
+        if (
+            task_id in _active_environments
+            and _active_environment_override_signatures.get(task_id)
+            != expected_signature
+        ):
+            retired_env = _active_environments.pop(task_id, None)
+            _active_environment_override_signatures.pop(task_id, None)
+            _last_activity.pop(task_id, None)
+
+    if retired_env is None:
+        return False
+    _retire_environment(
+        task_id,
+        retired_env,
+        hard=bool(overrides.get("governance_sandbox")),
+        reason="environment overrides changed",
+    )
+    return True
+
+
 def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
     """
     Register environment overrides for a specific task/rollout.
@@ -950,8 +1011,13 @@ def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
         task_id: The rollout's unique task identifier
         overrides: Dict of config keys to override
     """
+    next_overrides = dict(overrides or {})
     with _env_lock:
-        _task_env_overrides[task_id] = overrides
+        _task_env_overrides[task_id] = next_overrides
+    # Governance mounts are the security boundary. Retire the previous
+    # environment synchronously so a revoked or downgraded path cannot remain
+    # reachable while the replacement sandbox is being created.
+    _retire_stale_environment_for_overrides(task_id, next_overrides)
 
 
 def clear_task_env_overrides(task_id: str):
@@ -1279,6 +1345,72 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
         )
 
 
+def _retire_environment(
+    task_id: str,
+    env: Any,
+    *,
+    hard: bool = False,
+    reason: str = "cleanup",
+) -> None:
+    """Invalidate cached file operations and stop one detached environment.
+
+    ``hard`` is used for governed Docker sandboxes when their mount policy
+    changes. It waits for the old container to be removed before returning so
+    revoked access cannot survive in a still-running container.
+    """
+
+    try:
+        from tools.file_tools import clear_file_ops_cache
+
+        clear_file_ops_cache(task_id)
+    except ImportError:
+        pass
+
+    try:
+        if hard and hasattr(env, "discard"):
+            env.discard()
+        elif hasattr(env, "cleanup"):
+            env.cleanup()
+        elif hasattr(env, "stop"):
+            env.stop()
+        elif hasattr(env, "terminate"):
+            env.terminate()
+        logger.info("Retired environment for task %s (%s)", task_id, reason)
+    except Exception as exc:
+        error_str = str(exc)
+        if "404" in error_str or "not found" in error_str.lower():
+            logger.info("Environment for task %s was already retired", task_id)
+        else:
+            logger.warning(
+                "Failed to retire environment for task %s (%s): %s",
+                task_id,
+                reason,
+                exc,
+                exc_info=True,
+            )
+            if hard:
+                raise RuntimeError(
+                    "Could not remove the previous governed sandbox before "
+                    "applying its new file permissions. Secure execution remains "
+                    "blocked."
+                ) from exc
+
+
+def _evict_active_environment(
+    task_id: str,
+    *,
+    hard: bool = False,
+    reason: str = "evicted",
+) -> None:
+    env = None
+    with _env_lock:
+        env = _active_environments.pop(task_id, None)
+        _active_environment_override_signatures.pop(task_id, None)
+        _last_activity.pop(task_id, None)
+    if env is not None:
+        _retire_environment(task_id, env, hard=hard, reason=reason)
+
+
 def _cleanup_inactive_envs(lifetime_seconds: int = 300):
     """Clean up environments that have been inactive for longer than lifetime_seconds."""
     current_time = time.time()
@@ -1303,6 +1435,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
         for task_id, last_time in list(_last_activity.items()):
             if current_time - last_time > lifetime_seconds:
                 env = _active_environments.pop(task_id, None)
+                _active_environment_override_signatures.pop(task_id, None)
                 _last_activity.pop(task_id, None)
                 if env is not None:
                     envs_to_stop.append((task_id, env))
@@ -1315,30 +1448,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
     # Phase 2: stop the actual sandboxes OUTSIDE the lock so other tool calls
     # are not blocked while Modal/Docker sandboxes shut down.
     for task_id, env in envs_to_stop:
-        # Invalidate stale file_ops cache entry (Bug fix: prevents
-        # ShellFileOperations from referencing a dead sandbox)
-        try:
-            from tools.file_tools import clear_file_ops_cache
-            clear_file_ops_cache(task_id)
-        except ImportError:
-            pass
-
-        try:
-            if hasattr(env, 'cleanup'):
-                env.cleanup()
-            elif hasattr(env, 'stop'):
-                env.stop()
-            elif hasattr(env, 'terminate'):
-                env.terminate()
-
-            logger.info("Cleaned up inactive environment for task: %s", task_id)
-
-        except Exception as e:
-            error_str = str(e)
-            if "404" in error_str or "not found" in error_str.lower():
-                logger.info("Environment for task %s already cleaned up", task_id)
-            else:
-                logger.warning("Error cleaning up environment for task %s: %s", task_id, e)
+        _retire_environment(task_id, env, reason="inactive")
 
 
 def _cleanup_thread_worker():
@@ -1439,38 +1549,17 @@ def cleanup_vm(task_id: str):
     env = None
     with _env_lock:
         env = _active_environments.pop(task_id, None)
+        _active_environment_override_signatures.pop(task_id, None)
         _last_activity.pop(task_id, None)
 
     # Clean up per-task creation lock
     with _creation_locks_lock:
         _creation_locks.pop(task_id, None)
 
-    # Invalidate stale file_ops cache entry
-    try:
-        from tools.file_tools import clear_file_ops_cache
-        clear_file_ops_cache(task_id)
-    except ImportError:
-        pass
-
     if env is None:
         return
 
-    try:
-        if hasattr(env, 'cleanup'):
-            env.cleanup()
-        elif hasattr(env, 'stop'):
-            env.stop()
-        elif hasattr(env, 'terminate'):
-            env.terminate()
-
-        logger.info("Manually cleaned up environment for task: %s", task_id)
-
-    except Exception as e:
-        error_str = str(e)
-        if "404" in error_str or "not found" in error_str.lower():
-            logger.info("Environment for task %s already cleaned up", task_id)
-        else:
-            logger.warning("Error cleaning up environment for task %s: %s", task_id, e)
+    _retire_environment(task_id, env, reason="manual cleanup")
 
 
 def _atexit_cleanup():
@@ -1730,7 +1819,8 @@ def terminal_tool(
         # Get configuration
         config = _get_env_config()
         effective_task_id = _resolve_container_task_id(task_id)
-        overrides = _task_env_overrides.get(effective_task_id, {})
+        with _env_lock:
+            overrides = dict(_task_env_overrides.get(effective_task_id, {}))
         env_type = overrides.get("env_type") or config["env_type"]
 
         # Fail closed: if the per-user sandbox is enabled for a gateway actor
@@ -1743,10 +1833,19 @@ def terminal_tool(
         except Exception:
             _sandbox_error = None
         if _sandbox_error:
-            from agent.governance import governance_tool_error
+            from agent.sandbox import secure_execution_tool_error
 
-            return governance_tool_error(
-                _sandbox_error, operation="execute", resource="terminal"
+            return secure_execution_tool_error(
+                _sandbox_error,
+                operation="execute",
+                resource="terminal",
+                runtime_status="invalid_backend",
+            )
+
+        if overrides.get("governance_sandbox"):
+            _retire_stale_environment_for_overrides(
+                effective_task_id,
+                overrides,
             )
 
         # Use task_id for environment isolation. By default all subagent
@@ -1886,6 +1985,9 @@ def terminal_tool(
 
                     with _env_lock:
                         _active_environments[effective_task_id] = new_env
+                        _active_environment_override_signatures[effective_task_id] = (
+                            _environment_override_signature(overrides)
+                        )
                         _last_activity[effective_task_id] = time.time()
                         env = new_env
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
@@ -2171,14 +2273,34 @@ def terminal_tool(
         tb_str = traceback.format_exc()
         logger.error("terminal_tool exception:\n%s", tb_str)
         if "overrides" in locals() and overrides.get("governance_sandbox"):
-            from agent.governance import governance_tool_error
+            from agent.sandbox import secure_execution_tool_error
 
-            return governance_tool_error(
-                "Secure execution is unavailable, so Maia refused to run this "
-                "command outside the governed sandbox. Ask an administrator "
-                "to make the Docker sandbox available.",
+            if "effective_task_id" in locals():
+                try:
+                    _evict_active_environment(
+                        effective_task_id,
+                        hard=True,
+                        reason="secure execution failure",
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to discard unhealthy governed sandbox for %s",
+                        effective_task_id,
+                        exc_info=True,
+                    )
+            detail = str(e).strip()
+            runtime_status = (
+                "wsl_integration_disabled"
+                if "wsl integration" in detail.casefold()
+                else "unavailable"
+            )
+            return secure_execution_tool_error(
+                "Secure execution is unavailable, so Maia did not run this "
+                "command outside the governed sandbox. No file was changed. "
+                f"{detail}",
                 operation="execute",
                 resource="terminal",
+                runtime_status=runtime_status,
             )
         return json.dumps({
             "output": "",

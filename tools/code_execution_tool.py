@@ -467,13 +467,26 @@ def _get_or_create_env(task_id: str):
     Returns ``(env, env_type)`` tuple.
     """
     from tools.terminal_tool import (
-        _active_environments, _env_lock, _create_environment,
-        _get_env_config, _last_activity, _start_cleanup_thread,
-        _creation_locks, _creation_locks_lock, _task_env_overrides,
+        _active_environment_override_signatures,
+        _active_environments,
+        _create_environment,
+        _creation_locks,
+        _creation_locks_lock,
+        _env_lock,
+        _environment_override_signature,
+        _get_env_config,
+        _last_activity,
         _resolve_container_task_id,
+        _retire_stale_environment_for_overrides,
+        _start_cleanup_thread,
+        _task_env_overrides,
     )
 
     effective_task_id = _resolve_container_task_id(task_id)
+    with _env_lock:
+        overrides = dict(_task_env_overrides.get(effective_task_id, {}))
+    if overrides.get("governance_sandbox"):
+        _retire_stale_environment_for_overrides(effective_task_id, overrides)
 
     # Fast path: environment already exists
     with _env_lock:
@@ -494,7 +507,8 @@ def _get_or_create_env(task_id: str):
                 return _active_environments[effective_task_id], _get_env_config()["env_type"]
 
         config = _get_env_config()
-        overrides = _task_env_overrides.get(effective_task_id, {})
+        with _env_lock:
+            overrides = dict(_task_env_overrides.get(effective_task_id, {}))
         env_type = overrides.get("env_type") or config["env_type"]
 
         if env_type == "docker":
@@ -560,6 +574,9 @@ def _get_or_create_env(task_id: str):
 
         with _env_lock:
             _active_environments[effective_task_id] = env
+            _active_environment_override_signatures[effective_task_id] = (
+                _environment_override_signature(overrides)
+            )
             _last_activity[effective_task_id] = time.time()
 
         _start_cleanup_thread()
@@ -1001,27 +1018,50 @@ def execute_code(
     except Exception:
         _sandbox_error = None
     if _sandbox_error:
-        from agent.governance import governance_tool_error
+        from agent.sandbox import secure_execution_tool_error
 
-        return governance_tool_error(
-            _sandbox_error, operation="execute", resource="execute_code"
+        return secure_execution_tool_error(
+            _sandbox_error,
+            operation="execute",
+            resource="execute_code",
+            runtime_status="invalid_backend",
         )
 
     if env_type != "local":
         try:
             return _execute_remote(code, task_id, enabled_tools)
-        except Exception:
+        except Exception as exc:
             if _task_env_overrides.get(effective_task_id, {}).get(
                 "governance_sandbox"
             ):
-                from agent.governance import governance_tool_error
+                from agent.sandbox import secure_execution_tool_error
+                from tools.terminal_tool import _evict_active_environment
 
-                return governance_tool_error(
-                    "Secure execution is unavailable, so Maia refused to run "
-                    "code outside the governed sandbox. Ask an administrator "
-                    "to make the Docker sandbox available.",
+                try:
+                    _evict_active_environment(
+                        effective_task_id,
+                        hard=True,
+                        reason="secure code execution failure",
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to discard unhealthy governed sandbox for %s",
+                        effective_task_id,
+                        exc_info=True,
+                    )
+                detail = str(exc).strip()
+                runtime_status = (
+                    "wsl_integration_disabled"
+                    if "wsl integration" in detail.casefold()
+                    else "unavailable"
+                )
+                return secure_execution_tool_error(
+                    "Secure execution is unavailable, so Maia did not run "
+                    "this code outside the governed sandbox. No file was "
+                    f"changed. {detail}",
                     operation="execute",
                     resource="execute_code",
+                    runtime_status=runtime_status,
                 )
             raise
 

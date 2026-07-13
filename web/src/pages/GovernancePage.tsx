@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   FileCheck,
   FolderTree,
   Network,
@@ -28,6 +29,7 @@ import {
   api,
   type GovernanceFileGrant,
   type GovernanceOverview,
+  type GovernanceSandboxStatus,
   type GovernanceTeam,
   type GovernanceUser,
 } from "@/lib/api";
@@ -168,7 +170,10 @@ function PeopleWorkspace({
         teams: draft.teams,
         file_access: draft.file_access,
       });
-      showToast(`${selected.actor_key} is active in Governance.`, "success");
+      showToast(
+        `${selected.actor_key} is active. File access applies on the user's next request; no new thread or gateway restart is required.`,
+        "success",
+      );
       await reload();
     } catch (error) {
       showToast(`Could not save user: ${error}`, "error");
@@ -366,6 +371,10 @@ function PeopleWorkspace({
               onChange={(file_access) =>
                 setDraft((current) => ({ ...current, file_access }))
               }
+              approvalRoles={overview.role_hierarchy}
+              approvalUsers={overview.users.filter(
+                (user) => user.governed && user.actor_key !== selected.actor_key,
+              )}
               description="These grants apply only to this identity and merge with team and role policies for the same path."
             />
 
@@ -514,7 +523,10 @@ function TeamsWorkspace({
     setBusy(true);
     try {
       await api.saveGovernanceTeam(selected.name, draft);
-      showToast(`${selected.name} saved.`, "success");
+      showToast(
+        `${selected.name} saved. File access applies on the user's next request; no new thread or gateway restart is required.`,
+        "success",
+      );
       await reload();
     } catch (error) {
       showToast(`Could not save team: ${error}`, "error");
@@ -682,6 +694,8 @@ function TeamsWorkspace({
             <GovernanceFileGrantEditor
               grants={draft.file_access}
               onChange={(file_access) => setDraft((current) => ({ ...current, file_access }))}
+              approvalRoles={overview.role_hierarchy}
+              approvalUsers={overview.users.filter((user) => user.governed)}
               title="Team file and folder access"
               description="These read/write grants apply to every governed member of this team."
             />
@@ -976,13 +990,26 @@ export default function GovernancePage() {
   const rawSection = params.get("section") as GovernanceSection | null;
   const section = rawSection && SECTIONS.includes(rawSection) ? rawSection : "people";
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
+  const [sandboxStatus, setSandboxStatus] = useState<GovernanceSandboxStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setOverview(await api.getGovernanceOverview());
+      const [nextOverview, nextSandboxStatus] = await Promise.all([
+        api.getGovernanceOverview(),
+        api.getGovernanceSandboxStatus().catch(
+          (): GovernanceSandboxStatus => ({
+            ready: false,
+            status: "daemon_unavailable",
+            message: "The dashboard could not verify secure Docker execution.",
+            remediation: "Check the Maia logs and Docker status, then refresh this page.",
+          }),
+        ),
+      ]);
+      setOverview(nextOverview);
+      setSandboxStatus(nextSandboxStatus);
     } catch (error) {
       showToast(`Failed to load Governance: ${error}`, "error");
     } finally {
@@ -1028,6 +1055,11 @@ export default function GovernancePage() {
             <Badge tone={overview.enabled ? "success" : "destructive"}>
               {overview.enabled ? "Enabled" : "Disabled"}
             </Badge>
+            {sandboxStatus && (
+              <Badge tone={sandboxStatus.ready ? "success" : "destructive"}>
+                {sandboxStatus.ready ? "Secure execution ready" : "Secure execution unavailable"}
+              </Badge>
+            )}
             {pending > 0 && <Badge tone="warning">{pending} pending users</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-sm normal-case leading-6 text-muted-foreground">
@@ -1038,6 +1070,27 @@ export default function GovernancePage() {
           Tenant <code>{overview.tenant_id}</code> · {overview.users.length} identities
         </div>
       </header>
+
+      {sandboxStatus && !sandboxStatus.ready && (
+        <div className="flex flex-col gap-3 border border-destructive/40 bg-destructive/5 p-4 normal-case sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+            <div>
+              <div className="text-sm font-semibold text-foreground">File permissions are saved, but secure terminal and code edits are blocked</div>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{sandboxStatus.message}</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{sandboxStatus.remediation}</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Maia will not fall back to unrestricted host execution. No additional file grant is needed;
+                retry the same request after Docker is ready.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" outlined onClick={() => void load()} disabled={loading}>
+            {loading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+            Check again
+          </Button>
+        </div>
+      )}
 
       <nav aria-label="Governance sections" className="flex overflow-x-auto border-b border-border">
         {SECTIONS.map((item) => {

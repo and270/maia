@@ -275,6 +275,14 @@ Use this when you are deciding the maximum server folders Maia may ever touch.
 4. Open **File Access** for advanced role, deny, and write-approval policy fields.
 5. Save, test with real approved users, and review `governance.file_access` audit events for denials.
 
+Direct grants in **People** and **Teams** offer three write modes: no write,
+direct write, or write after approval. Approval mode selects the roles and/or
+named governed identities that may review the change. The requirement belongs
+to the matching path policy, so it applies to every non-approver who has write
+access to that same path. Any grant, revocation, read/write change, or approval
+mode change replaces the affected gateway sandbox when the user's next gateway
+request starts; no new message thread or gateway restart is required.
+
 ### Team Leader Flow
 
 Team leaders use the same dashboard URL, but the File Access page is filtered by their identity.
@@ -435,6 +443,12 @@ directly and shell/`execute_code` calls run in a per-session Docker environment
 that mounts only explicitly granted paths. No policies means no mounted company
 files. Subagents inherit the same environment, and Docker/setup failure blocks
 execution instead of falling back to host access.
+
+A Docker/setup failure is returned as retryable
+`secure_execution_unavailable`, not as a file-access denial. The saved grant is
+unchanged and no command or file modification runs. On Windows, Docker Desktop
+must have WSL integration enabled for the distribution running Maia; the
+Governance dashboard reports this health separately from authorization.
 
 ```yaml
 governance:

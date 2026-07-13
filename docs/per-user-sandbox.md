@@ -27,12 +27,22 @@ a gateway sandbox unless an explicit local Governance identity is configured.
 Gateway isolation never falls back to the host. Maia forces the per-session
 environment to Docker even if the general terminal backend is `local`. If
 Docker is missing, stopped, or cannot create the environment, the tool returns
-a structured `governance_access_denied` result. The model is instructed not to
-try another tool or alternate path and to tell the requester to ask an
-authorized manager or administrator.
+a retryable `secure_execution_unavailable` result. This is not a file-policy
+denial: the grant remains saved, the command does not run, and no file is
+changed. The model tells the requester that an administrator must restore the
+Docker sandbox and that the same request can be retried without a new thread.
 
 An empty mount list is intentional and must stay empty. It must not inherit
 global `terminal.docker_volumes` settings.
+
+## Permission changes are immediate
+
+At the beginning of every gateway turn, Maia resolves the actor's current
+folder grants. If the effective mount list changed, Maia synchronously removes
+the previous governed container before it creates the replacement. This covers
+new grants, revocations, read-only to read/write changes, and approval-gated
+paths returning to read-only. The user's next gateway request uses the new
+policy; a new message thread or gateway restart is not required.
 
 ## Path handling
 
@@ -58,6 +68,10 @@ enforced posture but does not offer a disable control.
 
 ## Operational requirement
 
-The server running a messaging gateway must have a working Docker engine. Test
-Docker before rollout and monitor Governance denial/audit events. Keep OS
-permissions as defense in depth for especially sensitive data.
+The server running a messaging gateway must have a working Docker engine. On
+Windows, Docker Desktop must have WSL integration enabled for the distribution
+running Maia (normally Ubuntu); `docker version` inside that distribution must
+show both Client and Server. The Governance dashboard reports this readiness
+separately from file authorization. Test Docker before rollout and monitor
+Governance denial/audit events. Keep OS permissions as defense in depth for
+especially sensitive data.

@@ -132,6 +132,7 @@ maia
 ```
 
 Notes for WSL:
+- Governed gateway edits use Docker isolation. Install Docker Desktop, open **Settings > Resources > WSL Integration**, enable **Ubuntu**, choose **Apply & restart**, and confirm that `docker version` inside Ubuntu shows both Client and Server before testing file changes.
 - The installer keeps everything on the Linux filesystem (`~/.maia`), which avoids the slow `/mnt/c/...` installs that cause most WSL failures.
 - The `maia` command works from any directory once your shell is reloaded.
 - Keep company files you want Maia to govern inside WSL (e.g. `~/company-files`) for the same filesystem-performance reason. Windows paths remain reachable under `/mnt/c/...` when needed.
@@ -277,7 +278,7 @@ What this enforces today:
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Governance cannot be disabled. A gateway role admits the person to Maia but grants no files by itself; with no matching policy, every file path is denied.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. If secure isolation is unavailable, Maia refuses execution instead of using the host.
+- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. Grant, revocation, read/write, and approval-mode changes rebuild that environment when the user's next gateway request starts, so no new thread or gateway restart is required. If secure isolation is unavailable, Maia leaves permissions unchanged and refuses execution instead of using the host.
 - Admins manage gateway admission, people, teams, and global file access from the dashboard or by asking Maia in an authenticated private gateway conversation. Team leaders can manage file policy only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.

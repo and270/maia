@@ -143,6 +143,95 @@ def find_docker() -> Optional[str]:
     return None
 
 
+def _docker_result_text(result: subprocess.CompletedProcess) -> str:
+    return "\n".join(
+        part.strip()
+        for part in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
+        if str(part or "").strip()
+    )
+
+
+def _wsl_integration_disabled(text: str) -> bool:
+    normalized = str(text or "").casefold()
+    return (
+        "wsl integration" in normalized
+        or "activate the wsl integration" in normalized
+        or "could not be found in this wsl" in normalized
+    )
+
+
+def docker_runtime_status(timeout: int = 3) -> dict[str, object]:
+    """Return an actionable, non-throwing Docker readiness snapshot."""
+
+    # Docker Desktop can enable WSL integration while Maia is running and may
+    # replace its helper path with /usr/bin/docker. Rediscover the executable
+    # so the dashboard's "Check again" action never needs a process restart.
+    global _docker_executable
+    _docker_executable = None
+    docker_exe = find_docker()
+    if not docker_exe:
+        return {
+            "ready": False,
+            "status": "not_found",
+            "message": "Docker is not available to Maia.",
+            "remediation": (
+                "Install and start Docker, then retry. On Windows, Maia must run "
+                "inside WSL2 with Docker Desktop integration enabled for that distro."
+            ),
+        }
+    try:
+        result = subprocess.run(
+            [docker_exe, "version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ready": False,
+            "status": "daemon_timeout",
+            "message": "Docker is installed, but its engine is not responding.",
+            "remediation": "Start or restart Docker, wait until it is ready, then retry.",
+        }
+    except (FileNotFoundError, OSError):
+        return {
+            "ready": False,
+            "status": "not_executable",
+            "message": "Maia found Docker, but could not execute it.",
+            "remediation": "Repair the Docker installation or executable path, then retry.",
+        }
+
+    output = _docker_result_text(result)
+    if result.returncode == 0:
+        return {
+            "ready": True,
+            "status": "ready",
+            "message": "Secure Docker execution is ready.",
+            "remediation": "",
+        }
+    if _wsl_integration_disabled(output):
+        _docker_executable = None
+        return {
+            "ready": False,
+            "status": "wsl_integration_disabled",
+            "message": (
+                "Docker Desktop is running, but its WSL integration is not enabled "
+                "for the Linux distribution running Maia."
+            ),
+            "remediation": (
+                "In Docker Desktop, open Settings > Resources > WSL Integration, "
+                "enable the Maia distribution (for example Ubuntu), choose Apply & "
+                "restart, then retry the same request."
+            ),
+        }
+    return {
+        "ready": False,
+        "status": "daemon_unavailable",
+        "message": "Docker is installed, but Maia cannot reach its engine.",
+        "remediation": "Start or restart Docker, wait until it is ready, then retry.",
+    }
+
+
 # Security flags applied to every container.
 # The container itself is the security boundary (isolated from host).
 # We drop all capabilities then add back the minimum needed:
@@ -258,13 +347,23 @@ def _ensure_docker_available() -> None:
         raise
     else:
         if result.returncode != 0:
+            result_text = _docker_result_text(result)
             logger.error(
                 "Docker backend selected but '%s version' failed "
-                "(exit code %d, stderr=%s)",
+                "(exit code %d, output=%s)",
                 docker_exe,
                 result.returncode,
-                result.stderr.strip(),
+                result_text,
             )
+            if _wsl_integration_disabled(result_text):
+                global _docker_executable
+                _docker_executable = None
+                raise RuntimeError(
+                    "Docker Desktop WSL integration is disabled for the Linux "
+                    "distribution running Maia. In Docker Desktop, open Settings "
+                    "> Resources > WSL Integration, enable this distribution, "
+                    "choose Apply & restart, then retry."
+                )
             raise RuntimeError(
                 "Docker command is available but 'docker version' failed. "
                 "Check your Docker installation."
@@ -643,3 +742,26 @@ class DockerEnvironment(BaseEnvironment):
             for d in (self._workspace_dir, self._home_dir):
                 if d:
                     shutil.rmtree(d, ignore_errors=True)
+
+    def discard(self):
+        """Synchronously remove the container before replacing security mounts."""
+
+        container_id = self._container_id
+        if not container_id:
+            return
+        result = subprocess.run(
+            [self._docker_exe, "rm", "-f", container_id],
+            capture_output=True,
+            text=True,
+            timeout=65,
+        )
+        output = _docker_result_text(result)
+        if result.returncode != 0 and "no such container" not in output.casefold():
+            raise RuntimeError(
+                f"Could not remove the previous governed container: {output or 'docker rm failed'}"
+            )
+        self._container_id = None
+        if not self._persistent:
+            for directory in (self._workspace_dir, self._home_dir):
+                if directory:
+                    shutil.rmtree(directory, ignore_errors=True)

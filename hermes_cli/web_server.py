@@ -1352,6 +1352,8 @@ class GovernanceFileGrant(BaseModel):
     recursive: bool = True
     read: bool = False
     write: bool = False
+    write_approval_roles: Optional[List[str]] = None
+    write_approval_users: Optional[List[str]] = None
 
 
 class GovernanceUserUpdate(BaseModel):
@@ -3227,6 +3229,15 @@ def _governance_overview_payload() -> Dict[str, Any]:
 async def get_governance_overview():
     """Return the admin Governance workspace without exposing unrelated config."""
     return _governance_overview_payload()
+
+
+@app.get("/api/governance/sandbox-status")
+def get_governance_sandbox_status():
+    """Report whether gateway file operations can start secure execution."""
+
+    from tools.environments.docker import docker_runtime_status
+
+    return docker_runtime_status()
 
 
 def _validate_governance_roles(roles: List[str], hierarchy: List[str]) -> List[str]:
