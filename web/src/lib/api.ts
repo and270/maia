@@ -123,6 +123,27 @@ export type GovernanceFileGrant = {
   write: boolean;
 };
 
+export type GovernanceServerPathEntry = {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+};
+
+export type GovernanceServerPathLocation = {
+  label: string;
+  path: string;
+};
+
+export type GovernanceServerPathsResponse = {
+  current_path: string;
+  parent_path: string | null;
+  selected_path: string | null;
+  breadcrumbs: GovernanceServerPathLocation[];
+  locations: GovernanceServerPathLocation[];
+  entries: GovernanceServerPathEntry[];
+  truncated: boolean;
+};
+
 export type GovernanceTeam = {
   name: string;
   members: string[];
@@ -335,6 +356,12 @@ export const api = {
     fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
   getGovernanceOverview: () =>
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
+  browseGovernanceServerPaths: (path?: string) => {
+    const query = path ? `?path=${encodeURIComponent(path)}` : "";
+    return fetchJSON<GovernanceServerPathsResponse>(
+      `/api/governance/server-paths${query}`,
+    );
+  },
   saveGovernanceUser: (
     actorKey: string,
     body: {

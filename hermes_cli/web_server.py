@@ -3257,8 +3257,147 @@ def _require_governance_admin(request: Request) -> None:
     if not _dashboard_actor_is_admin(request):
         raise HTTPException(
             status_code=403,
-            detail="System administrator access is required to manage teams",
+            detail="System administrator access is required to manage Governance",
         )
+
+
+def _governance_path_location(label: str, path: Path) -> Optional[Dict[str, str]]:
+    """Return a usable directory shortcut for the server-side path picker."""
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+        if not resolved.is_dir():
+            return None
+    except (OSError, RuntimeError):
+        return None
+    return {"label": label, "path": str(resolved)}
+
+
+def _governance_path_locations() -> List[Dict[str, str]]:
+    """Build deduplicated shortcuts to directories visible to this Maia process."""
+    cfg = load_config()
+    terminal_cfg = cfg.get("terminal", {}) if isinstance(cfg, dict) else {}
+    configured_cwd = (
+        str(terminal_cfg.get("cwd") or "").strip()
+        if isinstance(terminal_cfg, dict)
+        else ""
+    )
+    candidates: List[Tuple[str, Path]] = []
+    if configured_cwd:
+        candidates.append(("Maia working directory", Path(configured_cwd)))
+    candidates.extend(
+        [
+            ("Dashboard working directory", Path.cwd()),
+            ("Home", Path.home()),
+        ]
+    )
+
+    if os.name == "nt":
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            drive = Path(f"{letter}:\\")
+            if drive.exists():
+                candidates.append((f"{letter}: drive", drive))
+    else:
+        candidates.append(("Filesystem root", Path("/")))
+        wsl_windows_files = Path("/mnt/c")
+        if wsl_windows_files.is_dir():
+            candidates.append(("Windows files", wsl_windows_files))
+
+    locations: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for label, candidate in candidates:
+        location = _governance_path_location(label, candidate)
+        if location is None:
+            continue
+        normalized = os.path.normcase(location["path"])
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        locations.append(location)
+    return locations
+
+
+def _governance_path_breadcrumbs(path: Path) -> List[Dict[str, str]]:
+    ancestors = list(reversed([path, *path.parents]))
+    return [
+        {
+            "label": ancestor.name or ancestor.anchor or str(ancestor),
+            "path": str(ancestor),
+        }
+        for ancestor in ancestors
+    ]
+
+
+@app.get("/api/governance/server-paths")
+async def browse_governance_server_paths(
+    request: Request, path: Optional[str] = None
+):
+    """List server-visible files and directories for an exact Governance grant."""
+    _require_governance_admin(request)
+    locations = _governance_path_locations()
+    requested = str(path or "").strip()
+    if requested:
+        target = Path(os.path.expandvars(requested)).expanduser()
+    elif locations:
+        target = Path(locations[0]["path"])
+    else:
+        target = Path.cwd()
+
+    try:
+        resolved = target.resolve(strict=True)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server path does not exist: {target}",
+        )
+    except PermissionError:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Maia cannot access this server path: {target}",
+        )
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid server path: {exc}")
+
+    selected_path: Optional[str] = None
+    if resolved.is_file():
+        selected_path = str(resolved)
+        resolved = resolved.parent
+    elif not resolved.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Server path is not a file or directory: {resolved}",
+        )
+
+    try:
+        entries: List[Dict[str, str]] = []
+        for entry in resolved.iterdir():
+            try:
+                kind = "directory" if entry.is_dir() else "file"
+            except OSError:
+                continue
+            entries.append({"name": entry.name, "path": str(entry), "kind": kind})
+    except PermissionError:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Maia cannot list this server directory: {resolved}",
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maia could not list this server directory: {exc}",
+        )
+
+    entries.sort(key=lambda item: (item["kind"] != "directory", item["name"].casefold()))
+    entry_limit = 500
+    parent = resolved.parent
+    return {
+        "current_path": str(resolved),
+        "parent_path": None if parent == resolved else str(parent),
+        "selected_path": selected_path,
+        "breadcrumbs": _governance_path_breadcrumbs(resolved),
+        "locations": locations,
+        "entries": entries[:entry_limit],
+        "truncated": len(entries) > entry_limit,
+    }
 
 
 def _registered_team_name(governance: Dict[str, Any], raw_name: str) -> Optional[str]:
