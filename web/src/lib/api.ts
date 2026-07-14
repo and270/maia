@@ -127,15 +127,34 @@ export type GovernanceFileGrant = {
 
 export type GovernanceSandboxStatus = {
   ready: boolean;
+  mode: "full" | "restricted";
   status:
     | "ready"
     | "not_found"
     | "not_executable"
     | "daemon_timeout"
     | "daemon_unavailable"
-    | "wsl_integration_disabled";
+    | "wsl_integration_disabled"
+    | "unsupported_platform";
+  platform: "windows_wsl" | "linux" | "macos" | "windows_native" | "android_termux" | "unknown";
+  platform_label: string;
+  distro: string;
+  runtime: "docker" | "podman" | null;
   message: string;
   remediation: string;
+  why: string;
+  available_capabilities: string[];
+  blocked_capabilities: string[];
+  steps: Array<{
+    title: string;
+    detail: string;
+    command?: string;
+    url?: string;
+  }>;
+  can_auto_setup: boolean;
+  setup_command: string;
+  verify_command: string;
+  docs_url: string;
 };
 
 export type GovernanceServerPathEntry = {
@@ -371,8 +390,10 @@ export const api = {
     fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
   getGovernanceOverview: () =>
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
+  getSecureRuntimeStatus: () =>
+    fetchJSON<GovernanceSandboxStatus>("/api/secure-runtime/status"),
   getGovernanceSandboxStatus: () =>
-    fetchJSON<GovernanceSandboxStatus>("/api/governance/sandbox-status"),
+    fetchJSON<GovernanceSandboxStatus>("/api/secure-runtime/status"),
   browseGovernanceServerPaths: (path?: string) => {
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
     return fetchJSON<GovernanceServerPathsResponse>(

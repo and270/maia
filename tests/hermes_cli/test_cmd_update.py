@@ -116,7 +116,11 @@ class TestCmdUpdateBranchFallback:
             branch="main", verify_ok=True, commit_count="1"
         )
 
-        cmd_update(mock_args)
+        # A real pull makes changed web sources newer than the bundled build.
+        # The mocked pull cannot change mtimes, so force that post-pull state
+        # instead of making this test depend on whichever tree was built last.
+        with patch("hermes_cli.main._web_ui_build_needed", return_value=True):
+            cmd_update(mock_args)
 
         npm_calls = [
             (call.args[0], call.kwargs.get("cwd"))

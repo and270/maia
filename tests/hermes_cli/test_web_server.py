@@ -436,20 +436,38 @@ class TestWebServerEndpoints:
 
         monkeypatch.setattr(
             docker_env,
-            "docker_runtime_status",
+            "secure_runtime_status",
             lambda: {
                 "ready": False,
+                "mode": "restricted",
                 "status": "wsl_integration_disabled",
+                "platform": "windows_wsl",
+                "platform_label": "Windows with WSL2",
+                "distro": "Ubuntu",
+                "runtime": "docker",
                 "message": "Docker Desktop WSL integration is disabled.",
                 "remediation": "Enable Ubuntu and retry.",
+                "why": "Governed commands need isolation.",
+                "available_capabilities": ["Chat"],
+                "blocked_capabilities": ["Terminal"],
+                "steps": [],
+                "can_auto_setup": False,
+                "setup_command": "maia secure-runtime setup",
+                "verify_command": "maia secure-runtime status",
+                "docs_url": "https://ampliia.com/en/maia/docs/getting-started/secure-runtime/",
             },
         )
 
-        response = self.client.get("/api/governance/sandbox-status")
+        response = self.client.get("/api/secure-runtime/status")
 
         assert response.status_code == 200
         assert response.json()["status"] == "wsl_integration_disabled"
         assert response.json()["ready"] is False
+        assert response.json()["mode"] == "restricted"
+
+        legacy = self.client.get("/api/governance/sandbox-status")
+        assert legacy.status_code == 200
+        assert legacy.json() == response.json()
 
     def test_governance_user_direct_access_merges_with_existing_policy(self):
         from hermes_cli.config import load_config, save_config

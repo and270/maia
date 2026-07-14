@@ -3231,13 +3231,14 @@ async def get_governance_overview():
     return _governance_overview_payload()
 
 
+@app.get("/api/secure-runtime/status")
 @app.get("/api/governance/sandbox-status")
-def get_governance_sandbox_status():
-    """Report whether gateway file operations can start secure execution."""
+def get_secure_runtime_status():
+    """Report full-automation readiness without changing system software."""
 
-    from tools.environments.docker import docker_runtime_status
+    from tools.environments.docker import secure_runtime_status
 
-    return docker_runtime_status()
+    return secure_runtime_status()
 
 
 def _validate_governance_roles(roles: List[str], hierarchy: List[str]) -> List[str]:

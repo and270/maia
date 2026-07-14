@@ -117,6 +117,11 @@ def test_ensure_docker_available_uses_resolved_executable(monkeypatch):
 def test_runtime_status_explains_disabled_wsl_integration(monkeypatch):
     monkeypatch.setattr(
         docker_env,
+        "_secure_runtime_platform",
+        lambda: ("windows_wsl", "Windows with WSL2", "Ubuntu"),
+    )
+    monkeypatch.setattr(
+        docker_env,
         "find_docker",
         lambda: "/mnt/c/Program Files/Docker/Docker/resources/bin/docker",
     )
@@ -139,6 +144,51 @@ def test_runtime_status_explains_disabled_wsl_integration(monkeypatch):
     assert status["ready"] is False
     assert status["status"] == "wsl_integration_disabled"
     assert "Settings > Resources > WSL Integration" in status["remediation"]
+    assert status["mode"] == "restricted"
+    assert status["platform"] == "windows_wsl"
+    assert status["blocked_capabilities"]
+
+
+def test_runtime_status_recommends_rootless_podman_on_linux(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("linux", "Linux", "ubuntu"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: None)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is False
+    assert status["mode"] == "restricted"
+    assert status["can_auto_setup"] is True
+    assert status["runtime"] is None
+    assert status["steps"][0]["command"].endswith("install podman")
+
+
+def test_runtime_status_reports_full_automation_through_podman(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("linux", "Linux", "fedora"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/podman")
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="podman version 5", stderr=""
+        ),
+    )
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is True
+    assert status["mode"] == "full"
+    assert status["runtime"] == "podman"
+    assert status["blocked_capabilities"] == []
+    assert status["steps"] == []
+    assert any("terminal" in item.casefold() for item in status["available_capabilities"])
 
 
 def test_ensure_docker_available_explains_disabled_wsl_integration(monkeypatch):

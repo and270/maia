@@ -439,14 +439,17 @@ the agent finishes its turn immediately and nothing expires.
 ## Terminal Governance
 
 Governance is always active. For gateway actors, file tools enforce policies
-directly and shell/`execute_code` calls run in a per-session Docker environment
+directly and shell/`execute_code` calls run in a per-session Docker or Podman environment
 that mounts only explicitly granted paths. No policies means no mounted company
-files. Subagents inherit the same environment, and Docker/setup failure blocks
+files. Subagents inherit the same environment, and secure-runtime failure blocks
 execution instead of falling back to host access.
 
-A Docker/setup failure is returned as retryable
+A secure-runtime failure is returned as retryable
 `secure_execution_unavailable`, not as a file-access denial. The saved grant is
-unchanged and no command or file modification runs. On Windows, Docker Desktop
+unchanged and no command or file modification runs. Maia calls this safe degraded
+state Restricted mode. Chat and path-checked file tools continue, while command
+automation stays blocked. Run `maia secure-runtime status` or
+`maia secure-runtime setup`. On Windows, Docker Desktop
 must have WSL integration enabled for the distribution running Maia; the
 Governance dashboard reports this health separately from authorization.
 

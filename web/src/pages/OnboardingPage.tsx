@@ -23,8 +23,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
+import { SecureRuntimePanel } from "@/components/SecureRuntimePanel";
 import {
   api,
+  type GovernanceSandboxStatus,
   type GovernanceWarning,
   type OnboardingProviderEntry,
   type OnboardingState,
@@ -576,12 +578,19 @@ const CHECKLIST = [
 
 export default function OnboardingPage() {
   const [state, setState] = useState<OnboardingState | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<GovernanceSandboxStatus | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
 
   const refresh = useCallback(() => {
     api
       .getOnboardingState()
       .then(setState)
       .catch(() => setState(null));
+    api
+      .getSecureRuntimeStatus()
+      .then(setRuntimeStatus)
+      .catch(() => setRuntimeStatus(null))
+      .finally(() => setRuntimeLoading(false));
   }, []);
 
   useEffect(() => {
@@ -605,7 +614,9 @@ export default function OnboardingPage() {
           Work through the numbered steps in order: model provider first (so
           Maia can answer at all), then the messaging gateway (so your team can
           reach it), then governance and dashboard access (so it is safe to
-          share). Everything else can follow at your own pace.
+          share), then the secure runtime for full governed terminal and code
+          automation. Maia remains safe in Restricted mode if that final system
+          dependency is not ready yet.
         </p>
       </section>
 
@@ -630,6 +641,37 @@ export default function OnboardingPage() {
         to="/governance"
         action="Open Governance"
       />
+
+      {runtimeStatus && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="flex items-center gap-3">
+                <StepMarker n={4} done={runtimeStatus.ready} />
+                <Terminal className="h-4 w-4" />
+                Enable full governed automation
+              </span>
+              <Badge
+                tone={runtimeStatus.ready ? "outline" : "warning"}
+                className={runtimeStatus.ready ? "border-success/40 text-success" : ""}
+              >
+                {runtimeStatus.ready ? "Done" : "Recommended"}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SecureRuntimePanel
+              status={runtimeStatus}
+              loading={runtimeLoading}
+              defaultExpanded
+              onRefresh={() => {
+                setRuntimeLoading(true);
+                refresh();
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <BaselineCard />
 

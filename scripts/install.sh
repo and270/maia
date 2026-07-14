@@ -1283,6 +1283,44 @@ EOF
     log_success "maia command ready"
 }
 
+configure_secure_runtime() {
+    local maia_cmd
+    maia_cmd="$(get_maia_command_path)"
+
+    echo ""
+    log_info "Checking the secure runtime for governed automation..."
+    if "$maia_cmd" secure-runtime status --quiet >/dev/null 2>&1; then
+        log_success "Full governed automation is ready"
+        return 0
+    fi
+
+    "$maia_cmd" secure-runtime status || true
+
+    if [ "$OS" = "android" ] || [ "$OS" = "unknown" ]; then
+        log_info "Maia will continue in Restricted mode on this platform."
+        return 0
+    fi
+
+    if [ "$IS_INTERACTIVE" = true ] || (: </dev/tty) 2>/dev/null; then
+        if prompt_yes_no "Set up full governed automation now?" "yes"; then
+            if "$maia_cmd" secure-runtime setup --yes; then
+                log_success "Secure runtime configured"
+            else
+                log_warn "Secure runtime setup still needs a manual operating-system step"
+                log_info "Maia is installed and safe in Restricted mode."
+                log_info "Finish later with: maia secure-runtime setup"
+            fi
+        else
+            log_info "Continuing in Restricted mode."
+            log_info "Finish later with: maia secure-runtime setup"
+        fi
+    else
+        log_info "No interactive terminal is available, so system software was not changed."
+        log_info "Maia is installed and safe in Restricted mode."
+        log_info "Finish later with: maia secure-runtime setup"
+    fi
+}
+
 copy_config_templates() {
     log_info "Setting up configuration files..."
 
@@ -1820,6 +1858,7 @@ main() {
     install_deps
     install_node_deps
     setup_path
+    configure_secure_runtime
     copy_config_templates
     offer_hermes_migration
     maybe_start_gateway

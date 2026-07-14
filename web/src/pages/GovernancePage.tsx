@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle,
   FileCheck,
   FolderTree,
   Network,
@@ -20,6 +19,7 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
 import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
 import { H2 } from "@/components/NouiTypography";
+import { SecureRuntimePanel } from "@/components/SecureRuntimePanel";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -999,14 +999,7 @@ export default function GovernancePage() {
     try {
       const [nextOverview, nextSandboxStatus] = await Promise.all([
         api.getGovernanceOverview(),
-        api.getGovernanceSandboxStatus().catch(
-          (): GovernanceSandboxStatus => ({
-            ready: false,
-            status: "daemon_unavailable",
-            message: "The dashboard could not verify secure Docker execution.",
-            remediation: "Check the Maia logs and Docker status, then refresh this page.",
-          }),
-        ),
+        api.getSecureRuntimeStatus().catch(() => null),
       ]);
       setOverview(nextOverview);
       setSandboxStatus(nextSandboxStatus);
@@ -1056,8 +1049,8 @@ export default function GovernancePage() {
               {overview.enabled ? "Enabled" : "Disabled"}
             </Badge>
             {sandboxStatus && (
-              <Badge tone={sandboxStatus.ready ? "success" : "destructive"}>
-                {sandboxStatus.ready ? "Secure execution ready" : "Secure execution unavailable"}
+              <Badge tone={sandboxStatus.ready ? "success" : "warning"}>
+                {sandboxStatus.ready ? "Full automation" : "Restricted mode"}
               </Badge>
             )}
             {pending > 0 && <Badge tone="warning">{pending} pending users</Badge>}
@@ -1071,25 +1064,12 @@ export default function GovernancePage() {
         </div>
       </header>
 
-      {sandboxStatus && !sandboxStatus.ready && (
-        <div className="flex flex-col gap-3 border border-destructive/40 bg-destructive/5 p-4 normal-case sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-            <div>
-              <div className="text-sm font-semibold text-foreground">File permissions are saved, but secure terminal and code edits are blocked</div>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{sandboxStatus.message}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{sandboxStatus.remediation}</p>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                Maia will not fall back to unrestricted host execution. No additional file grant is needed;
-                retry the same request after Docker is ready.
-              </p>
-            </div>
-          </div>
-          <Button size="sm" outlined onClick={() => void load()} disabled={loading}>
-            {loading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
-            Check again
-          </Button>
-        </div>
+      {sandboxStatus && (
+        <SecureRuntimePanel
+          status={sandboxStatus}
+          loading={loading}
+          onRefresh={() => void load()}
+        />
       )}
 
       <nav aria-label="Governance sections" className="flex overflow-x-auto border-b border-border">
