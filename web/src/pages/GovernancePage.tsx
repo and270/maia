@@ -1010,6 +1010,19 @@ export default function GovernancePage() {
     }
   }, [showToast]);
 
+  const finishRuntimeSetup = useCallback(async () => {
+    setLoading(true);
+    try {
+      const nextStatus = await api.provisionSecureRuntime();
+      setSandboxStatus(nextStatus);
+      showToast("Secure runtime is ready", "success");
+    } catch (error) {
+      showToast(`Could not finish secure runtime setup: ${error}`, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
   useEffect(() => {
     // Initial remote state load.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1068,6 +1081,7 @@ export default function GovernancePage() {
         <SecureRuntimePanel
           status={sandboxStatus}
           loading={loading}
+          onSetup={() => void finishRuntimeSetup()}
           onRefresh={() => void load()}
         />
       )}

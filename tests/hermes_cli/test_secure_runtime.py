@@ -74,6 +74,54 @@ def test_linux_setup_installs_podman_with_supported_package_manager(monkeypatch)
     ]
 
 
+def test_setup_pulls_and_validates_missing_sandbox_image(monkeypatch):
+    missing = _restricted_status(
+        status="image_missing",
+        runtime="docker",
+        image="example/maia-sandbox:test",
+        can_auto_setup=True,
+    )
+    ready = _restricted_status(
+        ready=True,
+        mode="full",
+        status="ready",
+        runtime="docker",
+        image="example/maia-sandbox:test",
+        blocked_capabilities=[],
+        steps=[],
+    )
+    statuses = iter([missing, ready])
+    commands = []
+
+    monkeypatch.setattr(secure_runtime, "secure_runtime_status", lambda: next(statuses))
+    monkeypatch.setattr(secure_runtime, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(
+        secure_runtime,
+        "_run",
+        lambda command: commands.append(command) or True,
+    )
+
+    assert secure_runtime.setup_secure_runtime(assume_yes=True) is True
+    assert commands == [
+        ["/usr/bin/docker", "pull", "example/maia-sandbox:test"]
+    ]
+
+
+def test_setup_stays_restricted_when_image_pull_fails(monkeypatch):
+    missing = _restricted_status(
+        status="image_missing",
+        runtime="docker",
+        image="example/maia-sandbox:test",
+        can_auto_setup=True,
+    )
+
+    monkeypatch.setattr(secure_runtime, "secure_runtime_status", lambda: missing)
+    monkeypatch.setattr(secure_runtime, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(secure_runtime, "_run", lambda command: False)
+
+    assert secure_runtime.setup_secure_runtime(assume_yes=True) is False
+
+
 def test_update_summary_does_not_treat_restricted_mode_as_failed_update(capsys):
     with patch.object(secure_runtime, "secure_runtime_status", return_value=_restricted_status()):
         secure_runtime.print_update_secure_runtime_summary()

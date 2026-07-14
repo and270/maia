@@ -125,6 +125,7 @@ governance:
     assert result["retryable"] is True
     assert result["permission_status"] == "unchanged"
     assert "another file grant" in result["user_guidance"]
+    assert "runtime diagnostic" in result["user_guidance"]
     assert "manager or administrator for access" not in result["user_guidance"]
 
 

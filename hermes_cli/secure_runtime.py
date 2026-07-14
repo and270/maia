@@ -9,7 +9,12 @@ import subprocess
 import sys
 from typing import Any
 
-from tools.environments.docker import secure_runtime_status
+from tools.environments.docker import (
+    RUNTIME_IMAGE_SETUP_STATUSES,
+    configured_runtime_image,
+    find_docker,
+    secure_runtime_status,
+)
 
 
 def _print_list(title: str, items: list[str]) -> None:
@@ -32,6 +37,8 @@ def print_secure_runtime_status(status: dict[str, Any] | None = None) -> dict[st
 
     print(f"{marker} Secure runtime: {mode}{runtime_text}")
     print(f"  Host: {current.get('platform_label', 'Unknown platform')}")
+    if current.get("image"):
+        print(f"  Image: {current.get('image')}")
     print(f"  {current.get('message', '')}")
     print()
     print("Why this matters")
@@ -79,6 +86,37 @@ def _run(command: list[str]) -> bool:
     except (FileNotFoundError, OSError) as exc:
         print(f"  Could not run the command: {exc}")
         return False
+
+
+def _image_setup(status: dict[str, Any], *, assume_yes: bool) -> bool:
+    """Download the configured sandbox image before claiming full readiness."""
+
+    runtime_executable = find_docker()
+    if not runtime_executable:
+        print("No supported container runtime is available to provision the image.")
+        return False
+
+    image = str(status.get("image") or configured_runtime_image()).strip()
+    if not image:
+        print("No sandbox image is configured under terminal.docker_image.")
+        return False
+    if not _confirm(
+        f"Download and validate Maia's sandbox image {image}?",
+        assume_yes=assume_yes,
+    ):
+        print("Continuing in Restricted mode. You can run this setup again later.")
+        return False
+
+    print()
+    print(f"Provisioning Maia sandbox image: {image}")
+    if _run([runtime_executable, "pull", image]):
+        return True
+    print()
+    print(
+        "The sandbox image could not be downloaded. Maia remains in Restricted "
+        "mode; review the Docker error above, then rerun this setup."
+    )
+    return False
 
 
 def _linux_setup(status: dict[str, Any], *, assume_yes: bool) -> bool:
@@ -147,9 +185,13 @@ def setup_secure_runtime(*, assume_yes: bool = False) -> bool:
     if current.get("ready"):
         return True
 
+    image_statuses = RUNTIME_IMAGE_SETUP_STATUSES
+    provisioning_image = current.get("status") in image_statuses
     platform_key = current.get("platform")
     changed = False
-    if platform_key == "linux" and not current.get("runtime"):
+    if provisioning_image:
+        changed = _image_setup(current, assume_yes=assume_yes)
+    elif platform_key == "linux" and not current.get("runtime"):
         changed = _linux_setup(current, assume_yes=assume_yes)
     elif platform_key == "macos" and current.get("runtime") == "podman":
         changed = _macos_podman_setup(current, assume_yes=assume_yes)
@@ -167,6 +209,14 @@ def setup_secure_runtime(*, assume_yes: bool = False) -> bool:
     print()
     print("Rechecking secure runtime...")
     refreshed = print_secure_runtime_status()
+    if refreshed.get("ready"):
+        return True
+    if not provisioning_image and refreshed.get("status") in image_statuses:
+        if not _image_setup(refreshed, assume_yes=assume_yes):
+            return False
+        print()
+        print("Rechecking secure runtime...")
+        refreshed = print_secure_runtime_status()
     return bool(refreshed.get("ready"))
 
 

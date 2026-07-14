@@ -3241,6 +3241,23 @@ def get_secure_runtime_status():
     return secure_runtime_status()
 
 
+@app.post("/api/secure-runtime/provision")
+def provision_secure_runtime():
+    """Download and validate the configured sandbox image.
+
+    This endpoint never installs or reconfigures Docker/Podman. It is available
+    only after the engine is reachable and closes the setup flow for admins who
+    enabled Docker Desktop or WSL integration after installing Maia.
+    """
+
+    from tools.environments.docker import provision_runtime_image
+
+    try:
+        return provision_runtime_image()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def _validate_governance_roles(roles: List[str], hierarchy: List[str]) -> List[str]:
     normalized = _coerce_role_list(roles)
     unknown = [role for role in normalized if role not in hierarchy]

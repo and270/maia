@@ -469,6 +469,40 @@ class TestWebServerEndpoints:
         assert legacy.status_code == 200
         assert legacy.json() == response.json()
 
+    def test_secure_runtime_image_can_be_provisioned_from_dashboard(self, monkeypatch):
+        from tools.environments import docker as docker_env
+
+        expected = {
+            "ready": True,
+            "mode": "full",
+            "status": "ready",
+            "runtime": "docker",
+            "image": "example/maia-sandbox:test",
+        }
+        monkeypatch.setattr(
+            docker_env,
+            "provision_runtime_image",
+            lambda: expected,
+        )
+
+        response = self.client.post("/api/secure-runtime/provision")
+
+        assert response.status_code == 200
+        assert response.json() == expected
+
+    def test_secure_runtime_provisioning_surfaces_pull_failure(self, monkeypatch):
+        from tools.environments import docker as docker_env
+
+        def _fail():
+            raise RuntimeError("registry connection reset")
+
+        monkeypatch.setattr(docker_env, "provision_runtime_image", _fail)
+
+        response = self.client.post("/api/secure-runtime/provision")
+
+        assert response.status_code == 503
+        assert "registry connection reset" in response.json()["detail"]
+
     def test_governance_user_direct_access_merges_with_existing_policy(self):
         from hermes_cli.config import load_config, save_config
 

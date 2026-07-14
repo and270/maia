@@ -49,6 +49,19 @@ def _make_dummy_env(**kwargs):
     )
 
 
+def test_configured_runtime_image_prefers_explicit_yaml_over_environment(monkeypatch):
+    from hermes_cli import config as config_module
+
+    monkeypatch.setenv("TERMINAL_DOCKER_IMAGE", "example/from-env:latest")
+    monkeypatch.setattr(
+        config_module,
+        "read_raw_config",
+        lambda: {"terminal": {"docker_image": "example/from-yaml:stable"}},
+    )
+
+    assert docker_env.configured_runtime_image() == "example/from-yaml:stable"
+
+
 def test_ensure_docker_available_logs_and_raises_when_not_found(monkeypatch, caplog):
     """When docker cannot be found, raise a clear error before container setup."""
 
@@ -191,6 +204,184 @@ def test_runtime_status_reports_full_automation_through_podman(monkeypatch):
     assert any("terminal" in item.casefold() for item in status["available_capabilities"])
 
 
+def test_runtime_status_is_restricted_when_sandbox_image_is_missing(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("windows_wsl", "Windows with WSL2", "Ubuntu"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_env,
+        "configured_runtime_image",
+        lambda: "example/maia-sandbox:test",
+    )
+
+    def _run(command, **kwargs):
+        calls.append(command)
+        if command[1] == "version":
+            return subprocess.CompletedProcess(command, 0, stdout="Docker version 28", stderr="")
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="Error response from daemon: No such image",
+            )
+        pytest.fail(f"unexpected command after missing image: {command}")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is False
+    assert status["mode"] == "restricted"
+    assert status["status"] == "image_missing"
+    assert status["image"] == "example/maia-sandbox:test"
+    assert status["can_auto_setup"] is True
+    assert "maia secure-runtime setup" in status["remediation"]
+    assert any(step.get("command") == "maia secure-runtime setup" for step in status["steps"])
+    assert not any(command[1] == "run" for command in calls)
+
+
+def test_runtime_status_smoke_tests_local_image_without_pulling(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("windows_wsl", "Windows with WSL2", "Ubuntu"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_env,
+        "configured_runtime_image",
+        lambda: "example/maia-sandbox:test",
+    )
+
+    def _run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is True
+    smoke_command = next(command for command in calls if command[1] == "run")
+    assert "--pull=never" in smoke_command
+    assert "--network=none" in smoke_command
+    assert ["--cap-drop", "ALL"] == smoke_command[
+        smoke_command.index("--cap-drop") : smoke_command.index("--cap-drop") + 2
+    ]
+    assert smoke_command[-3:] == ["example/maia-sandbox:test", "sleep", "0"]
+
+
+def test_runtime_status_rejects_image_that_cannot_start(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("windows_wsl", "Windows with WSL2", "Ubuntu"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_env,
+        "configured_runtime_image",
+        lambda: "example/maia-sandbox:broken",
+    )
+
+    def _run(command, **kwargs):
+        if command[1] == "version" or command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+        if command[1] == "run":
+            return subprocess.CompletedProcess(
+                command,
+                125,
+                stdout="",
+                stderr="executable file not found: sleep",
+            )
+        if command[1:3] == ["rm", "-f"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        pytest.fail(f"unexpected command: {command}")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is False
+    assert status["status"] == "image_unusable"
+    assert "executable file not found" in status["remediation"]
+
+
+def test_provision_runtime_image_pulls_then_rechecks(monkeypatch):
+    statuses = iter(
+        [
+            {
+                "ready": False,
+                "status": "image_missing",
+                "runtime": "docker",
+                "image": "example/maia-sandbox:test",
+            },
+            {
+                "ready": True,
+                "status": "ready",
+                "runtime": "docker",
+                "image": "example/maia-sandbox:test",
+            },
+        ]
+    )
+    commands = []
+
+    monkeypatch.setattr(
+        docker_env,
+        "secure_runtime_status",
+        lambda timeout=3: next(statuses),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+
+    def _run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="pulled", stderr="")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+
+    status = docker_env.provision_runtime_image()
+
+    assert status["ready"] is True
+    assert commands == [
+        ["/usr/bin/docker", "pull", "example/maia-sandbox:test"]
+    ]
+
+
+def test_provision_runtime_image_preserves_pull_error(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "secure_runtime_status",
+        lambda timeout=3: {
+            "ready": False,
+            "status": "image_missing",
+            "runtime": "docker",
+            "image": "example/maia-sandbox:test",
+        },
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="Head https://registry.example/v2/: EOF",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="registry.example"):
+        docker_env.provision_runtime_image()
+
+
 def test_ensure_docker_available_explains_disabled_wsl_integration(monkeypatch):
     monkeypatch.setattr(docker_env, "find_docker", lambda: "/custom/docker")
     monkeypatch.setattr(
@@ -206,6 +397,35 @@ def test_ensure_docker_available_explains_disabled_wsl_integration(monkeypatch):
 
     with pytest.raises(RuntimeError, match="WSL integration is disabled"):
         docker_env._ensure_docker_available()
+
+
+def test_container_start_failure_preserves_docker_stderr(monkeypatch):
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
+
+    def _run(command, **kwargs):
+        if command[1] == "version":
+            return subprocess.CompletedProcess(command, 0, stdout="Docker version", stderr="")
+        if command[1] == "run":
+            return subprocess.CompletedProcess(
+                command,
+                125,
+                stdout="",
+                stderr=(
+                    "failed to resolve reference example/maia-sandbox:test: "
+                    "Head https://registry.example/v2/: EOF"
+                ),
+            )
+        pytest.fail(f"unexpected command: {command}")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _make_dummy_env(image="example/maia-sandbox:test")
+
+    detail = str(excinfo.value)
+    assert "failed to resolve reference" in detail
+    assert "registry.example" in detail
+    assert "maia secure-runtime setup" in detail
 
 
 def test_auto_mount_host_cwd_adds_volume(monkeypatch, tmp_path):

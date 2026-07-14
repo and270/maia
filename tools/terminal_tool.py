@@ -884,7 +884,10 @@ def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None
 from tools.environments.local import LocalEnvironment as _LocalEnvironment
 from tools.environments.singularity import SingularityEnvironment as _SingularityEnvironment
 from tools.environments.ssh import SSHEnvironment as _SSHEnvironment
-from tools.environments.docker import DockerEnvironment as _DockerEnvironment
+from tools.environments.docker import (
+    DEFAULT_DOCKER_IMAGE,
+    DockerEnvironment as _DockerEnvironment,
+)
 from tools.environments.modal import ModalEnvironment as _ModalEnvironment
 from tools.environments.managed_modal import ManagedModalEnvironment as _ManagedModalEnvironment
 from tools.managed_tool_gateway import is_managed_tool_gateway_ready
@@ -1104,7 +1107,7 @@ def _parse_env_var(name: str, default: str, converter=int, type_label: str = "in
 def _get_env_config() -> Dict[str, Any]:
     """Get terminal environment configuration from environment variables."""
     # Default image with Python and Node.js for maximum compatibility
-    default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
+    default_image = DEFAULT_DOCKER_IMAGE
     env_type = os.getenv("TERMINAL_ENV", "local")
     
     mount_docker_cwd = os.getenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false").lower() in ("true", "1", "yes")
@@ -2449,7 +2452,7 @@ if __name__ == "__main__":
     print("  result = terminal_tool(command='python server.py', background=True)")
 
     print("\nEnvironment Variables:")
-    default_img = "nikolaik/python-nodejs:python3.11-nodejs20"
+    default_img = DEFAULT_DOCKER_IMAGE
     print(
         "  TERMINAL_ENV: "
         f"{os.getenv('TERMINAL_ENV', 'local')} "
