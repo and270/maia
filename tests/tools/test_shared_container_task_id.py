@@ -25,13 +25,21 @@ def _clean_overrides():
     """Ensure no stray overrides from other tests leak in."""
     before = dict(terminal_tool._task_env_overrides)
     parents_before = dict(terminal_tool._task_env_parents)
+    active_before = dict(terminal_tool._active_environments)
+    signatures_before = dict(terminal_tool._active_environment_override_signatures)
     terminal_tool._task_env_overrides.clear()
     terminal_tool._task_env_parents.clear()
+    terminal_tool._active_environments.clear()
+    terminal_tool._active_environment_override_signatures.clear()
     yield
     terminal_tool._task_env_overrides.clear()
     terminal_tool._task_env_overrides.update(before)
     terminal_tool._task_env_parents.clear()
     terminal_tool._task_env_parents.update(parents_before)
+    terminal_tool._active_environments.clear()
+    terminal_tool._active_environments.update(active_before)
+    terminal_tool._active_environment_override_signatures.clear()
+    terminal_tool._active_environment_override_signatures.update(signatures_before)
 
 
 def test_none_task_id_maps_to_default():
@@ -114,8 +122,11 @@ def test_get_active_env_honours_rl_override():
     rl_env = object()
     default_env = object()
     terminal_tool._active_environments["default"] = default_env
-    terminal_tool._active_environments["rl-42"] = rl_env
     terminal_tool.register_task_env_overrides("rl-42", {"docker_image": "x"})
+    terminal_tool._active_environments["rl-42"] = rl_env
+    terminal_tool._active_environment_override_signatures["rl-42"] = (
+        terminal_tool._environment_override_signature({"docker_image": "x"})
+    )
     try:
         # With an override registered, lookup returns the task's own env,
         # not the shared "default" one.
@@ -124,3 +135,86 @@ def test_get_active_env_honours_rl_override():
         terminal_tool.clear_task_env_overrides("rl-42")
         terminal_tool._active_environments.pop("default", None)
         terminal_tool._active_environments.pop("rl-42", None)
+
+
+class _GovernedEnv:
+    def __init__(self):
+        self.discarded = 0
+
+    def discard(self):
+        self.discarded += 1
+
+
+def _install_governed_env(task_id, overrides):
+    env = _GovernedEnv()
+    terminal_tool._active_environments[task_id] = env
+    terminal_tool._active_environment_override_signatures[task_id] = (
+        terminal_tool._environment_override_signature(overrides)
+    )
+    return env
+
+
+def test_same_governance_mounts_reuse_active_environment():
+    task_id = "gateway-session-stable"
+    overrides = {
+        "env_type": "docker",
+        "governance_sandbox": True,
+        "docker_volumes": ["/company:/company:ro"],
+    }
+    terminal_tool.register_task_env_overrides(task_id, overrides)
+    env = _install_governed_env(task_id, overrides)
+
+    terminal_tool.register_task_env_overrides(task_id, dict(overrides))
+
+    assert terminal_tool._active_environments[task_id] is env
+    assert env.discarded == 0
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (["/company:/company:ro"], ["/company:/company:rw"]),
+        (["/company:/company:rw"], ["/company:/company:ro"]),
+        (["/company:/company:ro"], []),
+        ([], ["/company:/company:ro"]),
+    ],
+)
+def test_governance_mount_change_discards_cached_environment(before, after):
+    task_id = "gateway-session-changing"
+    old_overrides = {
+        "env_type": "docker",
+        "governance_sandbox": True,
+        "docker_volumes": before,
+    }
+    terminal_tool.register_task_env_overrides(task_id, old_overrides)
+    env = _install_governed_env(task_id, old_overrides)
+
+    terminal_tool.register_task_env_overrides(
+        task_id,
+        {**old_overrides, "docker_volumes": after},
+    )
+
+    assert task_id not in terminal_tool._active_environments
+    assert task_id not in terminal_tool._active_environment_override_signatures
+    assert env.discarded == 1
+
+
+def test_governed_raw_execution_rejects_unsigned_file_tool_environment():
+    task_id = "gateway-session-file-tool-first"
+    overrides = {
+        "env_type": "docker",
+        "governance_sandbox": True,
+        "docker_volumes": ["/company:/company:ro"],
+    }
+    terminal_tool.register_task_env_overrides(task_id, overrides)
+    file_tool_env = _GovernedEnv()
+    terminal_tool._active_environments[task_id] = file_tool_env
+
+    retired = terminal_tool._retire_stale_environment_for_overrides(
+        task_id,
+        overrides,
+    )
+
+    assert retired is True
+    assert task_id not in terminal_tool._active_environments
+    assert file_tool_env.discarded == 1

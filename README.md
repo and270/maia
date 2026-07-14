@@ -62,6 +62,7 @@ maia gateway      # messaging gateway
 maia cron list    # scheduled workflows
 maia model        # model/provider selection
 maia doctor       # diagnostics
+maia secure-runtime status  # governed terminal/code isolation status
 maia update       # update to the latest version
 maia uninstall    # remove Maia (can keep configs/data)
 maia-acp          # ACP editor integration
@@ -76,7 +77,7 @@ maia-agent        # direct agent runner
 curl -fsSL https://ampliia.com/maia/install.sh | bash
 ```
 
-The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, and builds the dashboard. It then offers to open the dashboard in your browser, which walks you through setup in order: model provider and API key, messaging gateway, governance and dashboard access, with a chat tab to talk to Maia right away.
+The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, and builds the dashboard. It also checks the secure runtime used for governed terminal/code automation: on supported Linux distributions it can offer to install rootless Podman; on macOS and Windows/WSL it shows the operating-system step that still needs your confirmation. Skipping that step does not break Maia: installation finishes in Restricted mode. The dashboard then walks through model, gateway, governance, secure-runtime readiness, and chat.
 
 If you skipped that step:
 
@@ -113,6 +114,32 @@ curl -fsSL https://ampliia.com/maia/install.sh | bash -s -- --no-migrate-hermes 
 
 For a governed, review-first import of a Hermes export archive, use [`maia import --from-hermes-export`](#migrating-from-upstream-hermes) instead.
 
+### Secure runtime: Full automation or Restricted mode
+
+Docker or Podman is **not required for Maia's core application**. Chat, messaging gateways, Governance, approvals, audit logging, and path-checked file tools continue to work without a container runtime. A secure runtime is required when a governed gateway user asks Maia to run arbitrary terminal commands, Python/code, Office automation, or a delegated agent that uses those capabilities.
+
+This matters because Governance determines which host paths a person may use, while the container is the execution boundary that exposes only those granted paths to a command. If the boundary is unavailable, Maia refuses the command with `secure_execution_unavailable`; it never falls back to unrestricted host execution.
+
+| State | What happens |
+|---|---|
+| **Full automation** | Governed terminal, code, Office/Python, and delegated command execution can run inside Docker or Podman with only authorized paths mounted. |
+| **Restricted mode** | Maia remains safe and usable, but those command-based capabilities are blocked. Safe file reads and supported staged file changes still follow Governance normally. |
+
+The quick installer performs this check. To configure or repair it later:
+
+```bash
+maia secure-runtime status   # explain the current state and consequences
+maia secure-runtime setup    # guided setup for this operating system
+```
+
+Operating-system steps:
+
+1. **Windows with WSL2:** install and start [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/). In Docker Desktop open **Settings > Resources > WSL Integration**, enable the distribution that runs Maia, and choose **Apply & restart**. Back in Ubuntu/WSL, run `docker version`, then `maia secure-runtime status`.
+2. **Linux:** run `maia secure-runtime setup` and accept the rootless Podman installation offered for supported distributions. For manual installation use the [official Podman instructions](https://podman.io/docs/installation), verify with `podman version`, then recheck Maia.
+3. **macOS:** install Podman with its [official macOS installer](https://podman.io/docs/installation), then run `podman machine init` once and `podman machine start`. Docker Desktop is also supported. Verify with `podman version` or `docker version`, then recheck Maia.
+
+After the runtime becomes ready, retry the same messaging request. File grants apply immediately; no new thread, new grant, or gateway restart is required.
+
 ### Windows (WSL)
 
 Maia runs on Windows through WSL2 (same recommendation as upstream Hermes).
@@ -132,6 +159,7 @@ maia
 ```
 
 Notes for WSL:
+- Governed gateway terminal/code automation uses Docker isolation. The installer detects a missing or disconnected Docker Desktop integration and keeps Maia in Restricted mode until it is ready.
 - The installer keeps everything on the Linux filesystem (`~/.maia`), which avoids the slow `/mnt/c/...` installs that cause most WSL failures.
 - The `maia` command works from any directory once your shell is reloaded.
 - Keep company files you want Maia to govern inside WSL (e.g. `~/company-files`) for the same filesystem-performance reason. Windows paths remain reachable under `/mnt/c/...` when needed.
@@ -143,7 +171,7 @@ maia update            # pull the latest version and reinstall dependencies
 maia update --check    # only check whether an update is available
 ```
 
-`maia update` fetches the latest code from git, stashes and restores local changes safely, reinstalls dependencies, and clears stale bytecode. Options: `--backup` forces a pre-update backup to `<MAIA_HOME>/backups/`, `--yes` assumes yes for prompts (for scripts and cron), and re-running the install one-liner is always a safe repair path for broken checkouts.
+`maia update` fetches the latest code from git, stashes and restores local changes safely, reinstalls dependencies, clears stale bytecode, and prints the current Full automation or Restricted mode status. It never installs system software during an unattended update; run `maia secure-runtime setup` if the post-update check reports Restricted mode. Options: `--backup` forces a pre-update backup to `<MAIA_HOME>/backups/`, `--yes` assumes yes for prompts (for scripts and cron), and re-running the install one-liner is always a safe repair path for broken checkouts.
 
 ### Uninstall
 
@@ -277,7 +305,7 @@ What this enforces today:
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Governance cannot be disabled. A gateway role admits the person to Maia but grants no files by itself; with no matching policy, every file path is denied.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. If secure isolation is unavailable, Maia refuses execution instead of using the host.
+- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. Grant, revocation, read/write, and approval-mode changes rebuild that environment when the user's next gateway request starts, so no new thread or gateway restart is required. If secure isolation is unavailable, Maia leaves permissions unchanged and refuses execution instead of using the host.
 - Admins manage gateway admission, people, teams, and global file access from the dashboard or by asking Maia in an authenticated private gateway conversation. Team leaders can manage file policy only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.

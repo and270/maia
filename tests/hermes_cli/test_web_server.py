@@ -429,6 +429,46 @@ class TestWebServerEndpoints:
         assert actor_key not in load_config()["governance"]["users"]
         assert load_env()["DISCORD_ALLOWED_USERS"] == "333333333333333333"
 
+    def test_governance_sandbox_status_is_separate_from_file_authorization(
+        self, monkeypatch
+    ):
+        from tools.environments import docker as docker_env
+
+        monkeypatch.setattr(
+            docker_env,
+            "secure_runtime_status",
+            lambda: {
+                "ready": False,
+                "mode": "restricted",
+                "status": "wsl_integration_disabled",
+                "platform": "windows_wsl",
+                "platform_label": "Windows with WSL2",
+                "distro": "Ubuntu",
+                "runtime": "docker",
+                "message": "Docker Desktop WSL integration is disabled.",
+                "remediation": "Enable Ubuntu and retry.",
+                "why": "Governed commands need isolation.",
+                "available_capabilities": ["Chat"],
+                "blocked_capabilities": ["Terminal"],
+                "steps": [],
+                "can_auto_setup": False,
+                "setup_command": "maia secure-runtime setup",
+                "verify_command": "maia secure-runtime status",
+                "docs_url": "https://ampliia.com/en/maia/docs/getting-started/secure-runtime/",
+            },
+        )
+
+        response = self.client.get("/api/secure-runtime/status")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "wsl_integration_disabled"
+        assert response.json()["ready"] is False
+        assert response.json()["mode"] == "restricted"
+
+        legacy = self.client.get("/api/governance/sandbox-status")
+        assert legacy.status_code == 200
+        assert legacy.json() == response.json()
+
     def test_governance_user_direct_access_merges_with_existing_policy(self):
         from hermes_cli.config import load_config, save_config
 
@@ -480,8 +520,78 @@ class TestWebServerEndpoints:
                 "recursive": True,
                 "read": True,
                 "write": True,
+                "write_approval_roles": ["admin"],
             }
         ]
+
+    def test_governance_direct_grant_can_set_and_clear_path_write_approval(self):
+        from hermes_cli.config import load_config, save_config
+
+        actor_key = "slack:U_APPROVAL"
+        save_config(
+            {
+                "governance": {
+                    "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+                    "users": {
+                        actor_key: {"name": "Writer", "roles": ["operator"]},
+                        "slack:U_MANAGER": {"name": "Manager", "roles": ["manager"]},
+                    },
+                }
+            }
+        )
+
+        gated = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={
+                "name": "Writer",
+                "roles": ["operator"],
+                "teams": [],
+                "file_access": [
+                    {
+                        "path": "/srv/reviewed",
+                        "recursive": True,
+                        "read": True,
+                        "write": True,
+                        "write_approval_roles": ["manager"],
+                        "write_approval_users": ["slack:U_MANAGER"],
+                    }
+                ],
+            },
+        )
+        assert gated.status_code == 200, gated.text
+        policy = load_config()["governance"]["folder_policies"][0]
+        assert policy["write_approval_roles"] == ["manager"]
+        assert policy["write_approval_users"] == ["slack:U_MANAGER"]
+
+        overview = self.client.get("/api/governance/overview").json()
+        grant = next(
+            user for user in overview["users"] if user["actor_key"] == actor_key
+        )["file_access"][0]
+        assert grant["write_approval_roles"] == ["manager"]
+        assert grant["write_approval_users"] == ["slack:U_MANAGER"]
+
+        direct = self.client.put(
+            f"/api/governance/users/{actor_key}",
+            json={
+                "name": "Writer",
+                "roles": ["operator"],
+                "teams": [],
+                "file_access": [
+                    {
+                        "path": "/srv/reviewed",
+                        "recursive": True,
+                        "read": True,
+                        "write": True,
+                        "write_approval_roles": [],
+                        "write_approval_users": [],
+                    }
+                ],
+            },
+        )
+        assert direct.status_code == 200, direct.text
+        policy = load_config()["governance"]["folder_policies"][0]
+        assert policy["write_approval_roles"] == []
+        assert policy["write_approval_users"] == []
 
     def test_governance_team_lifecycle_manages_members_grants_and_root(self):
         from hermes_cli.config import load_config, save_config

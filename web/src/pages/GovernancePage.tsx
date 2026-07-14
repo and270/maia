@@ -19,6 +19,7 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
 import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
 import { H2 } from "@/components/NouiTypography";
+import { SecureRuntimePanel } from "@/components/SecureRuntimePanel";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import {
   api,
   type GovernanceFileGrant,
   type GovernanceOverview,
+  type GovernanceSandboxStatus,
   type GovernanceTeam,
   type GovernanceUser,
 } from "@/lib/api";
@@ -168,7 +170,10 @@ function PeopleWorkspace({
         teams: draft.teams,
         file_access: draft.file_access,
       });
-      showToast(`${selected.actor_key} is active in Governance.`, "success");
+      showToast(
+        `${selected.actor_key} is active. File access applies on the user's next request; no new thread or gateway restart is required.`,
+        "success",
+      );
       await reload();
     } catch (error) {
       showToast(`Could not save user: ${error}`, "error");
@@ -366,6 +371,10 @@ function PeopleWorkspace({
               onChange={(file_access) =>
                 setDraft((current) => ({ ...current, file_access }))
               }
+              approvalRoles={overview.role_hierarchy}
+              approvalUsers={overview.users.filter(
+                (user) => user.governed && user.actor_key !== selected.actor_key,
+              )}
               description="These grants apply only to this identity and merge with team and role policies for the same path."
             />
 
@@ -514,7 +523,10 @@ function TeamsWorkspace({
     setBusy(true);
     try {
       await api.saveGovernanceTeam(selected.name, draft);
-      showToast(`${selected.name} saved.`, "success");
+      showToast(
+        `${selected.name} saved. File access applies on the user's next request; no new thread or gateway restart is required.`,
+        "success",
+      );
       await reload();
     } catch (error) {
       showToast(`Could not save team: ${error}`, "error");
@@ -682,6 +694,8 @@ function TeamsWorkspace({
             <GovernanceFileGrantEditor
               grants={draft.file_access}
               onChange={(file_access) => setDraft((current) => ({ ...current, file_access }))}
+              approvalRoles={overview.role_hierarchy}
+              approvalUsers={overview.users.filter((user) => user.governed)}
               title="Team file and folder access"
               description="These read/write grants apply to every governed member of this team."
             />
@@ -976,13 +990,19 @@ export default function GovernancePage() {
   const rawSection = params.get("section") as GovernanceSection | null;
   const section = rawSection && SECTIONS.includes(rawSection) ? rawSection : "people";
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
+  const [sandboxStatus, setSandboxStatus] = useState<GovernanceSandboxStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setOverview(await api.getGovernanceOverview());
+      const [nextOverview, nextSandboxStatus] = await Promise.all([
+        api.getGovernanceOverview(),
+        api.getSecureRuntimeStatus().catch(() => null),
+      ]);
+      setOverview(nextOverview);
+      setSandboxStatus(nextSandboxStatus);
     } catch (error) {
       showToast(`Failed to load Governance: ${error}`, "error");
     } finally {
@@ -1028,6 +1048,11 @@ export default function GovernancePage() {
             <Badge tone={overview.enabled ? "success" : "destructive"}>
               {overview.enabled ? "Enabled" : "Disabled"}
             </Badge>
+            {sandboxStatus && (
+              <Badge tone={sandboxStatus.ready ? "success" : "warning"}>
+                {sandboxStatus.ready ? "Full automation" : "Restricted mode"}
+              </Badge>
+            )}
             {pending > 0 && <Badge tone="warning">{pending} pending users</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-sm normal-case leading-6 text-muted-foreground">
@@ -1038,6 +1063,14 @@ export default function GovernancePage() {
           Tenant <code>{overview.tenant_id}</code> · {overview.users.length} identities
         </div>
       </header>
+
+      {sandboxStatus && (
+        <SecureRuntimePanel
+          status={sandboxStatus}
+          loading={loading}
+          onRefresh={() => void load()}
+        />
+      )}
 
       <nav aria-label="Governance sections" className="flex overflow-x-auto border-b border-border">
         {SECTIONS.map((item) => {

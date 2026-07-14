@@ -157,7 +157,7 @@ Before creating policies:
 3. Approve dashboard requests and assign only registered teams.
 4. Add direct user/team paths from **People** or **Teams**, or open **File Access** for advanced policies.
 
-Governance is always active. Adding a person and assigning a role admits that identity to Maia but does not grant any files. Unmatched paths are always denied. File tools enforce the policy directly; gateway `terminal` and `execute_code` sessions run in Docker with only granted paths mounted, and delegated agents inherit that sandbox. If isolation is unavailable, Maia returns a structured denial and asks the user to request access or administrator help rather than falling back to the host.
+Governance is always active. Adding a person and assigning a role admits that identity to Maia but does not grant any files. Unmatched paths are always denied. File tools enforce the policy directly; gateway `terminal` and `execute_code` sessions run through Docker or Podman with only granted paths mounted, and delegated agents inherit that boundary. If isolation is unavailable, Maia enters Restricted mode: chat and path-checked file tools continue, command automation returns `secure_execution_unavailable`, and nothing falls back to the host. Operators can run `maia secure-runtime status` or `maia secure-runtime setup`.
 
 System admins manage people, teams, direct grants, sensitive folders, role-wide grants, and delegated team roots. Team leaders use File Access after approved `/dashboard` access but see only the roots delegated to them.
 

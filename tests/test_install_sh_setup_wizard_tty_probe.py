@@ -25,7 +25,12 @@ INSTALL_SH = REPO_ROOT / "scripts" / "install.sh"
 
 # Every function in scripts/install.sh that previously gated on a bare
 # ``[ -e /dev/tty ]`` check before redirecting stdin from ``/dev/tty``.
-GATED_FUNCTIONS = ("run_setup_wizard", "install_system_packages", "maybe_start_gateway")
+GATED_FUNCTIONS = (
+    "run_setup_wizard",
+    "install_system_packages",
+    "configure_secure_runtime",
+    "maybe_start_gateway",
+)
 
 
 def _extract_function_body(name: str) -> str:

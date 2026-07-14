@@ -114,6 +114,100 @@ def test_ensure_docker_available_uses_resolved_executable(monkeypatch):
     ]
 
 
+def test_runtime_status_explains_disabled_wsl_integration(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("windows_wsl", "Windows with WSL2", "Ubuntu"),
+    )
+    monkeypatch.setattr(
+        docker_env,
+        "find_docker",
+        lambda: "/mnt/c/Program Files/Docker/Docker/resources/bin/docker",
+    )
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout=(
+                "The command 'docker' could not be found in this WSL 2 distro. "
+                "We recommend to activate the WSL integration in Docker Desktop settings."
+            ),
+            stderr="",
+        ),
+    )
+
+    status = docker_env.docker_runtime_status()
+
+    assert status["ready"] is False
+    assert status["status"] == "wsl_integration_disabled"
+    assert "Settings > Resources > WSL Integration" in status["remediation"]
+    assert status["mode"] == "restricted"
+    assert status["platform"] == "windows_wsl"
+    assert status["blocked_capabilities"]
+
+
+def test_runtime_status_recommends_rootless_podman_on_linux(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("linux", "Linux", "ubuntu"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: None)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is False
+    assert status["mode"] == "restricted"
+    assert status["can_auto_setup"] is True
+    assert status["runtime"] is None
+    assert status["steps"][0]["command"].endswith("install podman")
+
+
+def test_runtime_status_reports_full_automation_through_podman(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("linux", "Linux", "fedora"),
+    )
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/podman")
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="podman version 5", stderr=""
+        ),
+    )
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["ready"] is True
+    assert status["mode"] == "full"
+    assert status["runtime"] == "podman"
+    assert status["blocked_capabilities"] == []
+    assert status["steps"] == []
+    assert any("terminal" in item.casefold() for item in status["available_capabilities"])
+
+
+def test_ensure_docker_available_explains_disabled_wsl_integration(monkeypatch):
+    monkeypatch.setattr(docker_env, "find_docker", lambda: "/custom/docker")
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="activate the WSL integration in Docker Desktop settings",
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="WSL integration is disabled"):
+        docker_env._ensure_docker_available()
+
+
 def test_auto_mount_host_cwd_adds_volume(monkeypatch, tmp_path):
     """Opt-in docker cwd mounting should bind the host cwd to /workspace."""
     project_dir = tmp_path / "my-project"
@@ -222,6 +316,27 @@ def test_non_persistent_cleanup_removes_container(monkeypatch):
     # Should have stop and rm calls via Popen
     stop_cmds = [c for c in popen_cmds if container_id in str(c) and "stop" in str(c)]
     assert len(stop_cmds) >= 1, f"cleanup() should schedule docker stop for {container_id}"
+
+
+def test_discard_synchronously_removes_governed_container(monkeypatch):
+    calls = []
+
+    def _run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="removed", stderr="")
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _run)
+    env = docker_env.DockerEnvironment.__new__(docker_env.DockerEnvironment)
+    env._container_id = "governed-container"
+    env._docker_exe = "/usr/bin/docker"
+    env._persistent = True
+    env._workspace_dir = None
+    env._home_dir = None
+
+    env.discard()
+
+    assert calls[0][0] == ["/usr/bin/docker", "rm", "-f", "governed-container"]
+    assert env._container_id is None
 
 
 class _FakePopen:

@@ -7133,6 +7133,9 @@ def cmd_update(args):
     _update_io_state = _install_hangup_protection(gateway_mode=gateway_mode)
     try:
         _cmd_update_impl(args, gateway_mode=gateway_mode)
+        from hermes_cli.secure_runtime import print_update_secure_runtime_summary
+
+        print_update_secure_runtime_summary()
     finally:
         _finalize_update_output(_update_io_state)
 
@@ -8169,6 +8172,7 @@ def _coalesce_session_name_args(argv: list) -> list:
         "insights",
         "version",
         "update",
+        "secure-runtime",
         "uninstall",
         "profile",
         "dashboard",
@@ -10654,6 +10658,41 @@ Examples:
         help="Assume yes for interactive prompts (config migration, stash restore). API-key entry is skipped; run 'maia config migrate' separately for those.",
     )
     update_parser.set_defaults(func=cmd_update)
+
+    # =========================================================================
+    # secure-runtime command
+    # =========================================================================
+    from hermes_cli.secure_runtime import cmd_secure_runtime
+
+    secure_runtime_parser = subparsers.add_parser(
+        "secure-runtime",
+        help="Check or set up governed terminal/code isolation",
+        description=(
+            "Check the container security boundary used for governed gateway "
+            "terminal, code, Office/Python, and delegated execution"
+        ),
+    )
+    secure_runtime_subparsers = secure_runtime_parser.add_subparsers(
+        dest="secure_runtime_action"
+    )
+    secure_runtime_status_parser = secure_runtime_subparsers.add_parser(
+        "status", help="Show full-automation or restricted-mode status"
+    )
+    secure_runtime_status_parser.add_argument(
+        "--json", action="store_true", help="Print the complete status as JSON"
+    )
+    secure_runtime_status_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Print nothing and exit non-zero unless full automation is ready",
+    )
+    secure_runtime_setup_parser = secure_runtime_subparsers.add_parser(
+        "setup", help="Run safe automated setup or show exact operating-system steps"
+    )
+    secure_runtime_setup_parser.add_argument(
+        "--yes", "-y", action="store_true", help="Accept supported package installation"
+    )
+    secure_runtime_parser.set_defaults(func=cmd_secure_runtime)
 
     # =========================================================================
     # uninstall command

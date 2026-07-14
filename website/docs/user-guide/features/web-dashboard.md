@@ -227,7 +227,9 @@ Create and manage scheduled cron jobs that run agent prompts on a recurring sche
 
 Manage the server-side folder policies that bound what Maia can read, search, write, patch, or delete. The page saves to `<MAIA_HOME>/config.yaml` under `governance`; the dashboard is the normal way to edit it.
 
-Governance is organized as **People → Teams → File access → Approvals → Settings**. People supports select-only team assignment and direct per-person paths. Teams supports creation, membership, team paths, and delegated management roots. File access opens directly on the policy list with **Add policy** and retains the advanced role, deny, and write-approval fields.
+Governance is organized as **People → Teams → File access → Approvals → Settings**. People supports select-only team assignment and direct per-person paths. Teams supports creation, membership, team paths, and delegated management roots. Every direct grant offers **No write**, **Direct write**, or **Write after approval**, with approver roles and named identities. The checkpoint is stored on the matching path policy and therefore applies to every non-approver who can write that same path. File access opens directly on the policy list with **Add policy** and retains the advanced role, deny, and write-approval fields.
+
+Saving a grant, revocation, read/write change, or approval-mode change replaces the affected gateway sandbox when the user's next gateway request starts. Users do not need a new chat thread and administrators do not need to restart the gateway. The page reports Docker sandbox readiness separately: a saved grant can be valid while secure terminal/code execution is temporarily unavailable, in which case Maia changes no files through those tools and instructs the requester to retry after the runtime is restored.
 
 There is one File Access page. The logged-in dashboard actor determines what it shows:
 

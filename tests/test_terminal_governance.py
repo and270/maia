@@ -100,7 +100,7 @@ def test_terminal_tool_blocks_denied_actor(tmp_path, monkeypatch):
     assert "manager or administrator" in result["user_guidance"]
 
 
-def test_terminal_tool_fails_closed_without_any_file_grant(tmp_path, monkeypatch):
+def test_terminal_tool_distinguishes_unavailable_sandbox_from_file_denial(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("MAIA_USER_ID", "U_OPERATOR")
@@ -120,9 +120,55 @@ governance:
     from tools.terminal_tool import terminal_tool
 
     result = json.loads(terminal_tool(command="echo should-not-run"))
-    assert result["code"] == "governance_access_denied"
+    assert result["code"] == "secure_execution_unavailable"
     assert result["resource"] == "terminal"
-    assert result["retryable"] is False
+    assert result["retryable"] is True
+    assert result["permission_status"] == "unchanged"
+    assert "another file grant" in result["user_guidance"]
+    assert "manager or administrator for access" not in result["user_guidance"]
+
+
+def test_execute_code_distinguishes_unavailable_sandbox_from_file_denial(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("MAIA_USER_ID", "U_OPERATOR")
+    monkeypatch.setenv("MAIA_USER_PLATFORM", "slack")
+    _terminal_config(tmp_path, "    allowed_roles: [operator]")
+
+    from tools import code_execution_tool
+    from tools.terminal_tool import (
+        clear_task_env_overrides,
+        register_task_env_overrides,
+    )
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("Docker Desktop WSL integration is disabled")
+
+    monkeypatch.setattr(code_execution_tool, "_execute_remote", unavailable)
+    register_task_env_overrides(
+        "governed-code",
+        {
+            "env_type": "docker",
+            "governance_sandbox": True,
+            "docker_volumes": [],
+        },
+    )
+    try:
+        result = json.loads(
+            code_execution_tool.execute_code(
+                code="print('should not run')",
+                task_id="governed-code",
+            )
+        )
+    finally:
+        clear_task_env_overrides("governed-code")
+
+    assert result["code"] == "secure_execution_unavailable"
+    assert result["resource"] == "execute_code"
+    assert result["runtime_status"] == "wsl_integration_disabled"
+    assert result["permission_status"] == "unchanged"
 
 
 # ---------------------------------------------------------------------------

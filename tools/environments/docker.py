@@ -7,6 +7,7 @@ persistence via bind mounts.
 
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -143,6 +144,414 @@ def find_docker() -> Optional[str]:
     return None
 
 
+def _docker_result_text(result: subprocess.CompletedProcess) -> str:
+    return "\n".join(
+        part.strip()
+        for part in (getattr(result, "stdout", ""), getattr(result, "stderr", ""))
+        if str(part or "").strip()
+    )
+
+
+def _wsl_integration_disabled(text: str) -> bool:
+    normalized = str(text or "").casefold()
+    return (
+        "wsl integration" in normalized
+        or "activate the wsl integration" in normalized
+        or "could not be found in this wsl" in normalized
+    )
+
+
+_SECURE_RUNTIME_DOCS_URL = (
+    "https://ampliia.com/en/maia/docs/getting-started/secure-runtime/"
+)
+_SECURE_RUNTIME_WHY = (
+    "Maia uses a Linux container as the security boundary for terminal, code, "
+    "Office/Python automation, and delegated command execution requested by "
+    "governed gateway users. The container receives only the paths that "
+    "Governance grants to that identity."
+)
+_RESTRICTED_AVAILABLE = [
+    "Chat, messaging gateways, Governance, approvals, and audit logging",
+    "Path-checked file reads and supported staged file changes",
+]
+_FULL_AVAILABLE = [
+    *_RESTRICTED_AVAILABLE,
+    "Governed terminal, Python/code, and Office automation",
+    "Delegated agents that need terminal or code execution",
+]
+_RESTRICTED_BLOCKED = [
+    "Gateway terminal and arbitrary shell commands",
+    "Python/code execution and Office automation that require a command runtime",
+    "Delegated agents that need terminal or code execution",
+]
+
+
+def _read_linux_distro() -> str:
+    try:
+        values: dict[str, str] = {}
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            for raw_line in handle:
+                key, separator, value = raw_line.strip().partition("=")
+                if separator:
+                    values[key] = value.strip().strip('"')
+        return (values.get("ID") or "linux").casefold()
+    except OSError:
+        return "linux"
+
+
+def _running_in_wsl() -> bool:
+    if os.getenv("WSL_DISTRO_NAME") or os.getenv("WSL_INTEROP"):
+        return True
+    try:
+        with open("/proc/version", encoding="utf-8") as handle:
+            return "microsoft" in handle.read().casefold()
+    except OSError:
+        return False
+
+
+def _secure_runtime_platform() -> tuple[str, str, str]:
+    system = platform.system().casefold()
+    if system == "linux" and _running_in_wsl():
+        return (
+            "windows_wsl",
+            "Windows with WSL2",
+            os.getenv("WSL_DISTRO_NAME") or _read_linux_distro(),
+        )
+    if system == "linux":
+        distro = _read_linux_distro()
+        if os.getenv("TERMUX_VERSION"):
+            return "android_termux", "Android with Termux", "termux"
+        return "linux", "Linux", distro
+    if system == "darwin":
+        return "macos", "macOS", "macos"
+    if system == "windows":
+        return "windows_native", "Windows", "windows"
+    return "unknown", platform.system() or "Unknown platform", system or "unknown"
+
+
+def _runtime_name(executable: Optional[str], output: str = "") -> Optional[str]:
+    combined = f"{os.path.basename(executable or '')} {output}".casefold()
+    if "podman" in combined:
+        return "podman"
+    return "docker" if executable else None
+
+
+def _linux_podman_install_command(distro: str) -> Optional[str]:
+    if distro in {"ubuntu", "debian", "linuxmint", "raspbian"}:
+        return "sudo apt-get update && sudo apt-get -y install podman"
+    if distro in {"fedora", "centos", "rhel", "rocky", "almalinux"}:
+        return "sudo dnf -y install podman"
+    if distro in {"arch", "manjaro"}:
+        return "sudo pacman -S --noconfirm podman"
+    if distro in {"opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"}:
+        return "sudo zypper --non-interactive install podman"
+    if distro == "alpine":
+        return "sudo apk add podman"
+    return None
+
+
+def _secure_runtime_steps(
+    platform_key: str,
+    status: str,
+    runtime: Optional[str],
+    distro: str,
+) -> list[dict[str, str]]:
+    if platform_key == "windows_wsl":
+        return [
+            {
+                "title": "Install and start Docker Desktop in Windows",
+                "detail": (
+                    "Use the WSL 2 backend. Docker Desktop is installed and opened "
+                    "from Windows, not from inside the Maia Linux terminal."
+                ),
+                "url": "https://docs.docker.com/desktop/setup/install/windows-install/",
+            },
+            {
+                "title": "Enable this Maia distribution",
+                "detail": (
+                    "In Docker Desktop, open Settings > Resources > WSL Integration, "
+                    "enable the distribution that runs Maia, then choose Apply & restart."
+                ),
+            },
+            {
+                "title": "Verify from the Maia terminal",
+                "detail": "Both the Docker client and server must respond inside WSL.",
+                "command": "docker version",
+            },
+            {
+                "title": "Recheck Maia",
+                "detail": "No gateway restart or new file grant is required.",
+                "command": "maia secure-runtime status",
+            },
+        ]
+
+    if platform_key == "linux":
+        install_command = _linux_podman_install_command(distro)
+        if not runtime:
+            steps = [
+                {
+                    "title": "Install rootless Podman",
+                    "detail": (
+                        "Podman is the preferred Linux option because it can run "
+                        "without a permanent root daemon."
+                    ),
+                    "url": "https://podman.io/docs/installation",
+                }
+            ]
+            if install_command:
+                steps[0]["command"] = install_command
+        elif runtime == "docker":
+            steps = [
+                {
+                    "title": "Start the Docker engine",
+                    "detail": (
+                        "Start or repair Docker Engine, then make sure this user can "
+                        "run Docker without an authorization error."
+                    ),
+                    "command": "sudo systemctl enable --now docker",
+                    "url": "https://docs.docker.com/engine/install/",
+                }
+            ]
+        else:
+            steps = [
+                {
+                    "title": "Repair rootless Podman",
+                    "detail": "Run Podman as the same user that runs Maia and resolve the reported error.",
+                    "command": "podman info",
+                    "url": "https://podman.io/docs/installation",
+                }
+            ]
+        steps.extend(
+            [
+                {
+                    "title": "Verify the runtime",
+                    "detail": "The client must be able to create Linux containers.",
+                    "command": f"{runtime or 'podman'} version",
+                },
+                {
+                    "title": "Recheck Maia",
+                    "detail": "Retry the original request after this reports Full automation.",
+                    "command": "maia secure-runtime status",
+                },
+            ]
+        )
+        return steps
+
+    if platform_key == "macos":
+        if runtime == "docker":
+            steps = [
+                {
+                    "title": "Start Docker Desktop",
+                    "detail": "Wait until Docker Desktop reports that its engine is running.",
+                    "url": "https://docs.docker.com/desktop/setup/install/mac-install/",
+                }
+            ]
+        else:
+            steps = [
+                {
+                    "title": "Install Podman for macOS",
+                    "detail": (
+                        "Use the official Podman installer. macOS needs a small Linux "
+                        "virtual machine because containers use the Linux kernel."
+                    ),
+                    "url": "https://podman.io/docs/installation",
+                },
+                {
+                    "title": "Create and start the Podman machine",
+                    "detail": "Run init once; later sessions normally need only start.",
+                    "command": "podman machine init && podman machine start",
+                },
+            ]
+        steps.extend(
+            [
+                {
+                    "title": "Verify the runtime",
+                    "detail": "The Linux container engine must answer from the Maia terminal.",
+                    "command": f"{runtime or 'podman'} version",
+                },
+                {
+                    "title": "Recheck Maia",
+                    "detail": "No additional file grant is required.",
+                    "command": "maia secure-runtime status",
+                },
+            ]
+        )
+        return steps
+
+    return [
+        {
+            "title": "Use a supported Maia host",
+            "detail": (
+                "Full governed command automation is supported on Linux, macOS, "
+                "and Windows through WSL2. This installation remains in Restricted mode."
+            ),
+            "url": _SECURE_RUNTIME_DOCS_URL,
+        }
+    ]
+
+
+def _secure_runtime_payload(
+    *,
+    ready: bool,
+    status: str,
+    message: str,
+    remediation: str,
+    platform_key: str,
+    platform_label: str,
+    distro: str,
+    runtime: Optional[str],
+) -> dict[str, object]:
+    install_command = _linux_podman_install_command(distro)
+    can_auto_setup = (
+        (platform_key == "linux" and not runtime and bool(install_command))
+        or (platform_key == "macos" and runtime == "podman" and not ready)
+    )
+    return {
+        "ready": ready,
+        "mode": "full" if ready else "restricted",
+        "status": status,
+        "platform": platform_key,
+        "platform_label": platform_label,
+        "distro": distro,
+        "runtime": runtime,
+        "message": message,
+        "remediation": remediation,
+        "why": _SECURE_RUNTIME_WHY,
+        "available_capabilities": list(
+            _FULL_AVAILABLE if ready else _RESTRICTED_AVAILABLE
+        ),
+        "blocked_capabilities": [] if ready else list(_RESTRICTED_BLOCKED),
+        "steps": []
+        if ready
+        else _secure_runtime_steps(platform_key, status, runtime, distro),
+        "can_auto_setup": can_auto_setup,
+        "setup_command": "maia secure-runtime setup",
+        "verify_command": "maia secure-runtime status",
+        "docs_url": _SECURE_RUNTIME_DOCS_URL,
+    }
+
+
+def secure_runtime_status(timeout: int = 3) -> dict[str, object]:
+    """Return an actionable, non-throwing secure-container readiness snapshot."""
+
+    platform_key, platform_label, distro = _secure_runtime_platform()
+    if platform_key in {"windows_native", "android_termux", "unknown"}:
+        return _secure_runtime_payload(
+            ready=False,
+            status="unsupported_platform",
+            message=(
+                f"Full governed command automation is not available on {platform_label}."
+            ),
+            remediation=(
+                "Run Maia on Linux, macOS, or Windows through WSL2, or continue "
+                "with the safe capabilities available in Restricted mode."
+            ),
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime=None,
+        )
+
+    # Docker Desktop can enable WSL integration while Maia is running and may
+    # replace its helper path with /usr/bin/docker. Rediscover the executable
+    # so the dashboard's "Check again" action never needs a process restart.
+    global _docker_executable
+    _docker_executable = None
+    docker_exe = find_docker()
+    if not docker_exe:
+        return _secure_runtime_payload(
+            ready=False,
+            status="not_found",
+            message="No supported secure runtime is available to Maia.",
+            remediation=(
+                "Set up Podman or Docker for this operating system, then recheck. "
+                "Maia can continue in Restricted mode until then."
+            ),
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime=None,
+        )
+    runtime = _runtime_name(docker_exe)
+    try:
+        result = subprocess.run(
+            [docker_exe, "version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return _secure_runtime_payload(
+            ready=False,
+            status="daemon_timeout",
+            message=f"{(runtime or 'container').title()} is installed, but its engine is not responding.",
+            remediation="Start or repair the secure runtime, wait until it is ready, then recheck.",
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime=runtime,
+        )
+    except (FileNotFoundError, OSError):
+        return _secure_runtime_payload(
+            ready=False,
+            status="not_executable",
+            message="Maia found a secure runtime, but could not execute it.",
+            remediation="Repair the runtime installation or executable path, then recheck.",
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime=runtime,
+        )
+
+    output = _docker_result_text(result)
+    runtime = _runtime_name(docker_exe, output)
+    if result.returncode == 0:
+        return _secure_runtime_payload(
+            ready=True,
+            status="ready",
+            message=f"Full governed automation is ready through {(runtime or 'the secure runtime').title()}.",
+            remediation="",
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime=runtime,
+        )
+    if _wsl_integration_disabled(output):
+        _docker_executable = None
+        return _secure_runtime_payload(
+            ready=False,
+            status="wsl_integration_disabled",
+            message=(
+                "Docker Desktop is running, but its WSL integration is not enabled "
+                "for the Linux distribution running Maia."
+            ),
+            remediation=(
+                "In Docker Desktop, open Settings > Resources > WSL Integration, "
+                "enable the Maia distribution, choose Apply & restart, then recheck."
+            ),
+            platform_key=platform_key,
+            platform_label=platform_label,
+            distro=distro,
+            runtime="docker",
+        )
+    return _secure_runtime_payload(
+        ready=False,
+        status="daemon_unavailable",
+        message=f"{(runtime or 'The secure runtime').title()} is installed, but Maia cannot reach its engine.",
+        remediation="Start or repair the secure runtime, wait until it is ready, then recheck.",
+        platform_key=platform_key,
+        platform_label=platform_label,
+        distro=distro,
+        runtime=runtime,
+    )
+
+
+def docker_runtime_status(timeout: int = 3) -> dict[str, object]:
+    """Backward-compatible alias for the product-level secure runtime status."""
+
+    return secure_runtime_status(timeout=timeout)
+
+
 # Security flags applied to every container.
 # The container itself is the security boundary (isolated from host).
 # We drop all capabilities then add back the minimum needed:
@@ -258,13 +667,23 @@ def _ensure_docker_available() -> None:
         raise
     else:
         if result.returncode != 0:
+            result_text = _docker_result_text(result)
             logger.error(
                 "Docker backend selected but '%s version' failed "
-                "(exit code %d, stderr=%s)",
+                "(exit code %d, output=%s)",
                 docker_exe,
                 result.returncode,
-                result.stderr.strip(),
+                result_text,
             )
+            if _wsl_integration_disabled(result_text):
+                global _docker_executable
+                _docker_executable = None
+                raise RuntimeError(
+                    "Docker Desktop WSL integration is disabled for the Linux "
+                    "distribution running Maia. In Docker Desktop, open Settings "
+                    "> Resources > WSL Integration, enable this distribution, "
+                    "choose Apply & restart, then retry."
+                )
             raise RuntimeError(
                 "Docker command is available but 'docker version' failed. "
                 "Check your Docker installation."
@@ -643,3 +1062,26 @@ class DockerEnvironment(BaseEnvironment):
             for d in (self._workspace_dir, self._home_dir):
                 if d:
                     shutil.rmtree(d, ignore_errors=True)
+
+    def discard(self):
+        """Synchronously remove the container before replacing security mounts."""
+
+        container_id = self._container_id
+        if not container_id:
+            return
+        result = subprocess.run(
+            [self._docker_exe, "rm", "-f", container_id],
+            capture_output=True,
+            text=True,
+            timeout=65,
+        )
+        output = _docker_result_text(result)
+        if result.returncode != 0 and "no such container" not in output.casefold():
+            raise RuntimeError(
+                f"Could not remove the previous governed container: {output or 'docker rm failed'}"
+            )
+        self._container_id = None
+        if not self._persistent:
+            for directory in (self._workspace_dir, self._home_dir):
+                if directory:
+                    shutil.rmtree(directory, ignore_errors=True)

@@ -180,14 +180,21 @@ def subject_file_grants(
         can_read = generic or subject in coerce_list(policy.get(read_key))
         can_write = generic or subject in coerce_list(policy.get(write_key))
         if can_read or can_write:
-            result.append(
-                {
-                    "path": path,
-                    "recursive": bool(policy.get("recursive", True)),
-                    "read": can_read,
-                    "write": can_write,
-                }
-            )
+            grant = {
+                "path": path,
+                "recursive": bool(policy.get("recursive", True)),
+                "read": can_read,
+                "write": can_write,
+            }
+            if can_write and "write_approval_roles" in policy:
+                grant["write_approval_roles"] = coerce_list(
+                    policy.get("write_approval_roles")
+                )
+            if can_write and "write_approval_users" in policy:
+                grant["write_approval_users"] = coerce_list(
+                    policy.get("write_approval_users")
+                )
+            result.append(grant)
     return result
 
 
@@ -195,6 +202,15 @@ def _grant_value(grant: Any, key: str, default: Any = None) -> Any:
     if isinstance(grant, dict):
         return grant.get(key, default)
     return getattr(grant, key, default)
+
+
+def _grant_declares(grant: Any, key: str) -> bool:
+    if isinstance(grant, dict):
+        return key in grant
+    fields_set = getattr(grant, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(grant, "__fields_set__", set())
+    return key in fields_set
 
 
 def replace_subject_file_grants(
@@ -237,6 +253,12 @@ def replace_subject_file_grants(
         recursive = bool(_grant_value(grant, "recursive", True))
         read = bool(_grant_value(grant, "read", False))
         write = bool(_grant_value(grant, "write", False))
+        declares_approval = any(
+            _grant_declares(grant, field)
+            for field in ("write_approval_roles", "write_approval_users")
+        )
+        approval_roles = coerce_list(_grant_value(grant, "write_approval_roles"))
+        approval_users = coerce_list(_grant_value(grant, "write_approval_users"))
         if not path:
             raise GovernanceAdminError("Every file access grant needs a path")
         if not read and not write:
@@ -259,6 +281,31 @@ def replace_subject_file_grants(
             policy[write_key] = sorted(
                 set(coerce_list(policy.get(write_key))) | {subject}
             )
+        if declares_approval:
+            if not write and (approval_roles or approval_users):
+                raise GovernanceAdminError(
+                    f"Write approval for {path} requires write access"
+                )
+            hierarchy = coerce_list(governance.get("role_hierarchy")) or DEFAULT_ROLES
+            unknown_roles = sorted(set(approval_roles) - set(hierarchy))
+            if unknown_roles:
+                raise GovernanceAdminError(
+                    f"Unknown write approver roles: {', '.join(unknown_roles)}"
+                )
+            configured_users = governance.get("users")
+            configured_users = (
+                configured_users if isinstance(configured_users, dict) else {}
+            )
+            unknown_users = sorted(set(approval_users) - set(configured_users))
+            if unknown_users:
+                raise GovernanceAdminError(
+                    f"Unknown write approvers: {', '.join(unknown_users)}"
+                )
+            # Approval is a property of the matching path policy, so it applies
+            # to every non-approver who can write that same path. Empty lists
+            # explicitly mean direct write and opt out of an ancestor rule.
+            policy["write_approval_roles"] = sorted(set(approval_roles))
+            policy["write_approval_users"] = sorted(set(approval_users))
 
     governance["folder_policies"] = policies
 
