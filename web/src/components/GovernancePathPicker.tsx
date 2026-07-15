@@ -100,7 +100,7 @@ export function GovernancePathPicker({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-stretch justify-center bg-background/85 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1100] flex items-stretch justify-center bg-background/85 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={(event) => event.target === event.currentTarget && onClose()}
       role="dialog"
       aria-modal="true"
