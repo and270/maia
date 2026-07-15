@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -105,20 +106,20 @@ export function GatewayPeopleEditor({
             People and Governance
           </div>
           <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
-            Saved {platform.name} people stay in this compact list. Add a person or select an existing one to open
+            Saved {platform.name} users stay in this compact list. Add a user or select an existing one to open
             the focused editor for identity, role, teams, and direct file access. Saving updates both
             <code> {allowKey}</code> and Governance.
           </p>
           {!configured && (
             <p className="mt-2 text-xs normal-case leading-5 text-warning">
-              You can prepare and save people now, but access only takes effect after the connection credentials
+              You can prepare and save users now, but access only takes effect after the connection credentials
               above are configured and the gateway is running.
             </p>
           )}
         </div>
-        <Button size="sm" outlined className="shrink-0" onClick={openNew} disabled={disabled}>
+        <Button size="sm" className="min-h-10 shrink-0 px-5" onClick={openNew} disabled={disabled}>
           <Plus className="h-4 w-4" />
-          Add person
+          Add user
         </Button>
       </div>
 
@@ -130,37 +131,39 @@ export function GatewayPeopleEditor({
           disabled={disabled}
         >
           <span>
-            <span className="block text-sm font-semibold text-foreground">No people added yet</span>
+            <span className="block text-sm font-semibold text-foreground">No users added yet</span>
             <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-              Add yourself first. On a fresh installation, the first saved person is protected as admin.
+              Add yourself first. On a fresh installation, the first saved user is protected as admin.
             </span>
           </span>
           <Plus className="h-5 w-5 shrink-0 text-primary" />
         </button>
       ) : (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <div className="mt-4 divide-y divide-border/70 border border-border/70 bg-background">
           {rows.map((row, index) => (
             <button
               key={`${row.user_id}:${index}`}
               type="button"
-              className="group flex min-h-28 w-full items-start justify-between gap-4 border border-border bg-background p-4 text-left normal-case transition-colors hover:border-primary/50 hover:bg-primary/[0.025]"
+              className="group flex min-h-16 w-full items-center justify-between gap-4 px-4 py-3 text-left normal-case transition-colors hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
               onClick={() => setDialog({ index, row: clonePerson(row) })}
               disabled={disabled}
-              aria-label={`Edit ${row.name || row.user_id}`}
+              aria-label={`Edit user ${row.name || row.user_id}`}
             >
-              <span className="min-w-0">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-foreground">
-                    {row.name || row.user_id}
+              <span className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-5">
+                <span className="min-w-0 sm:w-[38%]">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-foreground">
+                      {row.name || row.user_id}
+                    </span>
+                    <span className={row.governed ? "text-xs text-success" : "text-xs text-warning"}>
+                      {row.governed ? "Active" : "Needs role"}
+                    </span>
                   </span>
-                  <span className={row.governed ? "text-xs text-success" : "text-xs text-warning"}>
-                    {row.governed ? "Active" : "Needs role"}
-                  </span>
+                  <code className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {platform.id}:{row.user_id}
+                  </code>
                 </span>
-                <code className="mt-1 block truncate text-xs text-muted-foreground">
-                  {platform.id}:{row.user_id}
-                </code>
-                <span className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span>{row.roles.length ? row.roles.join(", ") : "No role"}</span>
                   <span>{row.teams.length} team{row.teams.length === 1 ? "" : "s"}</span>
                   <span>{row.file_access.length} path{row.file_access.length === 1 ? "" : "s"}</span>
@@ -177,7 +180,7 @@ export function GatewayPeopleEditor({
       )}
 
       <div className="mt-4 border-t border-border/60 pt-4 text-xs normal-case leading-5 text-muted-foreground">
-        Use the list for quick people management, or open{" "}
+        Use the list for quick user management, or open{" "}
         <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
           Governance / People
         </Link>{" "}
@@ -249,7 +252,7 @@ function GatewayPersonDialog({
   const validationError = !normalizedId
     ? `Enter a valid ${platform.name} user ID.`
     : duplicate
-      ? "This person is already in the list."
+      ? "This user is already in the list."
       : !draft.name.trim()
         ? "Display name is required."
         : draft.roles.length === 0
@@ -258,7 +261,7 @@ function GatewayPersonDialog({
   const changed = JSON.stringify(draft) !== JSON.stringify(row);
   const requestClose = useCallback(() => {
     if (saving) return;
-    if (changed && !window.confirm("Discard the unsaved changes in this person editor?")) return;
+    if (changed && !window.confirm("Discard the unsaved changes in this user editor?")) return;
     onClose();
   }, [changed, onClose, saving]);
   const requestCloseRef = useRef(requestClose);
@@ -286,9 +289,9 @@ function GatewayPersonDialog({
     };
   }, []);
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-stretch justify-center bg-background/85 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1000] flex items-stretch justify-center bg-background/85 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="gateway-person-dialog-title"
@@ -300,7 +303,7 @@ function GatewayPersonDialog({
         <header className="flex items-start justify-between gap-4 border-b border-border p-4 sm:px-5">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.08em] text-primary">
-              {editing ? "Edit person" : "Add person"} · {platform.name}
+              {editing ? "Edit user" : "Add user"} · {platform.name}
             </div>
             <h2 id="gateway-person-dialog-title" className="mt-1 text-base font-semibold normal-case text-foreground">
               {editing ? draft.name || draft.user_id : "Configure identity and access"}
@@ -309,7 +312,7 @@ function GatewayPersonDialog({
               Saving updates the messaging allowlist and Governance together.
             </p>
           </div>
-          <Button ghost size="icon" onClick={requestClose} disabled={saving} aria-label="Close person editor">
+          <Button ghost size="icon" onClick={requestClose} disabled={saving} aria-label="Close user editor">
             <X className="h-4 w-4" />
           </Button>
         </header>
@@ -371,7 +374,7 @@ function GatewayPersonDialog({
                 emptyHint="Select at least one role"
               />
               <span className="text-xs text-muted-foreground">
-                Assign the narrowest role that covers this person&apos;s work.
+                Assign the narrowest role that covers this user&apos;s work.
               </span>
             </div>
             <div className="grid content-start gap-2 normal-case">
@@ -394,7 +397,7 @@ function GatewayPersonDialog({
             approvalRoles={roleOptions}
             approvalUsers={approvalUsers}
             title="Direct file and folder access"
-            description="Add only the server paths this person needs. Team access can be managed later in Governance."
+            description="Add only the server paths this user needs. Team access can be managed later in Governance."
             disabled={saving}
           />
         </div>
@@ -427,11 +430,12 @@ function GatewayPersonDialog({
               disabled={Boolean(validationError) || saving}
             >
               {saving ? <Spinner className="h-4 w-4" /> : null}
-              {editing ? "Save changes" : "Add person"}
+              {editing ? "Save changes" : "Add user"}
             </Button>
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
