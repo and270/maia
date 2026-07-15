@@ -134,12 +134,16 @@ export type GovernanceSandboxStatus = {
     | "not_executable"
     | "daemon_timeout"
     | "daemon_unavailable"
+    | "image_missing"
+    | "image_unusable"
+    | "image_check_failed"
     | "wsl_integration_disabled"
     | "unsupported_platform";
   platform: "windows_wsl" | "linux" | "macos" | "windows_native" | "android_termux" | "unknown";
   platform_label: string;
   distro: string;
   runtime: "docker" | "podman" | null;
+  image: string | null;
   message: string;
   remediation: string;
   why: string;
@@ -392,6 +396,10 @@ export const api = {
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
   getSecureRuntimeStatus: () =>
     fetchJSON<GovernanceSandboxStatus>("/api/secure-runtime/status"),
+  provisionSecureRuntime: () =>
+    fetchJSON<GovernanceSandboxStatus>("/api/secure-runtime/provision", {
+      method: "POST",
+    }),
   getGovernanceSandboxStatus: () =>
     fetchJSON<GovernanceSandboxStatus>("/api/secure-runtime/status"),
   browseGovernanceServerPaths: (path?: string) => {

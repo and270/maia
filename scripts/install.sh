@@ -1288,7 +1288,7 @@ configure_secure_runtime() {
     maia_cmd="$(get_maia_command_path)"
 
     echo ""
-    log_info "Checking the secure runtime for governed automation..."
+    log_info "Checking the secure runtime and sandbox image for governed automation..."
     if "$maia_cmd" secure-runtime status --quiet >/dev/null 2>&1; then
         log_success "Full governed automation is ready"
         return 0

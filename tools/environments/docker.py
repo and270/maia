@@ -21,6 +21,12 @@ from tools.environments.local import _HERMES_PROVIDER_ENV_BLOCKLIST
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_DOCKER_IMAGE = "nikolaik/python-nodejs:python3.11-nodejs20"
+RUNTIME_IMAGE_SETUP_STATUSES = frozenset(
+    {"image_missing", "image_unusable", "image_check_failed"}
+)
+
+
 # Common Docker Desktop install paths checked when 'docker' is not in PATH.
 # macOS Intel: /usr/local/bin, macOS Apple Silicon (Homebrew): /opt/homebrew/bin,
 # Docker Desktop app bundle: /Applications/Docker.app/Contents/Resources/bin
@@ -152,6 +158,32 @@ def _docker_result_text(result: subprocess.CompletedProcess) -> str:
     )
 
 
+def configured_runtime_image() -> str:
+    """Return the sandbox image Maia will use for governed Docker sessions.
+
+    ``config.yaml`` is authoritative when it explicitly contains
+    ``terminal.docker_image``.  The environment variable remains supported for
+    legacy and service deployments that do not persist that setting in YAML.
+    Keeping this lookup here makes the readiness check and terminal runtime use
+    the same configured image without importing ``terminal_tool`` (which would
+    create a circular dependency).
+    """
+
+    try:
+        from hermes_cli.config import read_raw_config
+
+        raw = read_raw_config() or {}
+        terminal = raw.get("terminal") if isinstance(raw, dict) else None
+        configured = terminal.get("docker_image") if isinstance(terminal, dict) else None
+        if isinstance(configured, str) and configured.strip():
+            return os.path.expandvars(configured.strip())
+    except Exception:
+        logger.debug("Could not read terminal.docker_image for runtime check", exc_info=True)
+
+    environment_image = os.getenv("TERMINAL_DOCKER_IMAGE", "").strip()
+    return environment_image or DEFAULT_DOCKER_IMAGE
+
+
 def _wsl_integration_disabled(text: str) -> bool:
     normalized = str(text or "").casefold()
     return (
@@ -255,7 +287,30 @@ def _secure_runtime_steps(
     status: str,
     runtime: Optional[str],
     distro: str,
+    image: Optional[str] = None,
 ) -> list[dict[str, str]]:
+    if status in RUNTIME_IMAGE_SETUP_STATUSES:
+        image_text = image or "the configured sandbox image"
+        return [
+            {
+                "title": "Provision Maia's sandbox image",
+                "detail": (
+                    f"Maia needs {image_text} locally before governed terminal, "
+                    "Python, Office, or delegated commands can run. Setup downloads "
+                    "the image and validates it with a disposable container."
+                ),
+                "command": "maia secure-runtime setup",
+            },
+            {
+                "title": "Retry the original request",
+                "detail": (
+                    "When setup reports Full automation, retry the same request. "
+                    "No gateway restart or new file grant is required."
+                ),
+                "command": "maia secure-runtime status",
+            },
+        ]
+
     if platform_key == "windows_wsl":
         return [
             {
@@ -400,11 +455,16 @@ def _secure_runtime_payload(
     platform_label: str,
     distro: str,
     runtime: Optional[str],
+    image: Optional[str] = None,
 ) -> dict[str, object]:
     install_command = _linux_podman_install_command(distro)
     can_auto_setup = (
         (platform_key == "linux" and not runtime and bool(install_command))
         or (platform_key == "macos" and runtime == "podman" and not ready)
+        or (
+            bool(runtime)
+            and status in RUNTIME_IMAGE_SETUP_STATUSES
+        )
     )
     return {
         "ready": ready,
@@ -414,6 +474,7 @@ def _secure_runtime_payload(
         "platform_label": platform_label,
         "distro": distro,
         "runtime": runtime,
+        "image": image,
         "message": message,
         "remediation": remediation,
         "why": _SECURE_RUNTIME_WHY,
@@ -423,12 +484,100 @@ def _secure_runtime_payload(
         "blocked_capabilities": [] if ready else list(_RESTRICTED_BLOCKED),
         "steps": []
         if ready
-        else _secure_runtime_steps(platform_key, status, runtime, distro),
+        else _secure_runtime_steps(platform_key, status, runtime, distro, image),
         "can_auto_setup": can_auto_setup,
         "setup_command": "maia secure-runtime setup",
         "verify_command": "maia secure-runtime status",
         "docs_url": _SECURE_RUNTIME_DOCS_URL,
     }
+
+
+def _remove_probe_container(docker_exe: str, container_name: str) -> None:
+    """Best-effort cleanup for a timed-out or failed readiness probe."""
+
+    try:
+        subprocess.run(
+            [docker_exe, "rm", "-f", container_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        logger.debug(
+            "Could not remove secure-runtime probe container %s",
+            container_name,
+            exc_info=True,
+        )
+
+
+def _probe_runtime_image(
+    docker_exe: str,
+    image: str,
+    *,
+    timeout: int,
+) -> tuple[str, str]:
+    """Check that *image* is local and can start under Maia's isolation flags.
+
+    The inspect step deliberately precedes ``docker run --pull=never`` so a
+    status request never performs a surprise network download.  Provisioning is
+    handled explicitly by ``maia secure-runtime setup`` and by the installer.
+    """
+
+    try:
+        inspected = subprocess.run(
+            [docker_exe, "image", "inspect", "--format", "{{.Id}}", image],
+            capture_output=True,
+            text=True,
+            timeout=max(5, timeout),
+        )
+    except subprocess.TimeoutExpired:
+        return "image_check_failed", "Timed out while checking the sandbox image."
+    except (FileNotFoundError, OSError) as exc:
+        return "image_check_failed", str(exc)
+
+    inspect_output = _docker_result_text(inspected)
+    if inspected.returncode != 0:
+        return "image_missing", inspect_output
+
+    container_name = f"maia-runtime-check-{uuid.uuid4().hex[:8]}"
+    smoke_command = [
+        docker_exe,
+        "run",
+        "--rm",
+        "--pull=never",
+        "--name",
+        container_name,
+        "--init",
+        "--network=none",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "16",
+        image,
+        "sleep",
+        "0",
+    ]
+    try:
+        smoke = subprocess.run(
+            smoke_command,
+            capture_output=True,
+            text=True,
+            timeout=max(15, timeout),
+        )
+    except subprocess.TimeoutExpired:
+        _remove_probe_container(docker_exe, container_name)
+        return "image_unusable", "The sandbox image startup check timed out."
+    except (FileNotFoundError, OSError) as exc:
+        _remove_probe_container(docker_exe, container_name)
+        return "image_check_failed", str(exc)
+
+    if smoke.returncode != 0:
+        detail = _docker_result_text(smoke)
+        _remove_probe_container(docker_exe, container_name)
+        return "image_unusable", detail
+    return "ready", ""
 
 
 def secure_runtime_status(timeout: int = 3) -> dict[str, object]:
@@ -506,15 +655,64 @@ def secure_runtime_status(timeout: int = 3) -> dict[str, object]:
     output = _docker_result_text(result)
     runtime = _runtime_name(docker_exe, output)
     if result.returncode == 0:
+        image = configured_runtime_image()
+        image_status, image_detail = _probe_runtime_image(
+            docker_exe,
+            image,
+            timeout=timeout,
+        )
+        detail_suffix = (
+            f" Runtime reported: {image_detail[:800]}" if image_detail.strip() else ""
+        )
+        if image_status == "image_missing":
+            return _secure_runtime_payload(
+                ready=False,
+                status=image_status,
+                message=(
+                    f"{(runtime or 'The secure runtime').title()} is running, but "
+                    f"Maia's sandbox image {image} is not installed."
+                ),
+                remediation=(
+                    "Run `maia secure-runtime setup` to download and validate the "
+                    f"configured image.{detail_suffix}"
+                ),
+                platform_key=platform_key,
+                platform_label=platform_label,
+                distro=distro,
+                runtime=runtime,
+                image=image,
+            )
+        if image_status != "ready":
+            return _secure_runtime_payload(
+                ready=False,
+                status=image_status,
+                message=(
+                    f"{(runtime or 'The secure runtime').title()} can see Maia's "
+                    f"sandbox image {image}, but cannot start it safely."
+                ),
+                remediation=(
+                    "Run `maia secure-runtime setup` to refresh the image and repeat "
+                    f"the startup check.{detail_suffix}"
+                ),
+                platform_key=platform_key,
+                platform_label=platform_label,
+                distro=distro,
+                runtime=runtime,
+                image=image,
+            )
         return _secure_runtime_payload(
             ready=True,
             status="ready",
-            message=f"Full governed automation is ready through {(runtime or 'the secure runtime').title()}.",
+            message=(
+                "Full governed automation is ready through "
+                f"{(runtime or 'the secure runtime').title()} using {image}."
+            ),
             remediation="",
             platform_key=platform_key,
             platform_label=platform_label,
             distro=distro,
             runtime=runtime,
+            image=image,
         )
     if _wsl_integration_disabled(output):
         _docker_executable = None
@@ -550,6 +748,68 @@ def docker_runtime_status(timeout: int = 3) -> dict[str, object]:
     """Backward-compatible alias for the product-level secure runtime status."""
 
     return secure_runtime_status(timeout=timeout)
+
+
+def provision_runtime_image(
+    *,
+    pull_timeout: int = 900,
+    status_timeout: int = 15,
+) -> dict[str, object]:
+    """Pull and validate Maia's configured sandbox image.
+
+    This is the mutation used by the guided CLI setup and dashboard completion
+    flow after the container engine itself is available.  It deliberately
+    refuses to install or reconfigure Docker/Podman; operating-system setup
+    remains an explicit administrator action.
+    """
+
+    current = secure_runtime_status(timeout=status_timeout)
+    if current.get("ready"):
+        return current
+    if current.get("status") not in RUNTIME_IMAGE_SETUP_STATUSES:
+        raise RuntimeError(
+            str(current.get("remediation") or current.get("message") or "")
+            or "The secure container engine must be repaired before provisioning."
+        )
+
+    docker_exe = find_docker()
+    if not docker_exe:
+        raise RuntimeError("No supported container runtime is available.")
+    image = str(current.get("image") or configured_runtime_image()).strip()
+    if not image:
+        raise RuntimeError("No sandbox image is configured under terminal.docker_image.")
+
+    logger.info("Provisioning secure-runtime image %s", image)
+    try:
+        pulled = subprocess.run(
+            [docker_exe, "pull", image],
+            capture_output=True,
+            text=True,
+            timeout=pull_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Timed out while downloading Maia's sandbox image {image}."
+        ) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise RuntimeError(f"Could not run the container runtime: {exc}") from exc
+
+    if pulled.returncode != 0:
+        detail = _docker_result_text(pulled) or (
+            f"container runtime exited with code {pulled.returncode}"
+        )
+        raise RuntimeError(
+            f"Could not download Maia's sandbox image {image}. "
+            f"Docker reported: {detail[:2000]}"
+        )
+
+    refreshed = secure_runtime_status(timeout=status_timeout)
+    if not refreshed.get("ready"):
+        raise RuntimeError(
+            "The sandbox image downloaded, but Maia's startup validation failed. "
+            + str(refreshed.get("remediation") or refreshed.get("message") or "")
+        )
+    return refreshed
 
 
 # Security flags applied to every container.
@@ -921,13 +1181,29 @@ class DockerEnvironment(BaseEnvironment):
             "sleep", "infinity",  # no fixed lifetime — idle reaper handles cleanup
         ]
         logger.debug(f"Starting container: {' '.join(run_cmd)}")
-        result = subprocess.run(
-            run_cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,  # image pull may take a while
-            check=True,
-        )
+        try:
+            result = subprocess.run(
+                run_cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,  # image pull may take a while
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Timed out while starting governed container with image {image}. "
+                "Run `maia secure-runtime status` to check the configured image "
+                "and container engine."
+            ) from exc
+        if result.returncode != 0:
+            detail = _docker_result_text(result) or (
+                f"container runtime exited with code {result.returncode}"
+            )
+            raise RuntimeError(
+                f"Could not start governed container with image {image}. "
+                f"Docker reported: {detail[:2000]} Run `maia secure-runtime setup` "
+                "to provision and validate the sandbox image."
+            )
         self._container_id = result.stdout.strip()
         logger.info(f"Started container {container_name} ({self._container_id[:12]})")
 

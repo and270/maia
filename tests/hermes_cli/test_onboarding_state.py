@@ -86,11 +86,103 @@ class TestOnboardingState:
 
         assert self._state()["gateway_configured"] is True
 
-    def test_governance_flag_follows_config(self):
+    def test_default_governance_does_not_complete_onboarding(self):
         from hermes_cli.config import load_config, save_config
 
         cfg = load_config()
         cfg.setdefault("governance", {})["enabled"] = True
         save_config(cfg)
+
+        assert self._state()["governance_configured"] is False
+
+    def test_bootstrap_admin_does_not_complete_governance_onboarding(self):
+        from hermes_cli.config import save_config, save_env_value
+
+        save_env_value("SLACK_ALLOWED_USERS", "UADMIN")
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "slack:UADMIN": {
+                            "name": "Ana Admin",
+                            "roles": ["admin"],
+                        }
+                    },
+                    "folder_policies": [
+                        {
+                            "path": "/srv/company",
+                            "read_users": ["slack:UADMIN"],
+                        }
+                    ],
+                }
+            }
+        )
+
+        assert self._state()["governance_configured"] is False
+
+    def test_non_admin_without_file_access_remains_pending(self):
+        from hermes_cli.config import save_config, save_env_value
+
+        save_env_value("SLACK_ALLOWED_USERS", "UADMIN,UOPERATOR")
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "slack:UADMIN": {"roles": ["admin"]},
+                        "slack:UOPERATOR": {"roles": ["operator"]},
+                    }
+                }
+            }
+        )
+
+        assert self._state()["governance_configured"] is False
+
+    def test_governed_non_admin_with_direct_file_access_completes_onboarding(self):
+        from hermes_cli.config import save_config, save_env_value
+
+        save_env_value("SLACK_ALLOWED_USERS", "UADMIN,UOPERATOR")
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "slack:UADMIN": {"roles": ["admin"]},
+                        "slack:UOPERATOR": {"roles": ["operator"]},
+                    },
+                    "folder_policies": [
+                        {
+                            "path": "/srv/company",
+                            "read_users": ["slack:UOPERATOR"],
+                        }
+                    ],
+                }
+            }
+        )
+
+        assert self._state()["governance_configured"] is True
+
+    def test_governed_non_admin_with_team_file_access_completes_onboarding(self):
+        from hermes_cli.config import save_config, save_env_value
+
+        save_env_value("DISCORD_ALLOWED_USERS", "111111111111111111,222222222222222222")
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "discord:111111111111111111": {"roles": ["admin"]},
+                        "discord:222222222222222222": {
+                            "roles": ["viewer"],
+                            "teams": ["support"],
+                        },
+                    },
+                    "teams": {"support": {}},
+                    "folder_policies": [
+                        {
+                            "path": "/srv/support",
+                            "read_teams": ["support"],
+                        }
+                    ],
+                }
+            }
+        )
 
         assert self._state()["governance_configured"] is True

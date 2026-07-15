@@ -17,16 +17,22 @@ import { cn } from "@/lib/utils";
 export function SecureRuntimePanel({
   status,
   loading = false,
+  onSetup,
   onRefresh,
   defaultExpanded = false,
 }: {
   status: GovernanceSandboxStatus;
   loading?: boolean;
+  onSetup?: () => void;
   onRefresh?: () => void;
   defaultExpanded?: boolean;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const restricted = !status.ready;
+  const canProvisionImage =
+    Boolean(onSetup) &&
+    status.can_auto_setup &&
+    ["image_missing", "image_unusable", "image_check_failed"].includes(status.status);
 
   const copyCommand = async (command: string) => {
     await navigator.clipboard.writeText(command);
@@ -71,6 +77,12 @@ export function SecureRuntimePanel({
           </div>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+          {canProvisionImage && (
+            <Button size="sm" onClick={onSetup} disabled={loading} className="w-full sm:w-auto">
+              {loading ? <Spinner className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+              Finish setup
+            </Button>
+          )}
           {onRefresh && (
             <Button size="sm" outlined onClick={onRefresh} disabled={loading} className="w-full sm:w-auto">
               {loading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}

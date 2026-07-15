@@ -33,8 +33,9 @@ _SECURE_EXECUTION_GUIDANCE = (
     "Do not tell the requester to ask for another file grant. Explain that Maia "
     "did not run the command because its secure Docker sandbox is unavailable, "
     "that no file was changed, and that an administrator must restore the "
-    "sandbox runtime. Once it is ready, retry the same request; a new chat thread "
-    "is not required."
+    "sandbox runtime. Include the runtime diagnostic from the error when present "
+    "so the administrator knows whether the image, network, or engine failed. "
+    "Once it is ready, retry the same request; a new chat thread is not required."
 )
 
 

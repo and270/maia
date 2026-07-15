@@ -580,6 +580,7 @@ export default function OnboardingPage() {
   const [state, setState] = useState<OnboardingState | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<GovernanceSandboxStatus | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(true);
+  const { toast: runtimeToast, showToast: showRuntimeToast } = useToast();
 
   const refresh = useCallback(() => {
     api
@@ -593,6 +594,19 @@ export default function OnboardingPage() {
       .finally(() => setRuntimeLoading(false));
   }, []);
 
+  const finishRuntimeSetup = useCallback(async () => {
+    setRuntimeLoading(true);
+    try {
+      const nextStatus = await api.provisionSecureRuntime();
+      setRuntimeStatus(nextStatus);
+      showRuntimeToast("Secure runtime is ready", "success");
+    } catch (error) {
+      showRuntimeToast(`Could not finish secure runtime setup: ${error}`, "error");
+    } finally {
+      setRuntimeLoading(false);
+    }
+  }, [showRuntimeToast]);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -600,6 +614,7 @@ export default function OnboardingPage() {
   return (
     <div className="flex flex-col gap-6">
       <PluginSlot name="onboarding:top" />
+      <Toast toast={runtimeToast} />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -637,7 +652,7 @@ export default function OnboardingPage() {
         done={Boolean(state?.governance_configured)}
         icon={Users}
         title="Set up governance and dashboard access"
-        text="Apply the security baseline below, then approve /dashboard requests, assign roles and teams, and keep admin access narrow. This is what makes Maia safe to share with the whole company."
+        text="Add at least one non-admin teammate from Gateway, then grant that person a role and explicit direct or team file access. The bootstrap administrator alone stays pending because it does not prove the team is ready for a least-privilege rollout."
         to="/governance"
         action="Open Governance"
       />
@@ -664,6 +679,7 @@ export default function OnboardingPage() {
               status={runtimeStatus}
               loading={runtimeLoading}
               defaultExpanded
+              onSetup={() => void finishRuntimeSetup()}
               onRefresh={() => {
                 setRuntimeLoading(true);
                 refresh();
