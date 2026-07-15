@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -12,21 +11,17 @@ import {
   ExternalLink,
   MessageSquare,
   Play,
-  Plus,
   RefreshCw,
   RotateCw,
   ShieldCheck,
   Terminal,
-  Trash2,
-  Users,
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@/components/NouiTypography";
-import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
-import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
 import { DashboardLoadingState } from "@/components/DashboardLoadingState";
+import { GatewayPeopleEditor } from "@/components/GatewayPeopleEditor";
 import { OnboardingReturnBar } from "@/components/OnboardingReturnBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,14 +30,16 @@ import { Toast } from "@/components/Toast";
 import { UnsavedChangesBar } from "@/components/UnsavedChangesBar";
 import { useToast } from "@/hooks/useToast";
 import {
+  normalizeGatewayPersonId,
+  type GatewayPersonDraft,
+} from "@/lib/gateway-people";
+import {
   api,
   type ActionStatusResponse,
   type DiscordGatewayAccessUser,
   type DiscordGatewayAccessUsersResponse,
   type EnvVarInfo,
-  type GovernanceFileGrant,
   type GovernanceOverview,
-  type GovernanceUser,
   type StatusResponse,
 } from "@/lib/api";
 import { PluginSlot } from "@/plugins";
@@ -80,18 +77,7 @@ type GatewayPlatform = {
   usage?: string[];
 };
 
-type DiscordAccessUserDraft = {
-  user_id: string;
-  name: string;
-  roles: string[];
-  teams: string[];
-  governed: boolean;
-  file_access: GovernanceFileGrant[];
-};
-
-function newDiscordAccessRow(roles: string[] = []): DiscordAccessUserDraft {
-  return { user_id: "", name: "", roles, teams: [], governed: false, file_access: [] };
-}
+type DiscordAccessUserDraft = GatewayPersonDraft;
 
 function discordUserToDraft(user: DiscordGatewayAccessUser): DiscordAccessUserDraft {
   return {
@@ -103,12 +89,14 @@ function discordUserToDraft(user: DiscordGatewayAccessUser): DiscordAccessUserDr
     file_access: (user.file_access ?? []).map((grant) => ({ ...grant })),
   };
 }
-
-function normalizeDiscordRows(rows: DiscordAccessUserDraft[]): DiscordGatewayAccessUser[] {
+function normalizeGatewayRows(
+  platformId: string,
+  rows: DiscordAccessUserDraft[],
+): DiscordGatewayAccessUser[] {
   const seen = new Set<string>();
   return rows
     .map((row) => ({
-      user_id: row.user_id.trim(),
+      user_id: normalizeGatewayPersonId(platformId, row.user_id),
       name: row.name.trim(),
       roles: row.roles,
       teams: row.teams,
@@ -503,7 +491,7 @@ export default function GatewayPage() {
   const [accessRows, setAccessRows] = useState<Record<string, DiscordAccessUserDraft[]>>(
     () =>
       Object.fromEntries(
-        ACCESS_PLATFORM_IDS.map((id) => [id, [newDiscordAccessRow()]]),
+        ACCESS_PLATFORM_IDS.map((id) => [id, []]),
       ),
   );
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
@@ -544,11 +532,7 @@ export default function GatewayPage() {
       setGovernance(nextGovernance);
       const nextRows: Record<string, DiscordAccessUserDraft[]> = {};
       ACCESS_PLATFORM_IDS.forEach((id, index) => {
-        const rows = (accessLists[index]?.users ?? []).map(discordUserToDraft);
-        const hasGovernedUser = nextGovernance.users.some((user) => user.governed);
-        nextRows[id] = rows.length
-          ? rows
-          : [newDiscordAccessRow(hasGovernedUser ? [] : ["admin"])];
+        nextRows[id] = (accessLists[index]?.users ?? []).map(discordUserToDraft);
       });
       setAccessRows(nextRows);
     } catch (err) {
@@ -593,51 +577,51 @@ export default function GatewayPage() {
     setHelpOpen((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const updateAccessRow = (
-    platformId: string,
-    index: number,
-    patch: Partial<DiscordAccessUserDraft>,
-  ) => {
-    markPlatformDirty(platformId);
-    setAccessRows((current) => ({
-      ...current,
-      [platformId]: (current[platformId] ?? []).map((row, rowIndex) =>
-        rowIndex === index ? { ...row, ...patch } : row,
-      ),
-    }));
-  };
-
-  const addAccessRow = (platformId: string) => {
-    markPlatformDirty(platformId);
-    setAccessRows((current) => ({
-      ...current,
-      [platformId]: [...(current[platformId] ?? []), newDiscordAccessRow()],
-    }));
-  };
-
-  const removeAccessRow = (platformId: string, index: number) => {
-    markPlatformDirty(platformId);
-    setAccessRows((current) => {
-      const next = (current[platformId] ?? []).filter((_, rowIndex) => rowIndex !== index);
-      return {
-        ...current,
-        [platformId]: next.length ? next : [newDiscordAccessRow()],
-      };
-    });
-  };
-
   const setPlatformRows = (platformId: string, users: DiscordGatewayAccessUser[]) => {
     const rows = users.map(discordUserToDraft);
     setAccessRows((current) => ({
       ...current,
-      [platformId]: rows.length ? rows : [newDiscordAccessRow()],
+      [platformId]: rows,
     }));
+  };
+
+  const saveGatewayPeople = async (
+    platform: GatewayPlatform,
+    nextRows: DiscordAccessUserDraft[],
+  ): Promise<boolean> => {
+    const users = normalizeGatewayRows(platform.id, nextRows);
+    if (users.length !== nextRows.length) {
+      showToast(`Check for an invalid or duplicate ${platform.name} user ID.`, "error");
+      return false;
+    }
+
+    setBusy(`${platform.id}:people`);
+    try {
+      const response = await api.saveGatewayAccessUsers(platform.id, { users });
+      setPlatformRows(platform.id, response.users);
+      const [envResult, governanceResult] = await Promise.allSettled([
+        api.getEnvVars(),
+        api.getGovernanceOverview(),
+      ]);
+      if (envResult.status === "fulfilled") setEnv(envResult.value);
+      if (governanceResult.status === "fulfilled") setGovernance(governanceResult.value);
+      showToast(`${platform.name} person access saved.`, "success");
+      window.dispatchEvent(new Event("maia:onboarding-updated"));
+      return true;
+    } catch (err) {
+      showToast(`Failed to save ${platform.name} person access: ${err}`, "error");
+      return false;
+    } finally {
+      setBusy("");
+    }
   };
 
   const savePlatform = async (platform: GatewayPlatform) => {
     const draft = drafts[platform.id] ?? {};
     const allowKey = ACCESS_ENV_KEYS[platform.id];
-    const accessUsers = allowKey ? normalizeDiscordRows(accessRows[platform.id] ?? []) : [];
+    const accessUsers = allowKey
+      ? normalizeGatewayRows(platform.id, accessRows[platform.id] ?? [])
+      : [];
     const accessChanged = Boolean(allowKey && dirtyPlatformIds.has(platform.id));
     const extraDraftKeys = new Set<string>();
     if (allowKey && accessUsers.length) extraDraftKeys.add(allowKey);
@@ -672,7 +656,7 @@ export default function GatewayPage() {
         next.delete(platform.id);
         return next;
       });
-      showToast(`${platform.name} gateway and people settings saved. Press Start or Restart at the top of this page to apply connection changes.`, "success");
+      showToast(`${platform.name} gateway settings saved. Press Start or Restart at the top of this page to apply connection changes.`, "success");
       await load();
       window.dispatchEvent(new Event("maia:onboarding-updated"));
     } catch (err) {
@@ -785,6 +769,11 @@ export default function GatewayPage() {
     (selectedPlatform && dirtyPlatformIds.has(selectedPlatform.id) ? selectedPlatform : null) ??
     PLATFORMS.find((platform) => dirtyPlatformIds.has(platform.id)) ??
     null;
+  const hasGovernedPerson =
+    Boolean(governance?.users.some((user) => user.governed)) ||
+    Object.values(accessRows).some((platformRows) =>
+      platformRows.some((row) => row.roles.length > 0),
+    );
 
   return (
     <div className="flex flex-col gap-6">
@@ -863,8 +852,8 @@ export default function GatewayPage() {
           {[
             "Choose Slack, Discord, Mattermost, or Matrix.",
             "Enter the bot credentials required by that platform.",
-            "Add each person with a display name, role, teams, and file access.",
-            "Save everything together, then start or restart the gateway service.",
+            "Add each person in the modal and save their Governance access there.",
+            "Save connection changes, then start or restart the gateway service.",
           ].map((item) => (
             <div key={item} className="flex items-start gap-2 border border-border/60 p-3">
               <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-success" />
@@ -1088,17 +1077,20 @@ export default function GatewayPage() {
                   </div>
                 </div>
 
-                <GatewayAccessUsersEditor
+                <GatewayPeopleEditor
                   platform={platform}
+                  allowKey={ACCESS_ENV_KEYS[platform.id] ?? ""}
                   rows={accessRows[platform.id] ?? []}
                   disabled={Boolean(busy)}
                   configured={configured}
                   roleOptions={governance?.role_hierarchy ?? []}
                   teamOptions={governance?.teams ?? []}
                   approvalUsers={(governance?.users ?? []).filter((user) => user.governed)}
-                  onAdd={() => addAccessRow(platform.id)}
-                  onRemove={(index) => removeAccessRow(platform.id, index)}
-                  onUpdate={(index, patch) => updateAccessRow(platform.id, index, patch)}
+                  defaultRoles={hasGovernedPerson ? [] : ["admin"]}
+                  saving={busy === `${platform.id}:people`}
+                  userIdPlaceholder={USER_ID_PLACEHOLDERS[platform.id] ?? "user id"}
+                  userIdHelp={USER_ID_HELP[platform.id] ?? []}
+                  onSave={(nextRows) => saveGatewayPeople(platform, nextRows)}
                 />
 
                 <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
@@ -1145,7 +1137,7 @@ maia logs gateway`}
           if (dirtyPlatform) void savePlatform(dirtyPlatform);
         }}
         label={dirtyPlatform ? `Unsaved ${dirtyPlatform.name} changes` : "Unsaved gateway changes"}
-        description="Connection fields and people access are saved together."
+        description="Gateway connection changes are ready to save. People are saved from their editor."
         saveLabel={dirtyPlatform ? `Save ${dirtyPlatform.name}` : "Save gateway"}
       />
 
@@ -1221,209 +1213,6 @@ function PlatformSetupGuide({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-type GatewayAccessUsersEditorProps = {
-  platform: GatewayPlatform;
-  rows: DiscordAccessUserDraft[];
-  disabled: boolean;
-  configured: boolean;
-  roleOptions: string[];
-  teamOptions: string[];
-  approvalUsers: GovernanceUser[];
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-  onUpdate: (index: number, patch: Partial<DiscordAccessUserDraft>) => void;
-};
-
-function GatewayAccessUsersEditor({
-  platform,
-  rows,
-  disabled,
-  configured,
-  roleOptions,
-  teamOptions,
-  approvalUsers,
-  onAdd,
-  onRemove,
-  onUpdate,
-}: GatewayAccessUsersEditorProps) {
-  const [idHelpOpen, setIdHelpOpen] = useState(false);
-  const allowKey = ACCESS_ENV_KEYS[platform.id] ?? "";
-  const idPlaceholder = USER_ID_PLACEHOLDERS[platform.id] ?? "user id";
-  const idHelp = USER_ID_HELP[platform.id] ?? [];
-
-  return (
-    <div className="border border-border/70 bg-muted/10 p-4">
-      <div>
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          <Users className="h-3.5 w-3.5" />
-          People and Governance
-        </div>
-        <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
-          Add each {platform.name} identity and finish its display name, role, team membership, and direct file
-          access here. One save updates both <code>{allowKey}</code> and Governance. The first person on a fresh
-          installation is always bootstrapped as <code>admin</code>.
-        </p>
-        {!configured && (
-          <p className="mt-2 text-xs normal-case leading-5 text-warning">
-            Fill in and save the credentials above first — users added here
-            only take effect once the bot can connect.
-          </p>
-        )}
-      </div>
-
-      <div className="mt-4 flex justify-end">
-        <Button size="sm" outlined onClick={onAdd} disabled={disabled}>
-          <Plus className="h-4 w-4" />
-          Add person
-        </Button>
-      </div>
-
-      {rows.length === 0 && (
-        <p className="mt-4 text-xs normal-case leading-5 text-muted-foreground">
-          No users yet. Start by adding yourself as the first admin.
-        </p>
-      )}
-
-      <div className="mt-4 grid gap-3">
-        {rows.map((row, index) => (
-          <div key={index} className="grid gap-4 border border-border bg-background p-4 xl:grid-cols-2">
-            <label className="grid gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <Label className="font-mono-ui text-[0.7rem]">{platform.name} user ID</Label>
-                {idHelp.length > 0 && index === 0 && (
-                  <button
-                    type="button"
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[0.65rem] font-bold text-muted-foreground hover:border-primary hover:text-primary"
-                    aria-label={`How to find a ${platform.name} user ID`}
-                    aria-expanded={idHelpOpen}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setIdHelpOpen((open) => !open);
-                    }}
-                  >
-                    ?
-                  </button>
-                )}
-              </div>
-              <Input
-                value={row.user_id}
-                placeholder={idPlaceholder}
-                onChange={(event) => onUpdate(index, { user_id: event.target.value })}
-                autoComplete="off"
-              />
-              {idHelpOpen && index === 0 && idHelp.length > 0 && (
-                <div className="rounded-sm border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground">
-                  <ul className="list-disc space-y-1 pl-4">
-                    {idHelp.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </label>
-            <label className="grid content-start gap-1.5">
-              <Label>Display name</Label>
-              <Input
-                value={row.name}
-                placeholder="Ana Finance"
-                onChange={(event) => onUpdate(index, { name: event.target.value })}
-                disabled={disabled}
-              />
-              <span className="text-xs normal-case text-muted-foreground">
-                Used in audit and administration views.
-              </span>
-            </label>
-            <div className="grid content-start gap-1.5 text-xs normal-case leading-5">
-              <Label className="font-mono-ui text-[0.7rem]">Governance status</Label>
-              {row.roles.length > 0 ? (
-                <div className="border border-success/40 bg-success/5 px-3 py-2 text-muted-foreground">
-                  <strong className="text-success">
-                    {row.governed ? "Active in Governance" : "Ready to activate when saved"}
-                  </strong>
-                  {row.name ? <span> · {row.name}</span> : null}
-                  <div>
-                    Roles: <code>{row.roles.join(", ")}</code>
-                    {row.teams.length ? <> · Teams: <code>{row.teams.join(", ")}</code></> : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="border border-warning/40 bg-warning/5 px-3 py-2 text-muted-foreground">
-                  <strong className="text-warning">Role required</strong>
-                  <div>This person remains denied until at least one role is selected and saved.</div>
-                  {row.user_id && (
-                    <Link
-                      to={`/governance?section=people&user=${encodeURIComponent(`${platform.id}:${row.user_id}`)}`}
-                      className="mt-1 inline-flex font-bold text-primary hover:underline"
-                    >
-                      Review this user in Governance
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="grid content-start gap-2 normal-case">
-              <Label>Role</Label>
-              <RoleMultiSelect
-                value={row.roles}
-                onChange={(roles) => onUpdate(index, { roles })}
-                options={roleOptions}
-                disabled={disabled}
-                emptyHint="Select at least one role"
-              />
-              <span className="text-xs text-muted-foreground">
-                Assign the narrowest role that covers this person&apos;s work.
-              </span>
-            </div>
-            <div className="grid content-start gap-2 normal-case">
-              <Label>Teams</Label>
-              <TeamMultiSelect
-                value={row.teams}
-                onChange={(teams) => onUpdate(index, { teams })}
-                options={teamOptions}
-                disabled={disabled}
-              />
-              <span className="text-xs text-muted-foreground">
-                Optional membership for shared team policies and knowledge.
-              </span>
-            </div>
-            <div className="xl:col-span-2">
-              <GovernanceFileGrantEditor
-                grants={row.file_access}
-                onChange={(file_access) => onUpdate(index, { file_access })}
-                approvalRoles={roleOptions}
-                approvalUsers={approvalUsers}
-                title="Direct file and folder access"
-                description="Add only the server paths this person needs. Team access can be managed later in Governance."
-                disabled={disabled}
-              />
-            </div>
-            <Button
-              size="sm"
-              ghost
-              destructive
-              className="justify-self-end xl:col-span-2"
-              onClick={() => onRemove(index)}
-              disabled={disabled}
-              aria-label={`Remove ${platform.name} user`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Remove person
-            </Button>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-4 border-t border-border/60 pt-4 text-xs normal-case leading-5 text-muted-foreground">
-        People without a saved role remain denied. Use{" "}
-        <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
-          Governance / People
-        </Link>{" "}
-        later for ongoing review and advanced policy changes.
-      </div>
     </div>
   );
 }
