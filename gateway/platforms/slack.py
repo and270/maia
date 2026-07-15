@@ -2257,6 +2257,7 @@ class SlackAdapter(BasePlatformAdapter):
         self, chat_id: str, approval_id: str, path: str,
         requested_by: str = "", diff: str = "",
         mention_text: str = "",
+        approver_summary: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send a Block Kit card for a staged file-change approval.
@@ -2276,10 +2277,13 @@ class SlackAdapter(BasePlatformAdapter):
             header = (
                 f":page_facing_up: *File Change Approval Required*\n"
                 f"Path: `{path}`\n"
-                f"Requested by: {requested_by or 'unknown'}"
+                f"Requested by: {requested_by or 'unknown'}\n"
+                "Status: original unchanged; update staged pending approval"
             )
             if mention_text:
                 header = f"{mention_text} — a file change needs your approval.\n{header}"
+            if approver_summary:
+                header += f"\nAuthorization: {approver_summary}"
 
             blocks: list = [
                 {"type": "section", "text": {"type": "mrkdwn", "text": header}},

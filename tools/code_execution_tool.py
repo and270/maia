@@ -53,13 +53,14 @@ logger = logging.getLogger(__name__)
 
 SANDBOX_AVAILABLE = sys.platform != "win32"
 
-# The 7 tools allowed inside the sandbox. The intersection of this list
+# The tools allowed inside the sandbox. The intersection of this list
 # and the session's enabled tools determines which stubs are generated.
 SANDBOX_ALLOWED_TOOLS = frozenset([
     "web_search",
     "web_extract",
     "read_file",
     "write_file",
+    "replace_file",
     "search_files",
     "patch",
     "terminal",
@@ -124,6 +125,12 @@ _TOOL_STUBS = {
         "path: str, content: str",
         '"""Write content to a file (always overwrites). Returns dict with status."""',
         '{"path": path, "content": content}',
+    ),
+    "replace_file": (
+        "replace_file",
+        "source_path: str, destination_path: str, note: str = None",
+        '"""Promote a generated/binary file to a governed host destination. Routes any required human approval."""',
+        '{"source_path": source_path, "destination_path": destination_path, "note": note}',
     ),
     "search_files": (
         "search_files",
@@ -1598,6 +1605,9 @@ _TOOL_DOC_LINES = [
     ("write_file",
      "  write_file(path: str, content: str) -> dict\n"
      "    Always overwrites the entire file."),
+    ("replace_file",
+     "  replace_file(source_path: str, destination_path: str, note=None) -> dict\n"
+     "    Promotes a generated/binary file and routes any required human approval."),
     ("search_files",
      "  search_files(pattern: str, target=\"content\", path=\".\", file_glob=None, limit=50) -> dict\n"
      "    target: \"content\" (search inside files) or \"files\" (find files by name). Returns {\"matches\": [...]}"),

@@ -64,7 +64,9 @@ function DiffView({ diff }: { diff?: string }) {
 function ApproverBadges({ approval }: { approval: FileChangeApproval }) {
   const roles = approval.requirement?.roles ?? [];
   const users = approval.requirement?.users ?? [];
-  if (roles.length === 0 && users.length === 0) return null;
+  const eligible = approval.eligible_approvers ?? [];
+  if (roles.length === 0 && users.length === 0 && eligible.length === 0)
+    return null;
   return (
     <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
       <span>Approvers:</span>
@@ -76,6 +78,12 @@ function ApproverBadges({ approval }: { approval: FileChangeApproval }) {
       {users.map((user) => (
         <Badge key={`user-${user}`} tone="outline">
           {user}
+        </Badge>
+      ))}
+      {eligible.length > 0 && <span className="ml-2">Eligible now:</span>}
+      {eligible.map((actorKey) => (
+        <Badge key={`eligible-${actorKey}`} tone="success">
+          {actorKey}
         </Badge>
       ))}
     </div>
@@ -210,7 +218,13 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
                           {approval.status}
                         </Badge>
                         <Badge tone="outline">
-                          {approval.base_exists ? "edit" : "new file"}
+                          {approval.operation === "replace_file"
+                            ? approval.base_exists
+                              ? "generated replacement"
+                              : "generated file"
+                            : approval.base_exists
+                              ? "text edit"
+                              : "new text file"}
                         </Badge>
                         <span className="break-all font-mono-ui text-xs">
                           {approval.display_path || approval.path}
@@ -248,7 +262,13 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
                           )
                         }
                       >
-                        {expandedId === approval.id ? "Hide diff" : "View diff"}
+                        {expandedId === approval.id
+                          ? approval.artifact
+                            ? "Hide details"
+                            : "Hide diff"
+                          : approval.artifact
+                            ? "View details"
+                            : "View diff"}
                       </Button>
                       {approval.status === "pending" && (
                         <>

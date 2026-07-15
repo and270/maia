@@ -5,7 +5,9 @@ import errno
 import json
 import logging
 import os
+import shutil
 import threading
+import uuid
 from pathlib import Path
 
 from agent.file_safety import get_read_block_error
@@ -932,6 +934,136 @@ def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
         return tool_error(str(e))
 
 
+def replace_file_tool(
+    source_path: str,
+    destination_path: str,
+    note: str | None = None,
+    task_id: str = "default",
+) -> str:
+    """Promote a generated file from the execution environment to the host.
+
+    This is the binary/generated-file counterpart to ``write_file``. The
+    source may live only inside Docker or another remote backend; it is first
+    exported into Maia-owned private storage, then either applied atomically
+    or submitted to the destination folder's durable approval workflow.
+    """
+
+    if not source_path or not destination_path:
+        return tool_error("source_path and destination_path are required")
+    try:
+        destination = str(_resolve_path_for_task(destination_path, task_id))
+    except Exception as exc:
+        return tool_error(f"Could not resolve destination_path: {exc}")
+
+    governance_error = file_access_error(destination, "write")
+    if governance_error:
+        return governance_tool_error(
+            governance_error, operation="write", resource=destination
+        )
+    sensitive_err = _check_sensitive_path(destination_path, task_id)
+    if sensitive_err:
+        return tool_error(sensitive_err)
+
+    approval_req, approval_err = _write_approval_requirement(
+        destination_path, destination
+    )
+    if approval_err is not None:
+        return approval_err
+
+    from agent.file_change_approvals import (
+        apply_file_artifact,
+        max_artifact_bytes,
+        stage_file_artifact,
+    )
+    from hermes_constants import get_hermes_home
+
+    incoming_dir = get_hermes_home() / "file_changes" / "incoming"
+    incoming_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(incoming_dir, 0o700)
+    except OSError:
+        pass
+    incoming = incoming_dir / f"{uuid.uuid4().hex}.payload"
+
+    try:
+        file_ops = _get_file_ops(task_id)
+        env = getattr(file_ops, "env", None)
+        if type(env).__name__ == "LocalEnvironment":
+            try:
+                local_source = _resolve_path_for_task(source_path, task_id)
+            except Exception as exc:
+                return tool_error(f"Could not resolve source_path: {exc}")
+            if local_source == Path(destination):
+                return tool_error(
+                    "source_path and destination_path resolve to the same local file. "
+                    "Generate the replacement in a separate temporary path first."
+                )
+            read_error = file_access_error(str(local_source), "read")
+            if read_error:
+                return governance_tool_error(
+                    read_error, operation="read", resource=str(local_source)
+                )
+            try:
+                if local_source.is_symlink() or not local_source.is_file():
+                    return tool_error(f"Artifact file not found: {source_path}")
+                size = local_source.stat().st_size
+                limit = max_artifact_bytes()
+                if size > limit:
+                    return tool_error(
+                        f"Artifact is {size} bytes, exceeding the configured limit "
+                        f"of {limit} bytes (file_artifact_max_bytes)."
+                    )
+                with local_source.open("rb") as src, incoming.open("xb") as dst:
+                    try:
+                        os.chmod(incoming, 0o600)
+                    except OSError:
+                        pass
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+                    dst.flush()
+                    os.fsync(dst.fileno())
+            except OSError as exc:
+                return tool_error(f"Could not export generated file: {exc}")
+        else:
+            exported = file_ops.export_file_to_host(
+                source_path,
+                incoming,
+                max_bytes=max_artifact_bytes(),
+            )
+            if not exported.get("success"):
+                return tool_error(
+                    f"Could not export generated file: {exported.get('error')}"
+                )
+
+        if approval_req:
+            result = stage_file_artifact(
+                path=destination,
+                source_path=str(incoming),
+                requirement=approval_req,
+                display_path=destination_path,
+                source_name=Path(source_path.replace("\\", "/")).name,
+                note=note,
+            )
+        else:
+            with file_state.lock_path(destination):
+                result = apply_file_artifact(
+                    path=destination,
+                    source_path=str(incoming),
+                    display_path=destination_path,
+                )
+            if result.get("success"):
+                file_state.note_write(task_id, destination)
+                _update_read_timestamp(destination_path, task_id)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as exc:
+        logger.error("replace_file error: %s", exc, exc_info=True)
+        return tool_error(str(exc))
+    finally:
+        try:
+            incoming.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                new_string: str = None, replace_all: bool = False, patch: str = None,
                task_id: str = "default") -> str:
@@ -1256,7 +1388,7 @@ READ_FILE_SCHEMA = {
 
 WRITE_FILE_SCHEMA = {
     "name": "write_file",
-    "description": "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).",
+    "description": "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. Approval-gated writes return the complete pending authorization state plus an agent_instruction that must be relayed to the user; do not describe them as merely read-only. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).",
     "parameters": {
         "type": "object",
         "properties": {
@@ -1265,6 +1397,42 @@ WRITE_FILE_SCHEMA = {
         },
         "required": ["path", "content"]
     }
+}
+
+REPLACE_FILE_SCHEMA = {
+    "name": "replace_file",
+    "description": (
+        "Promote a completed generated or binary file from the current execution "
+        "environment to a destination path. Use this after editing Office files "
+        "(.xlsx/.docx/.pptx), PDFs, images, archives, databases, or any artifact "
+        "that cannot be safely represented as UTF-8 text. source_path may be a "
+        "Docker-only path such as /tmp/result.xlsx. Maia exports it into private "
+        "host storage, checks destination Governance, and either replaces the "
+        "destination atomically or stages it for the configured human approver. "
+        "When a user asks to update an original governed file, use this tool instead "
+        "of returning a container-only MEDIA path or trying to bypass a read-only mount. "
+        "The result reports the complete authorization state and includes an "
+        "agent_instruction: follow it when explaining pending approval to the user; "
+        "never reduce an approval-gated result to 'the folder is read-only'."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_path": {
+                "type": "string",
+                "description": "Path to the fully generated replacement file in the current terminal/code execution environment",
+            },
+            "destination_path": {
+                "type": "string",
+                "description": "Governed host destination to create or replace after policy checks and any required approval",
+            },
+            "note": {
+                "type": "string",
+                "description": "Optional short explanation shown to the approver",
+            },
+        },
+        "required": ["source_path", "destination_path"],
+    },
 }
 
 PATCH_SCHEMA = {
@@ -1332,6 +1500,25 @@ def _handle_write_file(args, **kw):
     return write_file_tool(path=args["path"], content=args["content"], task_id=tid)
 
 
+def _handle_replace_file(args, **kw):
+    tid = kw.get("task_id") or "default"
+    source_path = args.get("source_path")
+    destination_path = args.get("destination_path")
+    if not isinstance(source_path, str) or not source_path:
+        return tool_error("replace_file: missing required field 'source_path'.")
+    if not isinstance(destination_path, str) or not destination_path:
+        return tool_error("replace_file: missing required field 'destination_path'.")
+    note = args.get("note")
+    if note is not None and not isinstance(note, str):
+        return tool_error("replace_file: 'note' must be a string when provided.")
+    return replace_file_tool(
+        source_path=source_path,
+        destination_path=destination_path,
+        note=note,
+        task_id=tid,
+    )
+
+
 def _handle_patch(args, **kw):
     tid = kw.get("task_id") or "default"
     return patch_tool(
@@ -1353,5 +1540,6 @@ def _handle_search_files(args, **kw):
 
 registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, handler=_handle_read_file, check_fn=_check_file_reqs, emoji="📖", max_result_size_chars=100_000)
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
+registry.register(name="replace_file", toolset="file", schema=REPLACE_FILE_SCHEMA, handler=_handle_replace_file, check_fn=_check_file_reqs, emoji="📦", max_result_size_chars=100_000)
 registry.register(name="patch", toolset="file", schema=PATCH_SCHEMA, handler=_handle_patch, check_fn=_check_file_reqs, emoji="🔧", max_result_size_chars=100_000)
 registry.register(name="search_files", toolset="file", schema=SEARCH_FILES_SCHEMA, handler=_handle_search_files, check_fn=_check_file_reqs, emoji="🔎", max_result_size_chars=100_000)

@@ -25,8 +25,10 @@ Usage:
     result = file_ops.search("TODO", path=".", file_glob="*.py")
 """
 
+import base64
 import os
 import re
+import stat
 import difflib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -523,6 +525,105 @@ class ShellFileOperations(FileOperations):
             result = self._exec(f"command -v {cmd} >/dev/null 2>&1 && echo 'yes'")
             self._command_cache[cmd] = result.stdout.strip() == 'yes'
         return self._command_cache[cmd]
+
+    def export_file_to_host(
+        self,
+        source_path: str,
+        destination_path: str | Path,
+        *,
+        max_bytes: int,
+        chunk_bytes: int = 1024 * 1024,
+    ) -> dict[str, Any]:
+        """Copy an arbitrary file from this backend into private host storage.
+
+        The transport is deliberately backend-neutral: Docker, SSH, Modal,
+        Daytona, Singularity, Vercel Sandbox, and local POSIX environments all
+        expose the same ``execute`` interface. Data is transferred in bounded
+        base64 chunks so binary bytes never pass through model tool arguments
+        and a large file never needs one unbounded command response.
+        """
+
+        if not source_path:
+            return {"success": False, "error": "source_path is required"}
+        if max_bytes <= 0:
+            return {"success": False, "error": "max_bytes must be positive"}
+        chunk_bytes = max(64 * 1024, min(int(chunk_bytes), 2 * 1024 * 1024))
+
+        source = self._expand_path(source_path)
+        quoted = self._escape_shell_arg(source)
+        probe = self._exec(
+            "if [ -L {path} ]; then printf 'symlink'; "
+            "elif [ -f {path} ]; then printf 'file:'; wc -c < {path}; "
+            "else printf 'missing'; exit 2; fi".format(path=quoted)
+        )
+        probe_output = _strip_terminal_fence_leaks(probe.stdout).strip()
+        if probe_output == "symlink":
+            return {"success": False, "error": "Refusing to export a symbolic link."}
+        if probe.exit_code != 0 or not probe_output.startswith("file:"):
+            return {
+                "success": False,
+                "error": f"Artifact file not found or unreadable: {source_path}",
+            }
+        try:
+            source_size = int(probe_output.split(":", 1)[1].strip())
+        except ValueError:
+            return {"success": False, "error": "Could not determine artifact size."}
+        if source_size > max_bytes:
+            return {
+                "success": False,
+                "error": (
+                    f"Artifact is {source_size} bytes, exceeding the configured "
+                    f"limit of {max_bytes} bytes (file_artifact_max_bytes)."
+                ),
+            }
+
+        destination = Path(destination_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with destination.open("xb") as output:
+                try:
+                    os.chmod(destination, stat.S_IRUSR | stat.S_IWUSR)
+                except OSError:
+                    pass
+                block = 0
+                written = 0
+                while written < source_size:
+                    command = (
+                        f"dd if={quoted} bs={chunk_bytes} skip={block} count=1 2>/dev/null | "
+                        "if command -v base64 >/dev/null 2>&1; then base64; "
+                        "elif command -v openssl >/dev/null 2>&1; then openssl base64 -A; "
+                        "else exit 127; fi"
+                    )
+                    result = self._exec(command)
+                    if result.exit_code != 0:
+                        raise OSError(
+                            "The execution environment could not encode the generated file."
+                        )
+                    encoded = "".join(
+                        _strip_terminal_fence_leaks(result.stdout).split()
+                    )
+                    try:
+                        chunk = base64.b64decode(encoded, validate=True)
+                    except Exception as exc:
+                        raise OSError("Generated-file transfer returned invalid data.") from exc
+                    expected = min(chunk_bytes, source_size - written)
+                    if len(chunk) != expected:
+                        raise OSError(
+                            "Generated file changed during transfer; generate it again and retry."
+                        )
+                    output.write(chunk)
+                    written += len(chunk)
+                    block += 1
+                output.flush()
+                os.fsync(output.fileno())
+        except Exception as exc:
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return {"success": False, "error": str(exc)}
+
+        return {"success": True, "path": str(destination), "bytes": source_size}
     
     def _is_likely_binary(self, path: str, content_sample: str = None) -> bool:
         """

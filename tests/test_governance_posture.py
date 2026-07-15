@@ -132,6 +132,66 @@ observability:
     assert "no_folder_policies" not in _codes(governance_posture_warnings())
 
 
+def test_write_approval_without_matching_identity_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    discord:writer:
+      roles: [operator]
+  folder_policies:
+    - path: "/srv/reviewed"
+      write_users: ["discord:writer"]
+      write_approval_roles: [manager]
+""",
+    )
+
+    from agent.governance import governance_posture_warnings
+
+    warnings = governance_posture_warnings()
+    unreachable = [
+        item
+        for item in warnings
+        if item["code"] == "file_approval_without_eligible_identity"
+    ]
+    assert len(unreachable) == 1
+    assert unreachable[0]["severity"] == "error"
+    assert "remain unchanged" in unreachable[0]["message"]
+
+
+def test_write_approval_role_is_reachable_through_higher_role(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """
+governance:
+  enabled: true
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    discord:writer:
+      roles: [operator]
+    discord:administrator:
+      roles: [admin]
+  folder_policies:
+    - path: "/srv/reviewed"
+      write_users: ["discord:writer"]
+      write_approval_roles: [manager]
+""",
+    )
+
+    from agent.governance import governance_posture_warnings
+
+    assert "file_approval_without_eligible_identity" not in _codes(
+        governance_posture_warnings()
+    )
+
+
 def test_config_error_surfaces_as_single_error(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))

@@ -1590,6 +1590,7 @@ class TelegramAdapter(BasePlatformAdapter):
         self, chat_id: str, approval_id: str, path: str,
         requested_by: str = "", diff: str = "",
         mention_text: str = "",
+        approver_summary: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send an inline-keyboard card for a staged file-change approval.
@@ -1606,10 +1607,13 @@ class TelegramAdapter(BasePlatformAdapter):
             header = (
                 f"📄 <b>File Change Approval Required</b>\n\n"
                 f"Path: <code>{_html.escape(path)}</code>\n"
-                f"Requested by: {_html.escape(requested_by or 'unknown')}"
+                f"Requested by: {_html.escape(requested_by or 'unknown')}\n"
+                "Status: original unchanged; update staged pending approval"
             )
             if mention_text:
                 header = f"{mention_text} — a file change needs your approval.\n{header}"
+            if approver_summary:
+                header += f"\nAuthorization: {_html.escape(approver_summary)}"
             text = header
             if diff_preview.strip():
                 text += f"\n\n<pre>{_html.escape(diff_preview)}</pre>"

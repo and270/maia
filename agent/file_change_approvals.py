@@ -19,7 +19,10 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import mimetypes
 import os
+import shutil
+import stat
 import tempfile
 import threading
 import uuid
@@ -30,7 +33,9 @@ from typing import Any, Callable, Optional
 from hermes_constants import get_hermes_home
 
 _APPROVALS_FILE = "file_changes/approvals.json"
+_ARTIFACTS_DIR = "file_changes/artifacts"
 _MAX_STORED_DIFF_CHARS = 20000
+_DEFAULT_MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
 
 _store_lock = threading.Lock()
 
@@ -46,6 +51,26 @@ def _now() -> str:
 
 def approvals_path() -> Path:
     return get_hermes_home() / _APPROVALS_FILE
+
+
+def artifacts_path() -> Path:
+    """Return the private, durable payload root for staged replacements."""
+
+    return get_hermes_home() / _ARTIFACTS_DIR
+
+
+def max_artifact_bytes() -> int:
+    """Return the configured maximum size of one staged/generated file."""
+
+    try:
+        from hermes_cli.config import load_config
+
+        value = load_config().get("file_artifact_max_bytes")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    except Exception:
+        pass
+    return _DEFAULT_MAX_ARTIFACT_BYTES
 
 
 def set_file_approval_notifier(cb: Optional[Callable[[dict[str, Any]], None]]) -> None:
@@ -127,7 +152,7 @@ def _hash_file(path: Path) -> Optional[str]:
     try:
         if not path.exists() or not path.is_file():
             return None
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return _sha256_path(path)
     except OSError:
         return None
 
@@ -154,6 +179,169 @@ def _unified_diff(before: str, after: str, path: str) -> str:
     if len(diff) > _MAX_STORED_DIFF_CHARS:
         return diff[:_MAX_STORED_DIFF_CHARS] + "\n[diff truncated for storage]"
     return diff
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("bytes", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{int(value)} {unit}" if unit == "bytes" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} bytes"
+
+
+def _artifact_summary(display_path: str, metadata: dict[str, Any]) -> str:
+    mime = metadata.get("mime_type") or "application/octet-stream"
+    return "\n".join(
+        [
+            "Generated file replacement (byte-for-byte payload; no text diff)",
+            f"Destination: {display_path}",
+            f"Type: {mime}",
+            f"Size: {_human_size(int(metadata.get('size') or 0))}",
+            f"SHA-256: {metadata.get('sha256') or 'unknown'}",
+            "The destination is unchanged until this request is approved.",
+        ]
+    )
+
+
+def _artifact_file(request: dict[str, Any]) -> Path:
+    """Resolve a stored artifact reference without allowing path traversal."""
+
+    relative = str((request.get("artifact") or {}).get("storage_path") or "")
+    if not relative:
+        raise ValueError("Staged artifact metadata is missing its storage path.")
+    root = artifacts_path().resolve(strict=False)
+    candidate = (root / relative).resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Staged artifact path escapes Maia's private storage.") from exc
+    return candidate
+
+
+def _cleanup_artifact(request: dict[str, Any]) -> None:
+    if str(request.get("operation") or "") != "replace_file":
+        return
+    try:
+        payload = _artifact_file(request)
+        payload.unlink(missing_ok=True)
+        payload.parent.rmdir()
+    except OSError:
+        pass
+    except ValueError:
+        pass
+
+
+def _approval_routing(
+    requirement: dict[str, Any],
+    *,
+    origin: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Resolve concrete approvers and same-conversation notification targets."""
+
+    try:
+        from agent.governance import eligible_file_change_approvers
+
+        eligible = eligible_file_change_approvers(requirement)
+    except Exception:
+        eligible = []
+    eligible = list(dict.fromkeys(str(item) for item in eligible if str(item)))
+    platform = str((origin or {}).get("platform") or "").strip().lower()
+    prefix = f"{platform}:" if platform else ""
+    same_platform = [
+        item for item in eligible if prefix and item.lower().startswith(prefix)
+    ]
+    return {
+        "eligible_approvers": eligible,
+        "same_platform_approvers": same_platform,
+    }
+
+
+def _unroutable_approval_result(
+    *,
+    path: str,
+    requirement: dict[str, Any],
+    actor: Optional[Any] = None,
+) -> dict[str, Any]:
+    roles = list(requirement.get("roles") or [])
+    users = list(requirement.get("users") or [])
+    needed = ", ".join([f"role {role}" for role in roles] + users) or "an approver"
+    message = (
+        f"The requested change to {path} was not written. This path requires "
+        f"approval from {needed}, but no configured governed identity currently "
+        "satisfies that requirement. An administrator must assign the selected "
+        "approver role to a gateway identity or choose a specific approver, then "
+        "the change can be generated and submitted again."
+    )
+    try:
+        from agent.audit_log import record_audit_event
+
+        record_audit_event(
+            "file_change.approval_unavailable",
+            actor=actor,
+            action="file_change.stage",
+            resource=path,
+            outcome="denied",
+            reason=message,
+            metadata={"required_roles": roles, "required_users": users},
+        )
+    except Exception:
+        pass
+    return {
+        "success": False,
+        "approval_unavailable": True,
+        "original_unchanged": True,
+        "path": path,
+        "required_approvers": {"roles": roles, "users": users},
+        "eligible_approvers": [],
+        "error": message,
+        "agent_instruction": (
+            "Tell the user the complete authorization situation from `error`. "
+            "Do not summarize this as merely 'the folder is read-only'. The "
+            "read-only mount is the enforcement mechanism, not the root cause."
+        ),
+    }
+
+
+def _pending_approval_result(
+    request: dict[str, Any],
+    *,
+    message: str,
+    extra: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    routing = _approval_routing(
+        request.get("requirement") or {}, origin=request.get("origin") or {}
+    )
+    result: dict[str, Any] = {
+        "success": True,
+        "pending_approval": True,
+        "original_unchanged": True,
+        "approval_id": request["id"],
+        "path": str(request.get("path") or ""),
+        "required_approvers": request.get("requirement") or {},
+        **routing,
+        "message": message,
+        "agent_instruction": (
+            "Tell the user that the requested update has been prepared, the "
+            "original file is unchanged, and the change is pending human "
+            "approval. State the required roles/users and the eligible approvers "
+            "returned here. Do not say the task failed because the folder is "
+            "read-only: that read-only mount is deliberately enforcing review. "
+            "Maia posts an approval card in the originating conversation and "
+            "@mentions every eligible approver on that same platform."
+        ),
+    }
+    if extra:
+        result.update(extra)
+    return result
 
 
 def _write_denied_reason(path: Path) -> Optional[str]:
@@ -192,6 +380,17 @@ def _audit(event: str, *, actor: Any, request: dict[str, Any], outcome: str,
     try:
         from agent.audit_log import record_audit_event
 
+        artifact = request.get("artifact") or {}
+        metadata = {"request_id": request.get("id")}
+        if artifact:
+            metadata.update(
+                {
+                    "artifact_size": artifact.get("size"),
+                    "artifact_sha256": artifact.get("sha256"),
+                    "artifact_mime_type": artifact.get("mime_type"),
+                }
+            )
+
         record_audit_event(
             event,
             actor=actor,
@@ -199,7 +398,7 @@ def _audit(event: str, *, actor: Any, request: dict[str, Any], outcome: str,
             resource=str(request.get("path") or ""),
             outcome=outcome,
             reason=reason,
-            metadata={"request_id": request.get("id")},
+            metadata=metadata,
         )
     except Exception:
         pass
@@ -226,25 +425,35 @@ def stage_file_change(
     if denied:
         return {"success": False, "error": denied}
 
+    shown_path = str(display_path or path)
+    normalized_requirement = {
+        "roles": list(requirement.get("roles") or []),
+        "users": list(requirement.get("users") or []),
+        "policy_path": requirement.get("policy_path"),
+    }
+    origin = _origin_payload()
+    if not _approval_routing(normalized_requirement, origin=origin)[
+        "eligible_approvers"
+    ]:
+        return _unroutable_approval_result(
+            path=shown_path, requirement=normalized_requirement, actor=actor
+        )
+
     before = _read_file_text(resolved)
     request: dict[str, Any] = {
         "id": uuid.uuid4().hex,
         "status": "pending",
         "created_at": _now(),
         "requested_by": _actor_payload(actor),
-        "origin": _origin_payload(),
+        "origin": origin,
         "path": str(resolved),
-        "display_path": str(display_path or path),
+        "display_path": shown_path,
         "operation": str(operation or "write"),
         "content": content,
         "base_hash": _hash_file(resolved),
         "base_exists": resolved.exists(),
-        "diff": _unified_diff(before, content, str(display_path or path)),
-        "requirement": {
-            "roles": list(requirement.get("roles") or []),
-            "users": list(requirement.get("users") or []),
-            "policy_path": requirement.get("policy_path"),
-        },
+        "diff": _unified_diff(before, content, shown_path),
+        "requirement": normalized_requirement,
         "note": note,
     }
 
@@ -266,25 +475,174 @@ def stage_file_change(
     who_can = (
         f"roles {roles}" if roles else ""
     ) + ("" if not users else (" or " if roles else "") + f"users {users}")
-    return {
-        "success": True,
-        "pending_approval": True,
-        "approval_id": request["id"],
-        "path": str(resolved),
-        "message": (
+    return _pending_approval_result(
+        request,
+        message=(
             f"Change to {request['display_path']} staged for human approval "
             f"(required approvers: {who_can or 'per governance'}). Nothing was "
             "written yet. The change applies automatically once an approver "
             "accepts it in the dashboard File Approvals panel or via the "
             "approval card in chat."
         ),
+    )
+
+
+def stage_file_artifact(
+    *,
+    path: str,
+    source_path: str,
+    requirement: dict[str, Any],
+    display_path: Optional[str] = None,
+    source_name: Optional[str] = None,
+    note: Optional[str] = None,
+    actor: Optional[Any] = None,
+) -> dict[str, Any]:
+    """Durably stage an arbitrary generated file for governed replacement.
+
+    The payload is copied into Maia-owned private storage. Only metadata is
+    written to ``approvals.json``; binary data is never embedded in the JSON
+    store or sent through the model context.
+    """
+
+    resolved = _resolve(path)
+    denied = _write_denied_reason(resolved)
+    if denied:
+        return {"success": False, "error": denied}
+
+    shown_path = str(display_path or path)
+    normalized_requirement = {
+        "roles": list(requirement.get("roles") or []),
+        "users": list(requirement.get("users") or []),
+        "policy_path": requirement.get("policy_path"),
     }
+    origin = _origin_payload()
+    if not _approval_routing(normalized_requirement, origin=origin)[
+        "eligible_approvers"
+    ]:
+        return _unroutable_approval_result(
+            path=shown_path, requirement=normalized_requirement, actor=actor
+        )
+
+    source = Path(str(source_path)).expanduser()
+    try:
+        if source.is_symlink():
+            return {"success": False, "error": "Refusing to stage a symbolic link."}
+        if not source.is_file():
+            return {"success": False, "error": f"Artifact file not found: {source}"}
+        source_size = source.stat().st_size
+    except OSError as exc:
+        return {"success": False, "error": f"Could not inspect artifact: {exc}"}
+
+    limit = max_artifact_bytes()
+    if source_size > limit:
+        return {
+            "success": False,
+            "error": (
+                f"Artifact is {_human_size(source_size)}, exceeding the configured "
+                f"limit of {_human_size(limit)} (file_artifact_max_bytes)."
+            ),
+        }
+
+    request_id = uuid.uuid4().hex
+    request_dir = artifacts_path() / request_id
+    payload = request_dir / "payload"
+    try:
+        request_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+        try:
+            os.chmod(request_dir, stat.S_IRWXU)
+        except OSError:
+            pass
+        with source.open("rb") as src, payload.open("xb") as dst:
+            try:
+                os.chmod(payload, stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                pass
+            shutil.copyfileobj(src, dst, length=1024 * 1024)
+            dst.flush()
+            os.fsync(dst.fileno())
+        staged_size = payload.stat().st_size
+        staged_hash = _sha256_path(payload)
+    except Exception as exc:
+        shutil.rmtree(request_dir, ignore_errors=True)
+        return {"success": False, "error": f"Failed to store staged artifact: {exc}"}
+
+    if staged_size != source_size:
+        shutil.rmtree(request_dir, ignore_errors=True)
+        return {
+            "success": False,
+            "error": "Artifact changed while it was being staged; generate it again and retry.",
+        }
+
+    mime_type = mimetypes.guess_type(shown_path)[0] or "application/octet-stream"
+    safe_source_name = Path(str(source_name or source.name).replace("\\", "/")).name
+    artifact = {
+        "storage_path": f"{request_id}/payload",
+        "size": staged_size,
+        "sha256": staged_hash,
+        "mime_type": mime_type,
+        "source_name": safe_source_name[:255],
+    }
+    request: dict[str, Any] = {
+        "id": request_id,
+        "status": "pending",
+        "created_at": _now(),
+        "requested_by": _actor_payload(actor),
+        "origin": origin,
+        "path": str(resolved),
+        "display_path": shown_path,
+        "operation": "replace_file",
+        "base_hash": _hash_file(resolved),
+        "base_exists": resolved.exists(),
+        "diff": _artifact_summary(shown_path, artifact),
+        "artifact": artifact,
+        "requirement": normalized_requirement,
+        "note": note,
+    }
+
+    try:
+        with _store_lock:
+            items = _read_approvals()
+            items.append(request)
+            _write_approvals(items)
+    except Exception as exc:
+        shutil.rmtree(request_dir, ignore_errors=True)
+        return {"success": False, "error": f"Failed to store approval request: {exc}"}
+
+    _audit(
+        "file_change.approval_requested",
+        actor=actor,
+        request=request,
+        outcome="pending",
+    )
+    _fire_notifier(request)
+
+    roles = request["requirement"]["roles"]
+    users = request["requirement"]["users"]
+    who_can = (f"roles {roles}" if roles else "") + (
+        "" if not users else (" or " if roles else "") + f"users {users}"
+    )
+    return _pending_approval_result(
+        request,
+        extra={"bytes": staged_size, "sha256": staged_hash},
+        message=(
+            f"Generated file for {shown_path} staged for human approval "
+            f"(required approvers: {who_can or 'per governance'}). The original "
+            "file is unchanged. Maia stored the payload durably and will replace "
+            "the destination atomically after approval."
+        ),
+    )
 
 
 def list_file_change_approvals(status: str = "pending") -> list[dict[str, Any]]:
     items = _read_approvals()
     if status and status != "all":
         items = [item for item in items if item.get("status") == status]
+    for item in items:
+        item.update(
+            _approval_routing(
+                item.get("requirement") or {}, origin=item.get("origin") or {}
+            )
+        )
     return sorted(items, key=lambda item: item.get("created_at", ""), reverse=True)
 
 
@@ -312,6 +670,86 @@ def _atomic_write_file(path: Path, content: str) -> None:
         raise
 
 
+def _atomic_copy_file(path: Path, source: Path) -> None:
+    """Replace *path* atomically with the exact bytes from *source*."""
+
+    from utils import atomic_replace
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    previous_mode: Optional[int] = None
+    try:
+        if path.is_file():
+            previous_mode = stat.S_IMODE(path.stat().st_mode)
+    except OSError:
+        previous_mode = None
+
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.tmp.")
+    try:
+        with source.open("rb") as src, os.fdopen(fd, "wb") as dst:
+            shutil.copyfileobj(src, dst, length=1024 * 1024)
+            dst.flush()
+            os.fsync(dst.fileno())
+        if previous_mode is not None:
+            os.chmod(tmp, previous_mode)
+        atomic_replace(tmp, path)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def apply_file_artifact(
+    *,
+    path: str,
+    source_path: str,
+    display_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """Directly apply an already-governed generated file replacement.
+
+    Callers must perform the actor's path-level governance check first. This
+    helper enforces the static safety floor, size limit, and atomic replace.
+    """
+
+    resolved = _resolve(path)
+    denied = _write_denied_reason(resolved)
+    if denied:
+        return {"success": False, "error": denied}
+    source = Path(str(source_path)).expanduser()
+    try:
+        if source.is_symlink() or not source.is_file():
+            return {"success": False, "error": f"Artifact file not found: {source}"}
+        size = source.stat().st_size
+        if size > max_artifact_bytes():
+            return {
+                "success": False,
+                "error": (
+                    f"Artifact is {_human_size(size)}, exceeding the configured "
+                    f"limit of {_human_size(max_artifact_bytes())} "
+                    "(file_artifact_max_bytes)."
+                ),
+            }
+        digest = _sha256_path(source)
+        _atomic_copy_file(resolved, source)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Failed to replace {display_path or path}: {exc}",
+        }
+    return {
+        "success": True,
+        "path": str(resolved),
+        "bytes": size,
+        "sha256": digest,
+        "message": f"Replaced {display_path or path} atomically.",
+    }
+
+
 def _apply_request(request: dict[str, Any]) -> dict[str, Any]:
     path = _resolve(str(request.get("path") or ""))
     denied = _write_denied_reason(path)
@@ -336,16 +774,43 @@ def _apply_request(request: dict[str, Any]) -> dict[str, Any]:
                 f"write access to this path. {reason}"
             ),
         }
-    if str(request.get("operation") or "write") != "write":
+    operation = str(request.get("operation") or "write")
+    if operation not in {"write", "replace_file"}:
         return {
             "success": False,
             "error": f"Unsupported staged operation {request.get('operation')!r}",
         }
     try:
-        _atomic_write_file(path, str(request.get("content") or ""))
+        if operation == "write":
+            content = str(request.get("content") or "")
+            _atomic_write_file(path, content)
+            written = len(content.encode("utf-8"))
+        else:
+            payload = _artifact_file(request)
+            metadata = request.get("artifact") or {}
+            if payload.is_symlink() or not payload.is_file():
+                return {
+                    "success": False,
+                    "error": "The staged artifact is missing; stage the file again.",
+                }
+            expected_size = int(metadata.get("size") or -1)
+            actual_size = payload.stat().st_size
+            if actual_size != expected_size:
+                return {
+                    "success": False,
+                    "error": "The staged artifact size changed; refusing to apply it.",
+                }
+            actual_hash = _sha256_path(payload)
+            if actual_hash != metadata.get("sha256"):
+                return {
+                    "success": False,
+                    "error": "The staged artifact hash changed; refusing to apply it.",
+                }
+            _atomic_copy_file(path, payload)
+            written = actual_size
     except Exception as exc:
         return {"success": False, "error": f"Failed to apply staged change: {exc}"}
-    return {"success": True, "path": str(path), "bytes": len(str(request.get("content") or "").encode("utf-8"))}
+    return {"success": True, "path": str(path), "bytes": written}
 
 
 def decide_from_platform_click(
@@ -389,6 +854,7 @@ def decide_file_change_approval(
     """
 
     from agent.governance import can_approve_file_change
+    from tools import file_state
 
     with _store_lock:
         items = _read_approvals()
@@ -405,34 +871,37 @@ def decide_file_change_approval(
 
             apply_result: dict[str, Any] = {"success": True}
             if approve:
-                current_hash = _hash_file(_resolve(str(item.get("path") or "")))
-                if current_hash != item.get("base_hash"):
-                    item["status"] = "stale"
-                    item["decided_at"] = _now()
-                    item["decided_by"] = _actor_payload(actor)
-                    item["decision_note"] = note
-                    _write_approvals(items)
-                    _audit(
-                        "file_change.approval_decided",
-                        actor=actor,
-                        request=item,
-                        outcome="stale",
-                        reason="file changed on disk after staging",
-                    )
-                    return {
-                        "success": False,
-                        "error": (
-                            "The file changed on disk after this request was "
-                            "staged, so the reviewed diff is no longer accurate. "
-                            "The request was marked stale — ask the requester "
-                            "to stage it again."
-                        ),
-                        "status_code": 409,
-                        "approval": item,
-                    }
-                apply_result = _apply_request(item)
-                if not apply_result.get("success"):
-                    return apply_result
+                target = _resolve(str(item.get("path") or ""))
+                with file_state.lock_path(str(target)):
+                    current_hash = _hash_file(target)
+                    if current_hash != item.get("base_hash"):
+                        item["status"] = "stale"
+                        item["decided_at"] = _now()
+                        item["decided_by"] = _actor_payload(actor)
+                        item["decision_note"] = note
+                        _write_approvals(items)
+                        _cleanup_artifact(item)
+                        _audit(
+                            "file_change.approval_decided",
+                            actor=actor,
+                            request=item,
+                            outcome="stale",
+                            reason="file changed on disk after staging",
+                        )
+                        return {
+                            "success": False,
+                            "error": (
+                                "The file changed on disk after this request was "
+                                "staged, so the reviewed diff is no longer accurate. "
+                                "The request was marked stale — ask the requester "
+                                "to stage it again."
+                            ),
+                            "status_code": 409,
+                            "approval": item,
+                        }
+                    apply_result = _apply_request(item)
+                    if not apply_result.get("success"):
+                        return apply_result
 
             item["status"] = "approved" if approve else "denied"
             item["decided_at"] = _now()
@@ -440,6 +909,7 @@ def decide_file_change_approval(
             item["decision_note"] = note
             item["apply_result"] = apply_result
             _write_approvals(items)
+            _cleanup_artifact(item)
 
             _audit(
                 "file_change.approval_decided",

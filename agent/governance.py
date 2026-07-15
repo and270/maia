@@ -910,6 +910,28 @@ def governance_posture_warnings(
                 "adds explicit grants in the File Access panel."
             ),
         })
+    if isinstance(policies, list):
+        for policy in policies:
+            if not isinstance(policy, dict):
+                continue
+            requirement = {
+                "roles": _coerce_list(policy.get("write_approval_roles")),
+                "users": _coerce_list(policy.get("write_approval_users")),
+            }
+            if not requirement["roles"] and not requirement["users"]:
+                continue
+            if eligible_file_change_approvers(requirement, config=cfg):
+                continue
+            warnings.append({
+                "severity": "error",
+                "code": "file_approval_without_eligible_identity",
+                "message": (
+                    f"Write approval for {policy.get('path') or 'an unnamed path'} "
+                    "has no eligible governed identity. Assign one of the selected "
+                    "approver roles to a gateway user or choose a specific approver; "
+                    "until then, requested changes fail closed and remain unchanged."
+                ),
+            })
 
     terminal_cfg = _terminal_config(cfg)
     terminal_allowed = _coerce_list(terminal_cfg.get("allowed_roles")) or _coerce_list(

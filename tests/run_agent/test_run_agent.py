@@ -995,12 +995,17 @@ class TestBuildSystemPrompt:
 class TestToolUseEnforcementConfig:
     """Tests for the agent.tool_use_enforcement config option."""
 
-    def _make_agent(self, model="openai/gpt-4.1", tool_use_enforcement="auto"):
+    def _make_agent(
+        self,
+        model="openai/gpt-4.1",
+        tool_use_enforcement="auto",
+        tools=("terminal", "web_search"),
+    ):
         """Create an agent with tools and a specific enforcement config."""
         with (
             patch(
                 "run_agent.get_tool_definitions",
-                return_value=_make_tool_defs("terminal", "web_search"),
+                return_value=_make_tool_defs(*tools),
             ),
             patch("run_agent.check_toolset_requirements", return_value={}),
             patch("run_agent.OpenAI"),
@@ -1118,6 +1123,27 @@ class TestToolUseEnforcementConfig:
             a.client = MagicMock()
             prompt = a._build_system_prompt()
             assert TOOL_USE_ENFORCEMENT_GUIDANCE not in prompt
+
+    def test_file_approval_guidance_is_model_and_enforcement_independent(self):
+        from agent.prompt_builder import FILE_APPROVAL_GUIDANCE
+
+        agent = self._make_agent(
+            model="anthropic/claude-sonnet-4",
+            tool_use_enforcement=False,
+            tools=("write_file",),
+        )
+
+        assert FILE_APPROVAL_GUIDANCE in agent._build_system_prompt()
+
+    def test_file_approval_guidance_is_skipped_without_file_write_tools(self):
+        from agent.prompt_builder import FILE_APPROVAL_GUIDANCE
+
+        agent = self._make_agent(
+            model="anthropic/claude-sonnet-4",
+            tool_use_enforcement=False,
+        )
+
+        assert FILE_APPROVAL_GUIDANCE not in agent._build_system_prompt()
 
 
 class TestInvalidateSystemPrompt:

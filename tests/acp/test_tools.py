@@ -25,7 +25,10 @@ from acp.schema import (
 # ---------------------------------------------------------------------------
 
 
-COMMON_HERMES_TOOLS = ["read_file", "search_files", "terminal", "patch", "write_file", "process"]
+COMMON_HERMES_TOOLS = [
+    "read_file", "search_files", "terminal", "patch", "write_file",
+    "replace_file", "process",
+]
 
 
 class TestToolKindMap:

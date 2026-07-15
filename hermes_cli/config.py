@@ -623,6 +623,11 @@ DEFAULT_CONFIG = {
     # 100K chars ≈ 25–35K tokens across typical tokenisers.
     "file_read_max_chars": 100_000,
 
+    # Maximum size of one generated/binary file promoted from a sandbox into
+    # a host destination (directly or through durable file approval staging).
+    # Payloads are stored outside model context under MAIA_HOME/file_changes.
+    "file_artifact_max_bytes": 100 * 1024 * 1024,
+
     # Tool-output truncation thresholds. When terminal output or a
     # single read_file page exceeds these limits, Hermes truncates the
     # payload sent to the model (keeping head + tail for terminal,
