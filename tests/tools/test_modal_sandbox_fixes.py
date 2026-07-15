@@ -150,6 +150,22 @@ class TestCwdHandling:
         config = _tt_mod._get_env_config()
         assert config["cwd"] == os.getcwd()
 
+    def test_local_backend_recovers_when_process_cwd_is_missing(
+        self, tmp_path, monkeypatch
+    ):
+        """A stale WSL gateway cwd must not fail before Docker overrides apply."""
+        monkeypatch.setenv("TERMINAL_ENV", "local")
+        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
+
+        def _missing_cwd():
+            raise FileNotFoundError(2, "No such file or directory")
+
+        monkeypatch.setattr(_tt_mod.os, "getcwd", _missing_cwd)
+
+        config = _tt_mod._get_env_config()
+
+        assert config["cwd"] == str(tmp_path)
+
     def test_create_environment_passes_docker_host_cwd_and_flag(self, monkeypatch):
         """Docker host cwd and mount flag should reach DockerEnvironment."""
         captured = {}

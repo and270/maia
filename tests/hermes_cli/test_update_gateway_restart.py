@@ -7,6 +7,7 @@ when launchd will auto-respawn.
 """
 
 import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
@@ -39,6 +40,29 @@ def _no_restart_verify_sleep(monkeypatch):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def test_detached_manual_restart_uses_stable_repository_cwd(tmp_path, monkeypatch):
+    """Update watchers must not propagate a stale Windows-to-WSL cwd."""
+    calls = []
+    monkeypatch.setattr(gateway_cli, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(gateway_cli, "get_python_path", lambda: "/venv/bin/python")
+    monkeypatch.setattr(
+        gateway_cli.subprocess,
+        "Popen",
+        lambda cmd, **kwargs: calls.append((cmd, kwargs)) or SimpleNamespace(),
+    )
+
+    assert gateway_cli.launch_detached_profile_gateway_restart("default", 1234)
+
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[0:2] == [sys.executable, "-c"]
+    assert isinstance(command[2], str)
+    assert command[3:6] == ["1234", str(tmp_path), "/venv/bin/python"]
+    assert "cwd=repo_root" in command[2]
+    assert kwargs["cwd"] == str(tmp_path)
+
 
 def _make_run_side_effect(
     branch="main",
