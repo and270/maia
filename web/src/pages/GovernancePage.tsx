@@ -257,14 +257,14 @@ function PeopleWorkspace({
           <div className="flex items-center gap-2">
             <Link
               to="/gateway"
-              className="group relative inline-flex min-h-8 flex-1 items-center justify-center gap-2 bg-midground px-3 py-1.5 font-mono-ui text-[0.7rem] font-bold uppercase tracking-[0.15em] text-background-base shadow-[inset_-1px_-1px_0_0_#00000080,inset_1px_1px_0_0_#ffffff80] transition-opacity hover:opacity-90"
+              className="group relative inline-flex min-h-12 flex-1 items-center justify-center gap-2 border border-primary bg-primary px-5 py-3 font-mono-ui text-xs font-bold uppercase tracking-[0.12em] text-primary-foreground shadow-[0_4px_14px_-6px_var(--color-primary)] transition-[filter,transform] hover:brightness-110 active:translate-y-px"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add person in Gateway
+              <Plus className="h-4 w-4" />
+              Add user on Gateway
             </Link>
             <button
               type="button"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary"
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/5 text-xs font-bold text-primary hover:border-primary hover:bg-primary/10"
               aria-label="Why users are added from Gateway"
               aria-expanded={gatewayHelpOpen}
               title="Gateway provides the guided person onboarding flow; Governance remains the advanced editor."
@@ -330,21 +330,21 @@ function PeopleWorkspace({
             </div>
           </div>
         </div>
-        <div className="grid max-h-[30rem] overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+        <div className="max-h-[30rem] divide-y divide-border/70 overflow-y-auto">
           {filtered.map((user) => (
             <button
               key={user.actor_key}
               type="button"
               onClick={() => selectUser(user.actor_key)}
               className={cn(
-                "grid w-full gap-2 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors sm:border-r",
+                "flex min-h-16 w-full flex-col gap-2 px-4 py-3 text-left normal-case transition-colors sm:flex-row sm:items-center sm:gap-5",
                 selected?.actor_key === user.actor_key
-                  ? "bg-primary/10 text-foreground"
+                  ? "bg-primary/10 text-foreground shadow-[inset_3px_0_0_0_var(--color-primary)]"
                   : "hover:bg-muted/30",
               )}
             >
-              <div className="flex min-w-0 items-start justify-between gap-2">
-                <div className="min-w-0">
+              <div className="flex min-w-0 items-start justify-between gap-2 sm:w-[42%] sm:items-center">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{user.name || user.actor_key}</div>
                   <div className="truncate font-mono-ui text-[0.7rem] text-muted-foreground">
                     {user.actor_key}
@@ -352,7 +352,7 @@ function PeopleWorkspace({
                 </div>
                 <UserStatus user={user} />
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1 sm:justify-end">
                 {user.roles.map((role) => (
                   <Badge key={role} tone={roleTone(role)}>{role}</Badge>
                 ))}
@@ -363,7 +363,7 @@ function PeopleWorkspace({
             </button>
           ))}
           {filtered.length === 0 && (
-            <div className="col-span-full flex min-h-32 items-center justify-center px-4 text-center text-sm normal-case text-muted-foreground">
+            <div className="flex min-h-32 items-center justify-center px-4 text-center text-sm normal-case text-muted-foreground">
               {query.trim()
                 ? "No people match this search and status filter."
                 : status === "pending"
