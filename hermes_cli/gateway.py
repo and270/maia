@@ -470,7 +470,8 @@ def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
         import time
 
         pid = int(sys.argv[1])
-        cmd = sys.argv[2:]
+        repo_root = sys.argv[2]
+        cmd = sys.argv[3:]
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             try:
@@ -482,6 +483,7 @@ def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
             time.sleep(0.2)
         subprocess.Popen(
             cmd,
+            cwd=repo_root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -491,7 +493,15 @@ def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
 
     try:
         subprocess.Popen(
-            [sys.executable, "-c", watcher, str(old_pid), *_gateway_run_args_for_profile(profile)],
+            [
+                sys.executable,
+                "-c",
+                watcher,
+                str(old_pid),
+                str(PROJECT_ROOT),
+                *_gateway_run_args_for_profile(profile),
+            ],
+            cwd=str(PROJECT_ROOT),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -2942,6 +2952,31 @@ def _guard_official_docker_root_gateway() -> None:
     sys.exit(1)
 
 
+def _recover_process_cwd() -> Path | None:
+    """Move a gateway off an inherited cwd that no longer resolves.
+
+    A detached restart inherits its parent's cwd.  Windows-to-WSL launchers can
+    leave that cwd pointing at a transient or malformed path, and later calls
+    to ``os.getcwd()`` then fail with ``ENOENT``.  Gateway code does not depend
+    on the caller's shell directory, so the installed repository is the stable
+    recovery location.
+    """
+
+    try:
+        os.getcwd()
+        return None
+    except FileNotFoundError:
+        candidates = (PROJECT_ROOT, Path.home(), Path(os.path.sep))
+        for candidate in candidates:
+            if candidate.is_dir():
+                os.chdir(candidate)
+                print_warning(
+                    f"Inherited working directory was unavailable; recovered to {candidate}"
+                )
+                return candidate
+        raise
+
+
 def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     """Run the gateway in foreground.
     
@@ -2952,6 +2987,7 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
                  This prevents systemd restart loops when the old process
                  hasn't fully exited yet.
     """
+    _recover_process_cwd()
     _guard_official_docker_root_gateway()
     sys.path.insert(0, str(PROJECT_ROOT))
 

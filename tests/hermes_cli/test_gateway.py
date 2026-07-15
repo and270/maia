@@ -1,6 +1,7 @@
 """Tests for hermes_cli.gateway."""
 
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch, call
 
@@ -88,6 +89,24 @@ def test_run_gateway_root_guard_has_escape_hatch(monkeypatch):
     gateway.run_gateway(verbose=2, replace=True)
 
     assert calls == [(True, 2)]
+
+
+def test_recover_process_cwd_uses_project_root(tmp_path, monkeypatch, capsys):
+    """Gateway startup recovers from a missing Windows-to-WSL inherited cwd."""
+    monkeypatch.setattr(gateway, "PROJECT_ROOT", tmp_path)
+
+    def _missing_cwd():
+        raise FileNotFoundError(2, "No such file or directory")
+
+    changed_to = []
+    monkeypatch.setattr(gateway.os, "getcwd", _missing_cwd)
+    monkeypatch.setattr(gateway.os, "chdir", lambda path: changed_to.append(Path(path)))
+
+    recovered = gateway._recover_process_cwd()
+
+    assert recovered == tmp_path
+    assert changed_to == [tmp_path]
+    assert "recovered" in capsys.readouterr().out.lower()
 
 
 class TestSystemdLingerStatus:

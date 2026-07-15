@@ -1104,6 +1104,39 @@ def _parse_env_var(name: str, default: str, converter=int, type_label: str = "in
         )
 
 
+def _safe_process_cwd() -> str:
+    """Return a usable process cwd even when the inherited directory vanished.
+
+    WSL and detached gateway restarts can leave a process attached to a
+    directory that no longer resolves (for example ``/Users/Admin`` while the
+    real Windows mount is ``/mnt/c/Users/Admin``).  In that state
+    :func:`os.getcwd` raises ``FileNotFoundError`` before the governed Docker
+    override can be applied.  Prefer the gateway's canonical ``TERMINAL_CWD``
+    when it is an existing absolute path, then fall back to the user's home.
+    """
+
+    try:
+        return os.getcwd()
+    except FileNotFoundError as exc:
+        candidates = (
+            os.getenv("TERMINAL_CWD", "").strip(),
+            str(Path.home()),
+            os.path.sep,
+        )
+        for raw_candidate in candidates:
+            if not raw_candidate:
+                continue
+            candidate = os.path.expanduser(raw_candidate)
+            if os.path.isabs(candidate) and os.path.isdir(candidate):
+                logger.warning(
+                    "Process working directory is unavailable (%s); using %s",
+                    exc,
+                    candidate,
+                )
+                return candidate
+        raise
+
+
 def _get_env_config() -> Dict[str, Any]:
     """Get terminal environment configuration from environment variables."""
     # Default image with Python and Node.js for maximum compatibility
@@ -1116,7 +1149,7 @@ def _get_env_config() -> Dict[str, Any]:
     # remote home, Vercel uses its documented workspace root, and everything
     # else starts in the backend's default root-like cwd.
     if env_type == "local":
-        default_cwd = os.getcwd()
+        default_cwd = _safe_process_cwd()
     elif env_type == "ssh":
         default_cwd = "~"
     elif env_type == "vercel_sandbox":
@@ -1134,7 +1167,7 @@ def _get_env_config() -> Dict[str, Any]:
     host_cwd = None
     host_prefixes = ("/Users/", "/home/", "C:\\", "C:/")
     if env_type == "docker" and mount_docker_cwd:
-        docker_cwd_source = os.getenv("TERMINAL_CWD") or os.getcwd()
+        docker_cwd_source = os.getenv("TERMINAL_CWD") or _safe_process_cwd()
         candidate = os.path.abspath(os.path.expanduser(docker_cwd_source))
         if (
             any(candidate.startswith(p) for p in host_prefixes)
