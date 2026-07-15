@@ -116,7 +116,7 @@ export function GovernanceFileGrantEditor({
           No direct paths. Access can still come from role or team policies.
         </div>
       ) : (
-        <div className="divide-y divide-border border border-border">
+        <div className="space-y-3">
           {grants.map((grant, index) => {
             const approvalRequired =
               grant.write &&
@@ -128,9 +128,30 @@ export function GovernanceFileGrantEditor({
                 ? "approval"
                 : "direct";
             return (
-              <div key={`${grant.path}-${index}`} className="space-y-4 p-3">
-                <div className="grid gap-3 md:grid-cols-[minmax(14rem,1fr)_auto_minmax(10rem,auto)_auto_auto] md:items-end">
-                  <div className="grid gap-2">
+              <div key={index} className="space-y-4 border border-border bg-background p-4">
+                <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Path {index + 1}
+                    </div>
+                    <div className="mt-1 max-w-xl truncate font-mono-ui text-xs text-foreground">
+                      {grant.path || "Choose a server file or folder"}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    ghost
+                    destructive
+                    onClick={() => remove(index)}
+                    disabled={disabled}
+                    aria-label={`Remove access for ${grant.path || "new path"}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Remove
+                  </Button>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 xl:items-end">
+                  <div className="grid gap-2 sm:col-span-2 xl:col-span-3">
                     <Label htmlFor={`governance-server-path-${index}`}>
                       Server path
                     </Label>
@@ -191,18 +212,6 @@ export function GovernanceFileGrantEditor({
                     disabled={disabled}
                     onChange={(recursive) => update(index, { recursive })}
                   />
-                  <div className="flex justify-end md:block">
-                    <Button
-                      size="icon"
-                      ghost
-                      className="h-10 w-10"
-                      onClick={() => remove(index)}
-                      disabled={disabled}
-                      aria-label={`Remove access for ${grant.path || "new path"}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
                 </div>
 
                 {writeMode === "approval" && (

@@ -218,7 +218,7 @@ class TestWebServerEndpoints:
         # Should contain known env var names
         assert any(k.endswith("_API_KEY") or k.endswith("_TOKEN") for k in data.keys())
 
-    def test_discord_gateway_access_users_bootstraps_only_first_admin(self):
+    def test_gateway_access_users_bootstraps_admin_and_configures_other_people(self):
         from hermes_cli.config import load_config, load_env
 
         resp = self.client.put(
@@ -229,7 +229,7 @@ class TestWebServerEndpoints:
                         "user_id": "discord:284102345871466496",
                         "name": "Ana Admin",
                         "roles": ["admin"],
-                        "teams": ["leadership"],
+                        "teams": [],
                     },
                     {
                         "user_id": "<@198765432109876543>",
@@ -260,14 +260,18 @@ class TestWebServerEndpoints:
             "name": "Ana Admin",
             "roles": ["admin"],
         }
-        assert "discord:198765432109876543" not in governance_users
+        assert governance_users["discord:198765432109876543"] == {
+            "name": "Bruno Operator",
+            "roles": ["operator"],
+        }
         assert data["users"][0]["governed"] is True
         assert data["users"][1] == {
             "user_id": "198765432109876543",
-            "name": "",
-            "roles": [],
+            "name": "Bruno Operator",
+            "roles": ["operator"],
             "teams": [],
-            "governed": False,
+            "governed": True,
+            "file_access": [],
         }
 
     def test_discord_gateway_access_users_lists_allowed_users_only(self):
@@ -305,10 +309,11 @@ class TestWebServerEndpoints:
         assert save_resp.json()["users"] == [
             {
                 "user_id": "333333333333333333",
-                "name": "",
+                "name": "New User",
                 "roles": [],
                 "teams": [],
                 "governed": False,
+                "file_access": [],
             }
         ]
 
@@ -344,6 +349,95 @@ class TestWebServerEndpoints:
         assert users["discord:222222222222222222"]["governed"] is False
         assert users["discord:222222222222222222"]["gateway_allowed"] is True
         assert users["sso:auditor@example.com"]["gateway_allowed"] is False
+
+    def test_gateway_user_editor_saves_governance_profile_and_file_access(self):
+        from hermes_cli.config import load_config, save_config
+
+        save_config(
+            {
+                "governance": {
+                    "teams": {"support": {}},
+                    "users": {
+                        "slack:UADMIN": {
+                            "name": "Admin",
+                            "roles": ["admin"],
+                        }
+                    },
+                }
+            }
+        )
+
+        response = self.client.put(
+            "/api/gateway/slack/access-users",
+            json={
+                "users": [
+                    {"user_id": "UADMIN", "name": "Admin", "roles": ["admin"]},
+                    {
+                        "user_id": "UOPERATOR",
+                        "name": "Bruno Support",
+                        "roles": ["operator"],
+                        "teams": ["support"],
+                        "file_access": [
+                            {
+                                "path": "/srv/support",
+                                "recursive": True,
+                                "read": True,
+                                "write": False,
+                            }
+                        ],
+                    },
+                ]
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        saved_user = load_config()["governance"]["users"]["slack:UOPERATOR"]
+        assert saved_user == {
+            "name": "Bruno Support",
+            "roles": ["operator"],
+            "teams": ["support"],
+        }
+        saved = {user["user_id"]: user for user in response.json()["users"]}
+        assert saved["UOPERATOR"]["file_access"] == [
+            {
+                "path": "/srv/support",
+                "recursive": True,
+                "read": True,
+                "write": False,
+            }
+        ]
+
+    def test_gateway_user_editor_refuses_to_demote_last_admin(self):
+        from hermes_cli.config import save_config
+
+        save_config(
+            {
+                "governance": {
+                    "users": {
+                        "slack:UADMIN": {
+                            "name": "Only Admin",
+                            "roles": ["admin"],
+                        }
+                    }
+                }
+            }
+        )
+
+        response = self.client.put(
+            "/api/gateway/slack/access-users",
+            json={
+                "users": [
+                    {
+                        "user_id": "UADMIN",
+                        "name": "Only Admin",
+                        "roles": ["viewer"],
+                    }
+                ]
+            },
+        )
+
+        assert response.status_code == 400
+        assert "last governance administrator" in response.json()["detail"].lower()
 
     def test_governance_server_paths_lists_directories_before_files(self, tmp_path):
         folder = tmp_path / "Finance"

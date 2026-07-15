@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { FolderTree, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { FolderTree, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   HelpBox,
   HelpDot,
@@ -9,12 +9,13 @@ import {
 import { useGovernanceOptions } from "@/hooks/useGovernanceOptions";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
-import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@/components/NouiTypography";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
+import { DashboardLoadingState } from "@/components/DashboardLoadingState";
+import { UnsavedChangesBar } from "@/components/UnsavedChangesBar";
 import { api, type FolderPoliciesResponse, type FolderPolicy } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
@@ -54,6 +55,9 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
   const { roles: roleOptions, teams: teamOptions } = useGovernanceOptions();
+  const isDirty = Boolean(
+    data && JSON.stringify(policies) !== JSON.stringify(data.folder_policies),
+  );
 
   const actorKeyHelp = (
     <>
@@ -98,8 +102,15 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
   }, [showToast]);
 
   useEffect(() => {
-    load();
+    // Initial remote state load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
+
+  const refresh = () => {
+    if (isDirty && !window.confirm("Discard unsaved file access changes and reload?")) return;
+    void load();
+  };
 
   const updatePolicy = (index: number, next: FolderPolicy) => {
     setPolicies((current) =>
@@ -148,8 +159,13 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
 
   if (loading && !data) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Spinner className="text-2xl text-primary" />
+      <div className="flex flex-col gap-5">
+        {!embedded && <PluginSlot name="file-access:top" />}
+        <DashboardLoadingState
+          title="Restoring saved file access"
+          description="Loading governed folders, role and team grants, and approval rules before showing the policy editor."
+          cards={3}
+        />
       </div>
     );
   }
@@ -161,8 +177,8 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
       {!embedded && <PluginSlot name="file-access:top" />}
       <Toast toast={toast} />
 
-      <div className="grid gap-0 border border-border lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside className="bg-muted/10">
+      <div className="space-y-5 pb-20">
+        <section className="border border-border bg-muted/10">
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
             <div>
               <div className="text-sm font-semibold normal-case text-foreground">Policies</div>
@@ -173,13 +189,14 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               Add policy
             </Button>
           </div>
+          <div className="grid max-h-[24rem] overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
           {policies.map((policy, index) => (
             <button
               key={`policy-nav-${policy.path}-${index}`}
               type="button"
               onClick={() => setSelectedPolicyIndex(index)}
               className={cn(
-                "grid w-full gap-1 border-b border-border/70 px-3 py-3 text-left normal-case transition-colors",
+                "grid w-full gap-1 border-b border-border/70 px-3 py-3 text-left normal-case transition-colors sm:border-r",
                 selectedPolicyIndex === index ? "bg-primary/10" : "hover:bg-muted/30",
               )}
             >
@@ -198,15 +215,16 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               No paths configured. Add a policy to grant narrow file access.
             </div>
           )}
+          </div>
           <div className="flex items-center justify-between gap-2 border-t border-border p-3 normal-case">
             <span className="text-xs text-muted-foreground">Unmatched paths are denied.</span>
-            <Button size="xs" ghost onClick={load} disabled={loading}>
+            <Button size="xs" ghost onClick={refresh} disabled={loading}>
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </Button>
           </div>
-        </aside>
-        <div className="min-w-0 p-4 lg:border-l lg:border-border">
+        </section>
+        <section className="min-w-0 border border-border p-4 sm:p-5">
           <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               {!embedded && (
@@ -220,10 +238,6 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 {canAdmin ? "System admin" : "Team manager"}
               </Badge>
             </div>
-            <Button size="sm" onClick={save} disabled={saving}>
-              <Save className="h-4 w-4" />
-              Save policies
-            </Button>
           </div>
         {policies.map((policy, index) => (
           selectedPolicyIndex === index ? <Card key={`${policy.path}-${index}`}>
@@ -235,8 +249,8 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 </Button>
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4 normal-case lg:grid-cols-2">
-              <div className="min-w-0 lg:col-span-2">
+            <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-4 normal-case xl:grid-cols-2">
+              <div className="min-w-0 xl:col-span-2">
                 <Field
                   label="Server path"
                   value={policy.path}
@@ -258,7 +272,7 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               </label>
 
               {canAdmin && (
-                <div className="min-w-0 lg:col-span-2">
+                <div className="min-w-0 xl:col-span-2">
                   <RoleAccessMatrix
                     roles={roleOptions}
                     readRoles={policy.read_roles ?? []}
@@ -325,7 +339,7 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                 placeholder="slack:U_MANAGER"
                 help={actorKeyHelp}
               />
-              <div className="space-y-2 lg:col-span-2">
+              <div className="space-y-2 xl:col-span-2">
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input
                     type="checkbox"
@@ -363,7 +377,15 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
               Add a policy to grant access to a file or folder.
             </div>
           )}
-        </div>
+        </section>
+        <UnsavedChangesBar
+          dirty={isDirty}
+          saving={saving}
+          onSave={() => void save()}
+          label="Unsaved file access policies"
+          description="All policy grants and approval rules on this page will be saved together."
+          saveLabel="Save policies"
+        />
       </div>
     </div>
   );

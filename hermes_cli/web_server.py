@@ -1336,17 +1336,6 @@ class EnvVarReveal(BaseModel):
     key: str
 
 
-class DiscordGatewayAccessUser(BaseModel):
-    user_id: str
-    name: str = ""
-    roles: Optional[List[str]] = None
-    teams: Optional[List[str]] = None
-
-
-class DiscordGatewayAccessUsersUpdate(BaseModel):
-    users: List[DiscordGatewayAccessUser] = Field(default_factory=list)
-
-
 class GovernanceFileGrant(BaseModel):
     path: str
     recursive: bool = True
@@ -1354,6 +1343,18 @@ class GovernanceFileGrant(BaseModel):
     write: bool = False
     write_approval_roles: Optional[List[str]] = None
     write_approval_users: Optional[List[str]] = None
+
+
+class DiscordGatewayAccessUser(BaseModel):
+    user_id: str
+    name: str = ""
+    roles: Optional[List[str]] = None
+    teams: Optional[List[str]] = None
+    file_access: Optional[List[GovernanceFileGrant]] = None
+
+
+class DiscordGatewayAccessUsersUpdate(BaseModel):
+    users: List[DiscordGatewayAccessUser] = Field(default_factory=list)
 
 
 class GovernanceUserUpdate(BaseModel):
@@ -1502,6 +1503,11 @@ def _load_gateway_access_users(platform: str) -> List[Dict[str, Any]]:
                 "roles": _coerce_role_list(record.get("roles")),
                 "teams": _coerce_role_list(record.get("teams") or record.get("team")),
                 "governed": bool(_coerce_role_list(record.get("roles"))),
+                "file_access": _subject_file_grants(
+                    governance,
+                    subject=f"{platform}:{user_id}" if f"{platform}:{user_id}" in users else user_id,
+                    subject_kind="user",
+                ),
             }
         )
     return result
@@ -1523,8 +1529,9 @@ def _save_gateway_access_users(
         users = {}
 
     # Only a completely fresh installation receives an automatic bootstrap
-    # administrator. Once any explicit user with a role exists, this editor is
-    # allowlist-only; Governance is the sole place that can grant access.
+    # administrator. The Gateway editor also owns the initial Governance setup
+    # for each allowlisted identity so an administrator can finish a person in
+    # one coherent flow instead of bouncing between pages.
     bootstrap_needed = not any(
         _coerce_role_list(
             record.get("roles") if isinstance(record, dict) else record
@@ -1532,6 +1539,9 @@ def _save_gateway_access_users(
         for record in users.values()
     )
     bootstrap_created = False
+    hierarchy = _governance_role_options()
+    registered_teams = _governance_team_registry(governance)
+    admin_keys_before = _governance_admin_keys(users)
 
     allowed_ids: List[str] = []
     seen: set[str] = set()
@@ -1546,18 +1556,51 @@ def _save_gateway_access_users(
 
         key = f"{platform}:{user_id}"
         existing = users.get(key)
-        existing_roles = _coerce_role_list(
-            existing.get("roles") if isinstance(existing, dict) else existing
+        record = dict(existing) if isinstance(existing, dict) else {}
+        requested_roles = (
+            _validate_governance_roles(_coerce_role_list(item.roles), hierarchy)
+            if item.roles is not None
+            else _coerce_role_list(record.get("roles"))
         )
-        if existing_roles:
-            # Gateway editing must never rewrite an established Governance
-            # identity, role, or team assignment.
-            continue
-
         if bootstrap_needed and not bootstrap_created:
-            name = str(item.name or "").strip() or key
-            users[key] = {"name": name, "roles": ["admin"]}
+            requested_roles = ["admin"]
             bootstrap_created = True
+
+        requested_teams = (
+            _coerce_role_list(item.teams)
+            if item.teams is not None
+            else _coerce_role_list(record.get("teams") or record.get("team"))
+        )
+        unknown_teams = [team for team in requested_teams if team not in registered_teams]
+        if unknown_teams:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown governance teams: {', '.join(unknown_teams)}",
+            )
+
+        record["name"] = str(item.name or record.get("name") or key).strip()
+        record["roles"] = requested_roles
+        if requested_teams:
+            record["teams"] = requested_teams
+        else:
+            record.pop("teams", None)
+            record.pop("team", None)
+        users[key] = record
+        governance["users"] = users
+
+        if item.file_access is not None:
+            _replace_subject_file_grants(
+                governance,
+                subject=key,
+                subject_kind="user",
+                grants=item.file_access,
+            )
+
+    if admin_keys_before and not _governance_admin_keys(users):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot remove or demote the last Governance administrator",
+        )
 
     save_env_value(env_key, ",".join(allowed_ids))
     governance["users"] = users
@@ -3851,12 +3894,13 @@ async def update_governance_settings(
 
 @app.get("/api/gateway/{platform}/access-users")
 async def get_gateway_access_users(platform: str):
-    """Managed allowlist and read-only Governance status for a platform.
+    """Managed allowlist and Governance setup for a platform.
 
     Same contract for discord/slack/mattermost/matrix (the old
     discord-only route is the discord case of this one). New allowlist users
-    remain pending until an administrator grants a role in Governance. The
-    first user on a completely fresh installation is bootstrapped as admin.
+    can be fully configured with a name, roles, teams, and direct file grants
+    in the same request. The first user on a completely fresh installation is
+    bootstrapped as admin.
     """
     return {
         "users": _load_gateway_access_users(platform),

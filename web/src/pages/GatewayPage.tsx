@@ -15,7 +15,6 @@ import {
   Plus,
   RefreshCw,
   RotateCw,
-  Save,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -25,10 +24,15 @@ import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@/components/NouiTypography";
+import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
+import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
+import { DashboardLoadingState } from "@/components/DashboardLoadingState";
+import { OnboardingReturnBar } from "@/components/OnboardingReturnBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
+import { UnsavedChangesBar } from "@/components/UnsavedChangesBar";
 import { useToast } from "@/hooks/useToast";
 import {
   api,
@@ -36,6 +40,9 @@ import {
   type DiscordGatewayAccessUser,
   type DiscordGatewayAccessUsersResponse,
   type EnvVarInfo,
+  type GovernanceFileGrant,
+  type GovernanceOverview,
+  type GovernanceUser,
   type StatusResponse,
 } from "@/lib/api";
 import { PluginSlot } from "@/plugins";
@@ -79,10 +86,11 @@ type DiscordAccessUserDraft = {
   roles: string[];
   teams: string[];
   governed: boolean;
+  file_access: GovernanceFileGrant[];
 };
 
-function newDiscordAccessRow(): DiscordAccessUserDraft {
-  return { user_id: "", name: "", roles: [], teams: [], governed: false };
+function newDiscordAccessRow(roles: string[] = []): DiscordAccessUserDraft {
+  return { user_id: "", name: "", roles, teams: [], governed: false, file_access: [] };
 }
 
 function discordUserToDraft(user: DiscordGatewayAccessUser): DiscordAccessUserDraft {
@@ -92,6 +100,7 @@ function discordUserToDraft(user: DiscordGatewayAccessUser): DiscordAccessUserDr
     roles: user.roles ?? [],
     teams: user.teams ?? [],
     governed: Boolean(user.governed),
+    file_access: (user.file_access ?? []).map((grant) => ({ ...grant })),
   };
 }
 
@@ -100,6 +109,10 @@ function normalizeDiscordRows(rows: DiscordAccessUserDraft[]): DiscordGatewayAcc
   return rows
     .map((row) => ({
       user_id: row.user_id.trim(),
+      name: row.name.trim(),
+      roles: row.roles,
+      teams: row.teams,
+      file_access: row.file_access,
     }))
     .filter((row) => row.user_id.length > 0)
     .filter((row) => {
@@ -485,6 +498,7 @@ function PlatformLogo({ platform }: { platform: GatewayPlatform }) {
 export default function GatewayPage() {
   const [env, setEnv] = useState<Record<string, EnvVarInfo>>({});
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [governance, setGovernance] = useState<GovernanceOverview | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
   const [accessRows, setAccessRows] = useState<Record<string, DiscordAccessUserDraft[]>>(
     () =>
@@ -494,6 +508,7 @@ export default function GatewayPage() {
   );
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null);
+  const [dirtyPlatformIds, setDirtyPlatformIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [actionOutput, setActionOutput] = useState<{
@@ -514,9 +529,10 @@ export default function GatewayPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextEnv, nextStatus, ...accessLists] = await Promise.all([
+      const [nextEnv, nextStatus, nextGovernance, ...accessLists] = await Promise.all([
         api.getEnvVars(),
         api.getStatus(),
+        api.getGovernanceOverview(),
         ...ACCESS_PLATFORM_IDS.map((id) =>
           api
             .getGatewayAccessUsers(id)
@@ -525,10 +541,14 @@ export default function GatewayPage() {
       ]);
       setEnv(nextEnv);
       setStatus(nextStatus);
+      setGovernance(nextGovernance);
       const nextRows: Record<string, DiscordAccessUserDraft[]> = {};
       ACCESS_PLATFORM_IDS.forEach((id, index) => {
         const rows = (accessLists[index]?.users ?? []).map(discordUserToDraft);
-        nextRows[id] = rows.length ? rows : [newDiscordAccessRow()];
+        const hasGovernedUser = nextGovernance.users.some((user) => user.governed);
+        nextRows[id] = rows.length
+          ? rows
+          : [newDiscordAccessRow(hasGovernedUser ? [] : ["admin"])];
       });
       setAccessRows(nextRows);
     } catch (err) {
@@ -544,7 +564,22 @@ export default function GatewayPage() {
     void load();
   }, [load]);
 
+  const markPlatformDirty = (platformId: string) => {
+    setDirtyPlatformIds((current) => new Set(current).add(platformId));
+  };
+
+  const refresh = () => {
+    if (
+      dirtyPlatformIds.size > 0 &&
+      !window.confirm("Discard all unsaved Gateway changes and reload from the server?")
+    ) {
+      return;
+    }
+    void load();
+  };
+
   const setDraftValue = (platformId: string, key: string, value: string) => {
+    markPlatformDirty(platformId);
     setDrafts((current) => ({
       ...current,
       [platformId]: {
@@ -563,6 +598,7 @@ export default function GatewayPage() {
     index: number,
     patch: Partial<DiscordAccessUserDraft>,
   ) => {
+    markPlatformDirty(platformId);
     setAccessRows((current) => ({
       ...current,
       [platformId]: (current[platformId] ?? []).map((row, rowIndex) =>
@@ -572,6 +608,7 @@ export default function GatewayPage() {
   };
 
   const addAccessRow = (platformId: string) => {
+    markPlatformDirty(platformId);
     setAccessRows((current) => ({
       ...current,
       [platformId]: [...(current[platformId] ?? []), newDiscordAccessRow()],
@@ -579,6 +616,7 @@ export default function GatewayPage() {
   };
 
   const removeAccessRow = (platformId: string, index: number) => {
+    markPlatformDirty(platformId);
     setAccessRows((current) => {
       const next = (current[platformId] ?? []).filter((_, rowIndex) => rowIndex !== index);
       return {
@@ -596,32 +634,11 @@ export default function GatewayPage() {
     }));
   };
 
-  const saveAccessUsers = async (platform: GatewayPlatform) => {
-    const users = normalizeDiscordRows(accessRows[platform.id] ?? []);
-    if (!users.length) {
-      showToast(`Add at least one ${platform.name} user ID before saving.`, "error");
-      return;
-    }
-    setBusy(`${platform.id}:access-users`);
-    try {
-      const response = await api.saveGatewayAccessUsers(platform.id, { users });
-      setPlatformRows(platform.id, response.users);
-      showToast(
-        `${platform.name} allowlist saved. Pending users stay blocked until an admin grants a role in Governance. Press Start or Restart at the top of this page to apply the allowlist.`,
-        "success",
-      );
-      await load();
-    } catch (err) {
-      showToast(`Failed to save ${platform.name} users: ${err}`, "error");
-    } finally {
-      setBusy("");
-    }
-  };
-
   const savePlatform = async (platform: GatewayPlatform) => {
     const draft = drafts[platform.id] ?? {};
     const allowKey = ACCESS_ENV_KEYS[platform.id];
     const accessUsers = allowKey ? normalizeDiscordRows(accessRows[platform.id] ?? []) : [];
+    const accessChanged = Boolean(allowKey && dirtyPlatformIds.has(platform.id));
     const extraDraftKeys = new Set<string>();
     if (allowKey && accessUsers.length) extraDraftKeys.add(allowKey);
     const missing = missingRequirements(platform, env, draft, extraDraftKeys);
@@ -635,7 +652,7 @@ export default function GatewayPage() {
       .filter(([, value]) => value.length > 0)
       .filter(([key]) => !(allowKey && key === allowKey && accessUsers.length));
 
-    if (!entries.length && !(allowKey && accessUsers.length)) {
+    if (!entries.length && !accessChanged) {
       showToast("No new gateway values to save.", "success");
       return;
     }
@@ -645,13 +662,19 @@ export default function GatewayPage() {
       for (const [key, value] of entries) {
         await api.setEnvVar(key, value);
       }
-      if (allowKey && accessUsers.length) {
+      if (allowKey && accessChanged) {
         const response = await api.saveGatewayAccessUsers(platform.id, { users: accessUsers });
         setPlatformRows(platform.id, response.users);
       }
       setDrafts((current) => ({ ...current, [platform.id]: {} }));
-      showToast(`${platform.name} gateway values saved. Press Start or Restart at the top of this page to apply them.`, "success");
+      setDirtyPlatformIds((current) => {
+        const next = new Set(current);
+        next.delete(platform.id);
+        return next;
+      });
+      showToast(`${platform.name} gateway and people settings saved. Press Start or Restart at the top of this page to apply connection changes.`, "success");
       await load();
+      window.dispatchEvent(new Event("maia:onboarding-updated"));
     } catch (err) {
       showToast(`Failed to save ${platform.name}: ${err}`, "error");
     } finally {
@@ -744,19 +767,30 @@ export default function GatewayPage() {
 
   if (loading && !Object.keys(env).length) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Spinner className="text-2xl text-primary" />
+      <div className="flex flex-col gap-5">
+        <PluginSlot name="gateway:top" />
+        <OnboardingReturnBar step={2} title="Connect a messaging gateway" />
+        <DashboardLoadingState
+          title="Restoring your Gateway setup"
+          description="Loading saved platform credentials, people, Governance roles, teams, and file access before showing the editor."
+          cards={4}
+        />
       </div>
     );
   }
 
   const runtime = gatewayRuntimeLabel(status);
   const runtimeTone = status?.gateway_running ? "success" : "destructive";
+  const dirtyPlatform =
+    (selectedPlatform && dirtyPlatformIds.has(selectedPlatform.id) ? selectedPlatform : null) ??
+    PLATFORMS.find((platform) => dirtyPlatformIds.has(platform.id)) ??
+    null;
 
   return (
     <div className="flex flex-col gap-6">
       <PluginSlot name="gateway:top" />
       <Toast toast={toast} />
+      <OnboardingReturnBar step={2} title="Connect a messaging gateway" />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -777,7 +811,7 @@ export default function GatewayPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" outlined onClick={load} disabled={loading}>
+            <Button size="sm" outlined onClick={refresh} disabled={loading}>
               <RefreshCw className="h-4 w-4" />
               Refresh
             </Button>
@@ -828,9 +862,9 @@ export default function GatewayPage() {
         <CardContent className="grid gap-3 text-sm normal-case leading-6 text-muted-foreground md:grid-cols-4">
           {[
             "Choose Slack, Discord, Mattermost, or Matrix.",
-            "Save bot credentials and gateway allowlists; new users remain pending.",
-            "Grant each human identity at least one role in Governance / People.",
-            "Start or restart the gateway service.",
+            "Enter the bot credentials required by that platform.",
+            "Add each person with a display name, role, teams, and file access.",
+            "Save everything together, then start or restart the gateway service.",
           ].map((item) => (
             <div key={item} className="flex items-start gap-2 border border-border/60 p-3">
               <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-success" />
@@ -912,7 +946,6 @@ export default function GatewayPage() {
             {[selectedPlatform].map((platform) => {
           const configured = platformConfigured(platform, env);
           const draft = drafts[platform.id] ?? {};
-          const saveBusy = busy === `save:${platform.id}`;
           const infoBoxCount = (platform.guide ? 0 : 1) + (platform.usage ? 1 : 0) + 1;
           return (
             <Card key={platform.id} className={configured ? "border-success/40" : ""}>
@@ -1058,16 +1091,17 @@ export default function GatewayPage() {
                 <GatewayAccessUsersEditor
                   platform={platform}
                   rows={accessRows[platform.id] ?? []}
-                  busy={busy === `${platform.id}:access-users`}
                   disabled={Boolean(busy)}
                   configured={configured}
+                  roleOptions={governance?.role_hierarchy ?? []}
+                  teamOptions={governance?.teams ?? []}
+                  approvalUsers={(governance?.users ?? []).filter((user) => user.governed)}
                   onAdd={() => addAccessRow(platform.id)}
                   onRemove={(index) => removeAccessRow(platform.id, index)}
-                  onSave={() => saveAccessUsers(platform)}
                   onUpdate={(index, patch) => updateAccessRow(platform.id, index, patch)}
                 />
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
                   <Button
                     size="sm"
                     outlined
@@ -1075,14 +1109,6 @@ export default function GatewayPage() {
                   >
                     <Copy className="h-4 w-4" />
                     Copy CLI wizard
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => savePlatform(platform)}
-                    disabled={saveBusy || Boolean(busy && !saveBusy)}
-                  >
-                    {saveBusy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                    Save {platform.name}
                   </Button>
                 </div>
               </CardContent>
@@ -1111,6 +1137,17 @@ maia logs gateway`}
           </pre>
         </CardContent>
       </Card>
+
+      <UnsavedChangesBar
+        dirty={Boolean(dirtyPlatform)}
+        saving={Boolean(dirtyPlatform && busy === `save:${dirtyPlatform.id}`)}
+        onSave={() => {
+          if (dirtyPlatform) void savePlatform(dirtyPlatform);
+        }}
+        label={dirtyPlatform ? `Unsaved ${dirtyPlatform.name} changes` : "Unsaved gateway changes"}
+        description="Connection fields and people access are saved together."
+        saveLabel={dirtyPlatform ? `Save ${dirtyPlatform.name}` : "Save gateway"}
+      />
 
       <PluginSlot name="gateway:bottom" />
     </div>
@@ -1191,24 +1228,26 @@ function PlatformSetupGuide({
 type GatewayAccessUsersEditorProps = {
   platform: GatewayPlatform;
   rows: DiscordAccessUserDraft[];
-  busy: boolean;
   disabled: boolean;
   configured: boolean;
+  roleOptions: string[];
+  teamOptions: string[];
+  approvalUsers: GovernanceUser[];
   onAdd: () => void;
   onRemove: (index: number) => void;
-  onSave: () => void;
   onUpdate: (index: number, patch: Partial<DiscordAccessUserDraft>) => void;
 };
 
 function GatewayAccessUsersEditor({
   platform,
   rows,
-  busy,
   disabled,
   configured,
+  roleOptions,
+  teamOptions,
+  approvalUsers,
   onAdd,
   onRemove,
-  onSave,
   onUpdate,
 }: GatewayAccessUsersEditorProps) {
   const [idHelpOpen, setIdHelpOpen] = useState(false);
@@ -1217,20 +1256,16 @@ function GatewayAccessUsersEditor({
   const idHelp = USER_ID_HELP[platform.id] ?? [];
 
   return (
-    <div className="rounded-sm border border-border/70 bg-muted/20 p-4">
+    <div className="border border-border/70 bg-muted/10 p-4">
       <div>
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
           <Users className="h-3.5 w-3.5" />
-          {platform.name} gateway allowlist
+          People and Governance
         </div>
         <p className="mt-2 max-w-3xl text-xs normal-case leading-5 text-muted-foreground">
-          Saving this list writes <code>{allowKey}</code>, but allowlisting alone does not grant bot access.
-          Every human user must also have an explicit role under <code>governance.users</code>. New IDs remain
-          blocked until an admin grants that role in{" "}
-          <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
-            Governance / People
-          </Link>
-          . On a completely fresh installation, Maia bootstraps only the first saved user as <code>admin</code>.
+          Add each {platform.name} identity and finish its display name, role, team membership, and direct file
+          access here. One save updates both <code>{allowKey}</code> and Governance. The first person on a fresh
+          installation is always bootstrapped as <code>admin</code>.
         </p>
         {!configured && (
           <p className="mt-2 text-xs normal-case leading-5 text-warning">
@@ -1238,6 +1273,13 @@ function GatewayAccessUsersEditor({
             only take effect once the bot can connect.
           </p>
         )}
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button size="sm" outlined onClick={onAdd} disabled={disabled}>
+          <Plus className="h-4 w-4" />
+          Add person
+        </Button>
       </div>
 
       {rows.length === 0 && (
@@ -1248,7 +1290,7 @@ function GatewayAccessUsersEditor({
 
       <div className="mt-4 grid gap-3">
         {rows.map((row, index) => (
-          <div key={`${index}:${row.user_id}`} className="grid gap-3 border border-border/60 p-3 xl:grid-cols-[1.3fr_1.7fr_auto]">
+          <div key={index} className="grid gap-4 border border-border bg-background p-4 xl:grid-cols-2">
             <label className="grid gap-1.5">
               <div className="flex items-center gap-1.5">
                 <Label className="font-mono-ui text-[0.7rem]">{platform.name} user ID</Label>
@@ -1283,11 +1325,25 @@ function GatewayAccessUsersEditor({
                 </div>
               )}
             </label>
+            <label className="grid content-start gap-1.5">
+              <Label>Display name</Label>
+              <Input
+                value={row.name}
+                placeholder="Ana Finance"
+                onChange={(event) => onUpdate(index, { name: event.target.value })}
+                disabled={disabled}
+              />
+              <span className="text-xs normal-case text-muted-foreground">
+                Used in audit and administration views.
+              </span>
+            </label>
             <div className="grid content-start gap-1.5 text-xs normal-case leading-5">
               <Label className="font-mono-ui text-[0.7rem]">Governance status</Label>
-              {row.governed ? (
+              {row.roles.length > 0 ? (
                 <div className="border border-success/40 bg-success/5 px-3 py-2 text-muted-foreground">
-                  <strong className="text-success">Active in Governance</strong>
+                  <strong className="text-success">
+                    {row.governed ? "Active in Governance" : "Ready to activate when saved"}
+                  </strong>
                   {row.name ? <span> · {row.name}</span> : null}
                   <div>
                     Roles: <code>{row.roles.join(", ")}</code>
@@ -1296,8 +1352,8 @@ function GatewayAccessUsersEditor({
                 </div>
               ) : (
                 <div className="border border-warning/40 bg-warning/5 px-3 py-2 text-muted-foreground">
-                  <strong className="text-warning">Pending Governance</strong>
-                  <div>This user cannot talk to Maia until an admin grants a role in Governance.</div>
+                  <strong className="text-warning">Role required</strong>
+                  <div>This person remains denied until at least one role is selected and saved.</div>
                   {row.user_id && (
                     <Link
                       to={`/governance?section=people&user=${encodeURIComponent(`${platform.id}:${row.user_id}`)}`}
@@ -1309,40 +1365,64 @@ function GatewayAccessUsersEditor({
                 </div>
               )}
             </div>
+            <div className="grid content-start gap-2 normal-case">
+              <Label>Role</Label>
+              <RoleMultiSelect
+                value={row.roles}
+                onChange={(roles) => onUpdate(index, { roles })}
+                options={roleOptions}
+                disabled={disabled}
+                emptyHint="Select at least one role"
+              />
+              <span className="text-xs text-muted-foreground">
+                Assign the narrowest role that covers this person&apos;s work.
+              </span>
+            </div>
+            <div className="grid content-start gap-2 normal-case">
+              <Label>Teams</Label>
+              <TeamMultiSelect
+                value={row.teams}
+                onChange={(teams) => onUpdate(index, { teams })}
+                options={teamOptions}
+                disabled={disabled}
+              />
+              <span className="text-xs text-muted-foreground">
+                Optional membership for shared team policies and knowledge.
+              </span>
+            </div>
+            <div className="xl:col-span-2">
+              <GovernanceFileGrantEditor
+                grants={row.file_access}
+                onChange={(file_access) => onUpdate(index, { file_access })}
+                approvalRoles={roleOptions}
+                approvalUsers={approvalUsers}
+                title="Direct file and folder access"
+                description="Add only the server paths this person needs. Team access can be managed later in Governance."
+                disabled={disabled}
+              />
+            </div>
             <Button
-              size="xs"
-              outlined
-              className="self-end"
+              size="sm"
+              ghost
+              destructive
+              className="justify-self-end xl:col-span-2"
               onClick={() => onRemove(index)}
               disabled={disabled}
               aria-label={`Remove ${platform.name} user`}
             >
               <Trash2 className="h-3.5 w-3.5" />
+              Remove person
             </Button>
           </div>
         ))}
       </div>
 
-      <div className="mt-3 grid gap-2 text-xs normal-case leading-5 text-muted-foreground md:grid-cols-3">
-        <div><strong>Multiple users:</strong> add one row per user ID; the saved allowlist is comma-separated automatically.</div>
-        <div><strong>Pending means denied:</strong> pairing and allow-all do not bypass Governance membership.</div>
-        <div><strong>Grant access:</strong> select the pending identity and assign at least one role in <Link to="/governance?section=people" className="font-bold text-primary hover:underline">Governance / People</Link>.</div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
-        <Button
-          size="sm"
-          outlined
-          onClick={onAdd}
-          disabled={disabled}
-        >
-          <Plus className="h-4 w-4" />
-          Add user ID
-        </Button>
-        <Button size="sm" onClick={onSave} disabled={disabled || rows.length === 0}>
-          {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          Save users
-        </Button>
+      <div className="mt-4 border-t border-border/60 pt-4 text-xs normal-case leading-5 text-muted-foreground">
+        People without a saved role remain denied. Use{" "}
+        <Link to="/governance?section=people" className="font-bold text-primary hover:underline">
+          Governance / People
+        </Link>{" "}
+        later for ongoing review and advanced policy changes.
       </div>
     </div>
   );

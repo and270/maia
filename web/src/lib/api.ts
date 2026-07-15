@@ -91,6 +91,7 @@ export type DiscordGatewayAccessUser = {
   name?: string;
   roles?: string[];
   teams?: string[];
+  file_access?: GovernanceFileGrant[];
   /** True only when governance.users has an explicit role for this identity. */
   governed?: boolean;
 };
