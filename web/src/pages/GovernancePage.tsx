@@ -220,6 +220,11 @@ function PeopleWorkspace({
   };
 
   const pendingCount = overview.users.filter((user) => !user.governed).length;
+  const peopleFilters = [
+    { value: "all", label: "All people", count: overview.users.length },
+    { value: "pending", label: "Pending", count: pendingCount },
+    { value: "active", label: "Active", count: overview.users.length - pendingCount },
+  ] as const;
   const roleCounts = overview.role_hierarchy.map((role) => ({
     role,
     count: overview.users.filter((user) => user.roles.includes(role)).length,
@@ -277,26 +282,52 @@ function PeopleWorkspace({
               file access together. Return here later for review and advanced Governance changes.
             </div>
           )}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search identity, name, role, or team"
-              className="pl-8"
-            />
-          </div>
-          <div className="flex gap-1">
-            {(["all", "pending", "active"] as const).map((filter) => (
-              <Button
-                key={filter}
-                size="xs"
-                ghost={status !== filter}
-                onClick={() => setStatus(filter)}
-              >
-                {filter}
-              </Button>
-            ))}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search identity, name, role, or team"
+                className="pl-8"
+              />
+            </div>
+            <div
+              role="tablist"
+              aria-label="Filter people by Governance status"
+              className="grid h-10 grid-cols-3 border border-border bg-background p-1 lg:min-w-[21rem]"
+            >
+              {peopleFilters.map((filter) => {
+                const selectedFilter = status === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedFilter}
+                    onClick={() => setStatus(filter.value)}
+                    className={cn(
+                      "flex min-w-0 items-center justify-center gap-2 px-2 text-xs font-semibold normal-case transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-inset",
+                      selectedFilter
+                        ? "bg-primary/10 text-primary shadow-[inset_0_-2px_0_0_currentColor]"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                    )}
+                  >
+                    <span className="truncate">{filter.label}</span>
+                    <span
+                      className={cn(
+                        "inline-flex min-w-5 items-center justify-center border px-1 text-[0.65rem] tabular-nums",
+                        selectedFilter
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-border bg-muted/30 text-muted-foreground",
+                      )}
+                    >
+                      {filter.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
         <div className="grid max-h-[30rem] overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
@@ -332,8 +363,14 @@ function PeopleWorkspace({
             </button>
           ))}
           {filtered.length === 0 && (
-            <div className="p-6 text-center text-sm normal-case text-muted-foreground">
-              No matching identities.
+            <div className="col-span-full flex min-h-32 items-center justify-center px-4 text-center text-sm normal-case text-muted-foreground">
+              {query.trim()
+                ? "No people match this search and status filter."
+                : status === "pending"
+                  ? "No people are waiting for Governance."
+                  : status === "active"
+                    ? "No active people yet."
+                    : "No people have been added yet."}
             </div>
           )}
         </div>
