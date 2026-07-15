@@ -1628,6 +1628,33 @@ class GatewayRunner:
 
         requirement = request.get("requirement") or {}
         mention_text = self._file_approval_mentions(platform_value, requirement, adapter)
+        try:
+            from agent.governance import eligible_file_change_approvers
+
+            eligible_approvers = eligible_file_change_approvers(requirement)
+        except Exception:
+            eligible_approvers = []
+        same_platform = [
+            actor_key
+            for actor_key in eligible_approvers
+            if str(actor_key).lower().startswith(f"{platform_value}:")
+        ]
+        if same_platform:
+            approver_summary = (
+                "Eligible approvers on this platform are tagged in this message: "
+                + ", ".join(same_platform)
+                + "."
+            )
+        elif eligible_approvers:
+            approver_summary = (
+                "No eligible approver can be tagged on this platform. Eligible "
+                "identities are: " + ", ".join(eligible_approvers) + "."
+            )
+        else:
+            approver_summary = (
+                "No configured governed identity currently satisfies this "
+                "approval requirement. An administrator must fix Governance."
+            )
         path = str(request.get("display_path") or request.get("path") or "")
         requested_by = str((request.get("requested_by") or {}).get("id") or "unknown")
         thread_id = str(origin.get("thread_id") or "").strip()
@@ -1644,6 +1671,7 @@ class GatewayRunner:
                     requested_by=requested_by,
                     diff=str(request.get("diff") or ""),
                     mention_text=mention_text,
+                    approver_summary=approver_summary,
                     metadata=metadata,
                 )
                 if result and getattr(result, "success", False):
@@ -1666,6 +1694,8 @@ class GatewayRunner:
             + f"📄 **File change awaiting approval**\n"
             + f"Path: `{path}`\nRequested by: {requested_by}\n"
             + f"Needs approval from: {who}.\n"
+            + "Status: the original file is unchanged; the update is staged.\n"
+            + f"{approver_summary}\n"
             + "Review it in the dashboard File Approvals panel."
         )
         try:

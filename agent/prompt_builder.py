@@ -346,6 +346,15 @@ GOOGLE_MODEL_OPERATIONAL_GUIDANCE = (
     "Don't stop with a plan — execute it.\n"
 )
 
+FILE_APPROVAL_GUIDANCE = (
+    "# Governed file approvals\n"
+    "When a file tool returns `pending_approval` or `approval_unavailable`, "
+    "follow its `agent_instruction` and explain the complete authorization "
+    "state: whether the original changed, what approval is required, and who "
+    "is eligible. Never reduce that situation to merely 'the folder is "
+    "read-only' — read-only sandbox mounts enforce the policy.\n"
+)
+
 # Model name substrings that should use the 'developer' role instead of
 # 'system' for the system prompt.  OpenAI's newer models (GPT-5, Codex)
 # give stronger instruction-following weight to the 'developer' role.

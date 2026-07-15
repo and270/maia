@@ -3744,6 +3744,7 @@ class DiscordAdapter(BasePlatformAdapter):
         self, chat_id: str, approval_id: str, path: str,
         requested_by: str = "", diff: str = "",
         mention_text: str = "",
+        approver_summary: str = "",
         metadata: Optional[dict] = None,
     ) -> SendResult:
         """Send a button-based card for a staged file-change approval.
@@ -3775,6 +3776,17 @@ class DiscordAdapter(BasePlatformAdapter):
             embed.add_field(
                 name="Requested by", value=requested_by or "unknown", inline=False
             )
+            embed.add_field(
+                name="Status",
+                value="Original unchanged · update staged pending approval",
+                inline=False,
+            )
+            if approver_summary:
+                embed.add_field(
+                    name="Authorization",
+                    value=approver_summary[:1024],
+                    inline=False,
+                )
             embed.set_footer(text="Also available in the dashboard File Approvals panel.")
 
             view = FileApprovalView(

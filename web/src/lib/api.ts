@@ -1154,6 +1154,13 @@ export interface FileChangeApproval {
   display_path?: string;
   operation: string;
   content?: string | null;
+  artifact?: {
+    storage_path?: string;
+    size?: number;
+    sha256?: string;
+    mime_type?: string;
+    source_name?: string;
+  } | null;
   base_exists?: boolean;
   diff?: string;
   requirement?: {
@@ -1161,6 +1168,8 @@ export interface FileChangeApproval {
     users?: string[];
     policy_path?: string | null;
   };
+  eligible_approvers?: string[];
+  same_platform_approvers?: string[];
   note?: string | null;
   decided_at?: string | null;
   decided_by?: {

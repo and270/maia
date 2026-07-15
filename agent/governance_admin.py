@@ -301,6 +301,30 @@ def replace_subject_file_grants(
                 raise GovernanceAdminError(
                     f"Unknown write approvers: {', '.join(unknown_users)}"
                 )
+            eligible_users = set(approval_users)
+            if approval_roles:
+                for actor_key, record in configured_users.items():
+                    granted_roles = coerce_list(
+                        record.get("roles") if isinstance(record, dict) else record
+                    )
+                    if any(
+                        role_satisfies(
+                            governance, granted_role, required_role
+                        )
+                        for granted_role in granted_roles
+                        for required_role in approval_roles
+                    ):
+                        eligible_users.add(str(actor_key))
+            if write and (approval_roles or approval_users) and not eligible_users:
+                required = ", ".join(
+                    [f"role {role}" for role in approval_roles] + approval_users
+                )
+                raise GovernanceAdminError(
+                    f"Write after approval for {path} has no eligible approver. "
+                    f"The selected requirement ({required}) is not satisfied by "
+                    "any governed gateway identity. Assign that role to a user "
+                    "or choose a specific approver before saving."
+                )
             # Approval is a property of the matching path policy, so it applies
             # to every non-approver who can write that same path. Empty lists
             # explicitly mean direct write and opt out of an ancestor rule.

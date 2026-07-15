@@ -146,6 +146,36 @@ def test_eligible_approvers_resolved_from_role_map(tmp_path, monkeypatch):
     assert approvers == ["discord:12345"]
 
 
+def test_file_grant_rejects_approval_role_with_no_eligible_identity():
+    from agent.governance_admin import (
+        GovernanceAdminError,
+        replace_subject_file_grants,
+    )
+    import pytest
+
+    governance = {
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        "users": {"discord:WRITER": {"roles": ["operator"]}},
+        "folder_policies": [],
+    }
+    with pytest.raises(GovernanceAdminError, match="no eligible approver"):
+        replace_subject_file_grants(
+            governance,
+            subject="discord:WRITER",
+            subject_kind="user",
+            grants=[
+                {
+                    "path": "/srv/finance",
+                    "recursive": True,
+                    "read": True,
+                    "write": True,
+                    "write_approval_roles": ["manager"],
+                    "write_approval_users": [],
+                }
+            ],
+        )
+
+
 # ---------------------------------------------------------------------------
 # stage / decide store behavior
 # ---------------------------------------------------------------------------
@@ -172,6 +202,10 @@ def test_stage_and_approve_applies_change(tmp_path, monkeypatch):
         actor=Actor(platform="slack", user_id="U_WRITER"),
     )
     assert staged["pending_approval"] is True
+    assert staged["original_unchanged"] is True
+    assert "slack:U_MANAGER" in staged["eligible_approvers"]
+    assert "slack:U_ADMIN" in staged["eligible_approvers"]
+    assert "Do not say" in staged["agent_instruction"]
     assert not target.exists()
 
     pending = list_file_change_approvals("pending")
@@ -237,6 +271,158 @@ def test_deny_discards_change(tmp_path, monkeypatch):
     assert decided["success"] is True
     assert decided["approval"]["status"] == "denied"
     assert not target.exists()
+
+
+def test_stage_fails_closed_when_no_identity_can_approve(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+governance:
+  enabled: true
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "slack:U_WRITER":
+      roles: [operator]
+  folder_policies:
+    - path: '{governed}'
+      write_users: ["slack:U_WRITER"]
+      write_approval_roles: [manager]
+""",
+    )
+
+    from agent.file_change_approvals import (
+        list_file_change_approvals,
+        stage_file_change,
+    )
+    from agent.governance import Actor
+
+    target = governed / "report.md"
+    result = stage_file_change(
+        path=str(target),
+        content="proposed",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    assert result["success"] is False
+    assert result["approval_unavailable"] is True
+    assert result["original_unchanged"] is True
+    assert "no configured governed identity" in result["error"]
+    assert "read-only mount is the enforcement mechanism" in result["agent_instruction"]
+    assert not target.exists()
+    assert list_file_change_approvals("pending") == []
+
+
+def test_binary_artifact_is_stored_outside_json_and_applied_exactly(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    target = governed / "report.xlsx"
+    target.write_bytes(b"old-workbook")
+    source = tmp_path / "generated.xlsx"
+    replacement = b"PK\x03\x04\x00\xffbinary-workbook\x00payload"
+    source.write_bytes(replacement)
+
+    staged = fca.stage_file_artifact(
+        path=str(target),
+        source_path=str(source),
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    assert staged["pending_approval"] is True
+    assert target.read_bytes() == b"old-workbook"
+
+    request = fca.get_file_change_approval(staged["approval_id"])
+    assert request["operation"] == "replace_file"
+    assert "content" not in request
+    assert request["artifact"]["size"] == len(replacement)
+    payload = fca.artifacts_path() / request["artifact"]["storage_path"]
+    assert payload.read_bytes() == replacement
+    assert replacement.hex() not in fca.approvals_path().read_text(encoding="utf-8")
+
+    decided = fca.decide_file_change_approval(
+        staged["approval_id"],
+        approve=True,
+        actor=Actor(platform="slack", user_id="U_MANAGER"),
+    )
+    assert decided["success"] is True
+    assert target.read_bytes() == replacement
+    assert not payload.exists()
+
+
+def test_binary_artifact_tampering_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    target = governed / "report.pdf"
+    source = tmp_path / "generated.pdf"
+    source.write_bytes(b"%PDF-original-staged-payload")
+    staged = fca.stage_file_artifact(
+        path=str(target),
+        source_path=str(source),
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    request = fca.get_file_change_approval(staged["approval_id"])
+    payload = fca.artifacts_path() / request["artifact"]["storage_path"]
+    payload.write_bytes(b"%PDF-tampered-staged-payload")
+
+    decided = fca.decide_file_change_approval(
+        staged["approval_id"],
+        approve=True,
+        actor=Actor(platform="slack", user_id="U_MANAGER"),
+    )
+    assert decided["success"] is False
+    assert "hash changed" in decided["error"]
+    assert not target.exists()
+    assert fca.get_file_change_approval(staged["approval_id"])["status"] == "pending"
+
+
+def test_denied_binary_artifact_payload_is_removed(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    source = tmp_path / "generated.zip"
+    source.write_bytes(b"PK\x03\x04archive")
+    staged = fca.stage_file_artifact(
+        path=str(governed / "archive.zip"),
+        source_path=str(source),
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    request = fca.get_file_change_approval(staged["approval_id"])
+    payload = fca.artifacts_path() / request["artifact"]["storage_path"]
+
+    decided = fca.decide_file_change_approval(
+        staged["approval_id"],
+        approve=False,
+        actor=Actor(platform="slack", user_id="U_MANAGER"),
+    )
+    assert decided["success"] is True
+    assert not payload.exists()
 
 
 def test_stale_base_blocks_apply(tmp_path, monkeypatch):
@@ -348,6 +534,92 @@ def test_write_file_tool_writes_directly_for_approver(tmp_path, monkeypatch):
     result = json.loads(write_file_tool(str(target), "manager writes directly"))
     assert result.get("pending_approval") is None
     assert target.read_text(encoding="utf-8") == "manager writes directly"
+
+
+def test_replace_file_tool_exports_remote_binary_and_stages_it(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+    _as_writer(monkeypatch)
+
+    replacement = b"PK\x03\x04remote-generated-xlsx\x00\xff"
+
+    class RemoteEnvironment:
+        pass
+
+    class FakeFileOps:
+        env = RemoteEnvironment()
+
+        def export_file_to_host(self, source_path, destination_path, *, max_bytes):
+            assert source_path == "/tmp/updated.xlsx"
+            assert len(replacement) < max_bytes
+            destination_path.write_bytes(replacement)
+            return {"success": True, "bytes": len(replacement)}
+
+    from tools import file_tools
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda task_id: FakeFileOps())
+    target = governed / "report.xlsx"
+    target.write_bytes(b"old")
+    result = json.loads(
+        file_tools.replace_file_tool(
+            "/tmp/updated.xlsx", str(target), note="Updated expenses"
+        )
+    )
+    assert result["pending_approval"] is True
+    assert target.read_bytes() == b"old"
+    request = fca.get_file_change_approval(result["approval_id"])
+    assert request["artifact"]["source_name"] == "updated.xlsx"
+    assert request["note"] == "Updated expenses"
+
+    decided = fca.decide_file_change_approval(
+        result["approval_id"],
+        approve=True,
+        actor=Actor(platform="slack", user_id="U_MANAGER"),
+    )
+    assert decided["success"] is True
+    assert target.read_bytes() == replacement
+
+
+def test_replace_file_tool_applies_directly_when_no_approval_is_required(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+    monkeypatch.setenv("MAIA_USER_ID", "U_MANAGER")
+    monkeypatch.setenv("MAIA_USER_PLATFORM", "slack")
+
+    replacement = b"%PDF-direct-generated-file"
+
+    class RemoteEnvironment:
+        pass
+
+    class FakeFileOps:
+        env = RemoteEnvironment()
+
+        def export_file_to_host(self, source_path, destination_path, *, max_bytes):
+            destination_path.write_bytes(replacement)
+            return {"success": True, "bytes": len(replacement)}
+
+    from tools import file_tools
+
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda task_id: FakeFileOps())
+    target = governed / "report.pdf"
+    result = json.loads(
+        file_tools.replace_file_tool("/tmp/report.pdf", str(target))
+    )
+    assert result["success"] is True
+    assert result.get("pending_approval") is None
+    assert target.read_bytes() == replacement
 
 
 def test_patch_replace_stages_final_content(tmp_path, monkeypatch):

@@ -308,6 +308,8 @@ class TestGatewayCardRouting:
         assert "<@U_MANAGER>" in card["mention_text"]
         assert "<@U_ADMIN>" in card["mention_text"]
         assert "999" not in card["mention_text"]
+        assert "slack:U_MANAGER" in card["approver_summary"]
+        assert "slack:U_ADMIN" in card["approver_summary"]
 
     @pytest.mark.asyncio
     async def test_text_fallback_when_adapter_has_no_buttons(self):
@@ -325,6 +327,7 @@ class TestGatewayCardRouting:
         assert "File change awaiting approval" in content
         assert "/srv/finance/report.md" in content
         assert "role manager" in content
+        assert "original file is unchanged" in content
         assert "dashboard" in content.lower()
 
     @pytest.mark.asyncio

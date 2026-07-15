@@ -613,7 +613,7 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
             dynamic_schema = build_execute_code_schema(sandbox_enabled)
 
         SANDBOX_ALLOWED_TOOLS = {web_search, web_extract, read_file, write_file,
-                                  search_files, patch, terminal}
+                                  replace_file, search_files, patch, terminal}
         tools_to_include  = {"execute_code"}
         intersection      = empty set
         """

@@ -522,6 +522,25 @@ file_read_max_chars: 30000
 
 The agent also deduplicates file reads automatically — if the same file region is read twice and the file hasn't changed, a lightweight stub is returned instead of re-sending the content. This resets on context compression so the agent can re-read files after their content is summarized away.
 
+## Generated File Promotion
+
+`replace_file` promotes completed binary or generated files (Office documents,
+PDFs, images, archives, databases, and similar artifacts) from Docker or another
+execution backend into a host destination. Governance is checked on the
+destination; approval-gated replacements are stored privately and applied
+atomically only after an authorized approver accepts them.
+
+The default maximum payload is 100 MiB. Adjust it when your workflows routinely
+produce larger or smaller artifacts:
+
+```yaml
+file_artifact_max_bytes: 104857600  # 100 MiB
+```
+
+Staged payload bytes are kept outside the model context under
+`MAIA_HOME/file_changes/artifacts`; approval records contain only metadata such
+as size, media type, and SHA-256.
+
 ## Tool Output Truncation Limits
 
 Three related caps control how much raw output a tool can return before Hermes truncates it:

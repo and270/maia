@@ -18,7 +18,7 @@ export function GovernanceFileGrantEditor({
   grants: GovernanceFileGrant[];
   onChange: (grants: GovernanceFileGrant[]) => void;
   approvalRoles?: string[];
-  approvalUsers?: Array<{ actor_key: string; name: string }>;
+  approvalUsers?: Array<{ actor_key: string; name: string; roles?: string[] }>;
   title?: string;
   description?: string;
   disabled?: boolean;
@@ -127,6 +127,20 @@ export function GovernanceFileGrantEditor({
               : approvalRequired
                 ? "approval"
                 : "direct";
+            const selectedApprovalRoles = grant.write_approval_roles ?? [];
+            const selectedApprovalUsers = grant.write_approval_users ?? [];
+            const eligibleApprovalUsers = approvalUsers.filter((user) => {
+              if (selectedApprovalUsers.includes(user.actor_key)) return true;
+              return (user.roles ?? []).some((grantedRole) =>
+                selectedApprovalRoles.some((requiredRole) => {
+                  const grantedIndex = approvalRoles.indexOf(grantedRole);
+                  const requiredIndex = approvalRoles.indexOf(requiredRole);
+                  return grantedIndex >= 0 && requiredIndex >= 0
+                    ? grantedIndex >= requiredIndex
+                    : grantedRole === requiredRole;
+                }),
+              );
+            });
             return (
               <div key={index} className="space-y-4 border border-border bg-background p-4">
                 <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
@@ -272,11 +286,21 @@ export function GovernanceFileGrantEditor({
                         )}
                       </div>
                     </div>
+                    {eligibleApprovalUsers.length === 0 && (
+                      <div className="border border-red-500/40 bg-red-500/5 p-3 text-xs leading-5 text-red-600 lg:col-span-2 dark:text-red-400">
+                        No governed gateway identity currently satisfies this
+                        approval selection. Assign the selected role to a user
+                        or choose a specific approver before saving.
+                      </div>
+                    )}
                     <p className="text-xs leading-5 text-muted-foreground lg:col-span-2">
                       This approval checkpoint belongs to the matching path
                       policy. It applies to every non-approver who can write
-                      this same path. Raw terminal and code writes remain
-                      read-only so they cannot bypass review.
+                      this same path. Selecting a role makes every governed
+                      identity at that role or higher eligible; choosing a
+                      specific approver is optional. At least one actual
+                      identity must qualify. Raw terminal and code writes
+                      remain read-only so they cannot bypass review.
                     </p>
                   </div>
                 )}
