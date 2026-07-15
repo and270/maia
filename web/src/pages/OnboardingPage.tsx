@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
 import { SecureRuntimePanel } from "@/components/SecureRuntimePanel";
+import { DashboardLoadingState } from "@/components/DashboardLoadingState";
 import {
   api,
   type GovernanceSandboxStatus,
@@ -129,6 +130,7 @@ function ProviderStepCard({
       setApiKey("");
       showToast(`${selected.label} key saved`, "success");
       onChanged();
+      window.dispatchEvent(new Event("maia:onboarding-updated"));
     } catch (err) {
       showToast(`Could not save key: ${err}`, "error");
     } finally {
@@ -578,6 +580,7 @@ const CHECKLIST = [
 
 export default function OnboardingPage() {
   const [state, setState] = useState<OnboardingState | null>(null);
+  const [stateLoading, setStateLoading] = useState(true);
   const [runtimeStatus, setRuntimeStatus] = useState<GovernanceSandboxStatus | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const { toast: runtimeToast, showToast: showRuntimeToast } = useToast();
@@ -586,7 +589,8 @@ export default function OnboardingPage() {
     api
       .getOnboardingState()
       .then(setState)
-      .catch(() => setState(null));
+      .catch(() => setState(null))
+      .finally(() => setStateLoading(false));
     api
       .getSecureRuntimeStatus()
       .then(setRuntimeStatus)
@@ -610,6 +614,20 @@ export default function OnboardingPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  if ((stateLoading && !state) || (runtimeLoading && !runtimeStatus)) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PluginSlot name="onboarding:top" />
+        <Toast toast={runtimeToast} />
+        <DashboardLoadingState
+          title="Restoring your onboarding progress"
+          description="Checking saved provider, Gateway, Governance, dashboard access, and secure runtime status before marking any step pending or ready."
+          cards={4}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -643,7 +661,7 @@ export default function OnboardingPage() {
         icon={MessageSquare}
         title="Connect a messaging gateway"
         text="Configure Slack, Discord, Mattermost, Matrix, Telegram, or WhatsApp credentials so your team can talk to Maia from company channels. Then install the gateway service so it stays online."
-        to="/gateway"
+        to="/gateway?from=onboarding"
         action="Open Gateway"
       />
 
@@ -652,8 +670,8 @@ export default function OnboardingPage() {
         done={Boolean(state?.governance_configured)}
         icon={Users}
         title="Set up governance and dashboard access"
-        text="Add at least one non-admin teammate from Gateway, then grant that person a role and explicit direct or team file access. The bootstrap administrator alone stays pending because it does not prove the team is ready for a least-privilege rollout."
-        to="/governance"
+        text="Use Gateway's guided person setup to add at least one non-admin teammate with a role and explicit direct or team file access. Governance remains available for advanced review; the bootstrap administrator alone does not complete this step."
+        to="/governance?from=onboarding"
         action="Open Governance"
       />
 

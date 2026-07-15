@@ -88,6 +88,7 @@ import {
   isDashboardAuthRequired,
   setDashboardSessionToken,
   type DashboardAuthStatus,
+  type OnboardingState,
 } from "@/lib/api";
 
 function RootRedirect() {
@@ -316,12 +317,6 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: Shield,
   },
   {
-    path: "/sessions",
-    labelKey: "sessions",
-    label: "Sessions",
-    icon: MessageSquare,
-  },
-  {
     path: "/gateway",
     label: "Gateway",
     icon: Globe,
@@ -335,6 +330,12 @@ const BUILTIN_NAV_REST: NavItem[] = [
     path: "/dashboard-access",
     label: "Dashboard Access",
     icon: ShieldCheck,
+  },
+  {
+    path: "/sessions",
+    labelKey: "sessions",
+    label: "Sessions",
+    icon: MessageSquare,
   },
   {
     path: "/knowledge",
@@ -520,6 +521,7 @@ export default function App() {
   const { manifests, loading: pluginsLoading } = usePlugins();
   const { theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   const isDocsRoute = pathname === "/docs" || pathname === "/docs/";
   const normalizedPath = pathname.replace(/\/$/, "") || "/";
@@ -557,8 +559,13 @@ export default function App() {
   );
 
   const builtinNav = useMemo(
-    () =>
-      embeddedChat ? [CHAT_NAV_ITEM, ...BUILTIN_NAV_REST] : BUILTIN_NAV_REST,
+    () => {
+      if (!embeddedChat) return BUILTIN_NAV_REST;
+      const items = [...BUILTIN_NAV_REST];
+      const sessionsIndex = items.findIndex((item) => item.path === "/sessions");
+      items.splice(sessionsIndex >= 0 ? sessionsIndex : 4, 0, CHAT_NAV_ITEM);
+      return items;
+    },
     [embeddedChat],
   );
 
@@ -582,6 +589,23 @@ export default function App() {
   );
 
   const layoutVariant = theme.layoutVariant ?? "standard";
+
+  const refreshOnboardingState = useCallback(() => {
+    api.getOnboardingState().then(setOnboardingState).catch(() => setOnboardingState(null));
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("maia:onboarding-updated", refreshOnboardingState);
+    const timer = window.setInterval(refreshOnboardingState, 30_000);
+    return () => {
+      window.removeEventListener("maia:onboarding-updated", refreshOnboardingState);
+      window.clearInterval(timer);
+    };
+  }, [refreshOnboardingState]);
+
+  useEffect(() => {
+    refreshOnboardingState();
+  }, [normalizedPath, refreshOnboardingState]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -722,6 +746,7 @@ export default function App() {
                     closeMobile={closeMobile}
                     item={item}
                     key={item.path}
+                    onboardingState={onboardingState}
                     t={t}
                   />
                 ))}
@@ -749,6 +774,7 @@ export default function App() {
                         closeMobile={closeMobile}
                         item={item}
                         key={item.path}
+                        onboardingState={onboardingState}
                         t={t}
                       />
                     ))}
@@ -847,8 +873,32 @@ export default function App() {
   );
 }
 
-function SidebarNavLink({ closeMobile, item, t }: SidebarNavLinkProps) {
+function onboardingNavStatus(path: string, state: OnboardingState | null) {
+  if (!state) return null;
+  const checks = [
+    state.provider_configured,
+    state.gateway_configured,
+    state.governance_configured,
+  ];
+  if (path === "/onboarding") {
+    const pending = checks.filter((ready) => !ready).length;
+    return { label: pending ? `${pending} pending` : "Ready", ready: pending === 0 };
+  }
+  const ready =
+    path === "/gateway"
+      ? state.gateway_configured
+      : path === "/governance"
+        ? state.governance_configured
+        : null;
+  return ready === null ? null : { label: ready ? "Ready" : "Pending", ready };
+}
+
+function SidebarNavLink({ closeMobile, item, onboardingState, t }: SidebarNavLinkProps) {
   const { path, label, labelKey, icon: Icon } = item;
+  const progress = onboardingNavStatus(path, onboardingState);
+  const progressLoading =
+    onboardingState === null &&
+    (path === "/onboarding" || path === "/gateway" || path === "/governance");
 
   const navLabel = labelKey
     ? ((t.app.nav as Record<string, string>)[labelKey] ?? label)
@@ -878,6 +928,21 @@ function SidebarNavLink({ closeMobile, item, t }: SidebarNavLinkProps) {
           <>
             <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{navLabel}</span>
+            {progressLoading ? (
+              <span
+                aria-label="Loading setup status"
+                className="ml-auto h-2 w-12 shrink-0 animate-pulse bg-midground/10"
+              />
+            ) : progress ? (
+              <span
+                className={cn(
+                  "ml-auto shrink-0 text-[0.55rem] font-bold tracking-[0.08em]",
+                  progress.ready ? "text-success" : "text-warning",
+                )}
+              >
+                {progress.label}
+              </span>
+            ) : null}
 
             <span
               aria-hidden
@@ -1019,6 +1084,7 @@ interface NavItem {
 interface SidebarNavLinkProps {
   closeMobile: () => void;
   item: NavItem;
+  onboardingState: OnboardingState | null;
   t: Translations;
 }
 

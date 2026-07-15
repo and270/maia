@@ -6,7 +6,6 @@ import {
   Network,
   Plus,
   RefreshCw,
-  Save,
   Search,
   Settings2,
   Shield,
@@ -15,12 +14,14 @@ import {
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
-import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields";
 import { GovernanceFileGrantEditor } from "@/components/GovernanceFileGrantEditor";
+import { DashboardLoadingState } from "@/components/DashboardLoadingState";
+import { OnboardingReturnBar } from "@/components/OnboardingReturnBar";
 import { H2 } from "@/components/NouiTypography";
 import { SecureRuntimePanel } from "@/components/SecureRuntimePanel";
 import { Toast } from "@/components/Toast";
+import { UnsavedChangesBar } from "@/components/UnsavedChangesBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -99,6 +100,15 @@ type UserDraft = {
   file_access: GovernanceFileGrant[];
 };
 
+function userDraftFrom(user: GovernanceUser): UserDraft {
+  return {
+    name: user.name,
+    roles: [...user.roles],
+    teams: [...user.teams],
+    file_access: user.file_access.map((grant) => ({ ...grant })),
+  };
+}
+
 function PeopleWorkspace({
   overview,
   reload,
@@ -108,16 +118,19 @@ function PeopleWorkspace({
 }) {
   const [params, setParams] = useSearchParams();
   const requestedKey = params.get("user") ?? "";
+  const initialUser =
+    overview.users.find((user) => user.actor_key === requestedKey) ??
+    overview.users[0] ??
+    null;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | "pending" | "active">("all");
-  const [selectedKey, setSelectedKey] = useState(requestedKey);
+  const [selectedKey, setSelectedKey] = useState(initialUser?.actor_key ?? requestedKey);
   const [gatewayHelpOpen, setGatewayHelpOpen] = useState(false);
-  const [draft, setDraft] = useState<UserDraft>({
-    name: "",
-    roles: [],
-    teams: [],
-    file_access: [],
-  });
+  const [draft, setDraft] = useState<UserDraft>(() =>
+    initialUser
+      ? userDraftFrom(initialUser)
+      : { name: "", roles: [], teams: [], file_access: [] },
+  );
   const [busy, setBusy] = useState(false);
   const { toast, showToast } = useToast();
 
@@ -136,20 +149,21 @@ function PeopleWorkspace({
 
   const selected =
     overview.users.find((user) => user.actor_key === selectedKey) ?? filtered[0] ?? null;
+  const isDirty = Boolean(
+    selected && JSON.stringify(draft) !== JSON.stringify(userDraftFrom(selected)),
+  );
 
   useEffect(() => {
     if (!selected) return;
     // Keep the inspector draft aligned when the selected identity changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft({
-      name: selected.name,
-      roles: selected.roles,
-      teams: selected.teams,
-      file_access: selected.file_access.map((grant) => ({ ...grant })),
-    });
+    setDraft(userDraftFrom(selected));
   }, [selected]);
 
   const selectUser = (actorKey: string) => {
+    if (isDirty && !window.confirm("Discard unsaved changes for this person?")) return;
+    const nextUser = overview.users.find((user) => user.actor_key === actorKey);
+    if (nextUser) setDraft(userDraftFrom(nextUser));
     setSelectedKey(actorKey);
     const next = new URLSearchParams(params);
     next.set("section", "people");
@@ -176,6 +190,7 @@ function PeopleWorkspace({
         "success",
       );
       await reload();
+      window.dispatchEvent(new Event("maia:onboarding-updated"));
     } catch (error) {
       showToast(`Could not save user: ${error}`, "error");
     } finally {
@@ -211,9 +226,9 @@ function PeopleWorkspace({
   }));
 
   return (
-    <div className="grid min-h-[34rem] gap-0 border border-border lg:grid-cols-[minmax(18rem,0.9fr)_minmax(26rem,1.5fr)]">
+    <div className="space-y-5 pb-20">
       <Toast toast={toast} />
-      <section className="border-b border-border bg-muted/10 lg:border-b-0 lg:border-r">
+      <section className="border border-border bg-muted/10">
         <div className="space-y-3 border-b border-border p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -222,7 +237,15 @@ function PeopleWorkspace({
                 {overview.users.length} identities · {pendingCount} pending
               </div>
             </div>
-            <Button size="icon" ghost onClick={() => void reload()} aria-label="Refresh users">
+            <Button
+              size="icon"
+              ghost
+              onClick={() => {
+                if (isDirty && !window.confirm("Discard unsaved changes for this person?")) return;
+                void reload();
+              }}
+              aria-label="Refresh users"
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -232,14 +255,14 @@ function PeopleWorkspace({
               className="group relative inline-flex min-h-8 flex-1 items-center justify-center gap-2 bg-midground px-3 py-1.5 font-mono-ui text-[0.7rem] font-bold uppercase tracking-[0.15em] text-background-base shadow-[inset_-1px_-1px_0_0_#00000080,inset_1px_1px_0_0_#ffffff80] transition-opacity hover:opacity-90"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add user on Gateway
+              Add person in Gateway
             </Link>
             <button
               type="button"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary"
               aria-label="Why users are added from Gateway"
               aria-expanded={gatewayHelpOpen}
-              title="Users must be admitted by a messaging platform before Governance can assign their access."
+              title="Gateway provides the guided person onboarding flow; Governance remains the advanced editor."
               onClick={() => setGatewayHelpOpen((open) => !open)}
             >
               ?
@@ -250,8 +273,8 @@ function PeopleWorkspace({
               role="tooltip"
               className="border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground"
             >
-              This opens Gateway, where you add the person&apos;s Slack, Discord, Mattermost, or Matrix ID first.
-              Return here afterward to grant their role, team membership, and file access.
+              Gateway is the guided onboarding flow: add the platform ID, display name, role, teams, and direct
+              file access together. Return here later for review and advanced Governance changes.
             </div>
           )}
           <div className="relative">
@@ -276,14 +299,14 @@ function PeopleWorkspace({
             ))}
           </div>
         </div>
-        <div className="max-h-[54rem] overflow-y-auto">
+        <div className="grid max-h-[30rem] overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((user) => (
             <button
               key={user.actor_key}
               type="button"
               onClick={() => selectUser(user.actor_key)}
               className={cn(
-                "grid w-full gap-2 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors",
+                "grid w-full gap-2 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors sm:border-r",
                 selected?.actor_key === user.actor_key
                   ? "bg-primary/10 text-foreground"
                   : "hover:bg-muted/30",
@@ -316,7 +339,7 @@ function PeopleWorkspace({
         </div>
       </section>
 
-      <section className="min-w-0 p-5 lg:p-6">
+      <section className="min-w-0 border border-border p-5 lg:p-6">
         {selected ? (
           <div className="space-y-7">
             <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -336,10 +359,6 @@ function PeopleWorkspace({
                     Remove access
                   </Button>
                 )}
-                <Button size="sm" onClick={save} disabled={busy}>
-                  {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  {selected.governed ? "Save changes" : "Grant access"}
-                </Button>
               </div>
             </div>
 
@@ -432,12 +451,12 @@ function PeopleWorkspace({
           </div>
         ) : (
           <div className="flex min-h-80 items-center justify-center text-sm normal-case text-muted-foreground">
-            Add a user in Gateway, then return here to grant a role.
+            Add a person through Gateway, then use this workspace for ongoing review.
           </div>
         )}
       </section>
 
-      <section className="border-t border-border p-4 lg:col-span-2">
+      <section className="border border-border p-4">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Role coverage
         </div>
@@ -450,6 +469,14 @@ function PeopleWorkspace({
           ))}
         </div>
       </section>
+      <UnsavedChangesBar
+        dirty={isDirty}
+        saving={busy}
+        onSave={() => void save()}
+        label={selected ? `Unsaved changes for ${selected.name || selected.actor_key}` : "Unsaved person changes"}
+        description="Display name, role, teams, and file access are saved together."
+        saveLabel={selected?.governed ? "Save person" : "Grant access"}
+      />
     </div>
   );
 }
@@ -460,6 +487,20 @@ type TeamDraft = {
   delegated_root: GovernanceTeam["delegated_root"];
 };
 
+function teamDraftFrom(team: GovernanceTeam): TeamDraft {
+  return {
+    members: [...team.members],
+    file_access: team.file_access.map((grant) => ({ ...grant })),
+    delegated_root: team.delegated_root
+      ? {
+          ...team.delegated_root,
+          manager_roles: [...(team.delegated_root.manager_roles ?? [])],
+          managers: [...(team.delegated_root.managers ?? [])],
+        }
+      : null,
+  };
+}
+
 function TeamsWorkspace({
   overview,
   reload,
@@ -469,15 +510,19 @@ function TeamsWorkspace({
 }) {
   const [params, setParams] = useSearchParams();
   const requestedTeam = params.get("team") ?? "";
+  const initialTeam =
+    overview.team_records.find((team) => team.name === requestedTeam) ??
+    overview.team_records[0] ??
+    null;
   const [query, setQuery] = useState("");
-  const [selectedName, setSelectedName] = useState(requestedTeam);
+  const [selectedName, setSelectedName] = useState(initialTeam?.name ?? requestedTeam);
   const [newTeamName, setNewTeamName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState<TeamDraft>({
-    members: [],
-    file_access: [],
-    delegated_root: null,
-  });
+  const [draft, setDraft] = useState<TeamDraft>(() =>
+    initialTeam
+      ? teamDraftFrom(initialTeam)
+      : { members: [], file_access: [], delegated_root: null },
+  );
   const { toast, showToast } = useToast();
 
   const filtered = useMemo(() => {
@@ -496,25 +541,21 @@ function TeamsWorkspace({
     overview.team_records.find((team) => team.name === selectedName) ??
     filtered[0] ??
     null;
+  const isDirty = Boolean(
+    selected && JSON.stringify(draft) !== JSON.stringify(teamDraftFrom(selected)),
+  );
 
   useEffect(() => {
     if (!selected) return;
     // Keep the inspector aligned with the selected team after reloads.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft({
-      members: [...selected.members],
-      file_access: selected.file_access.map((grant) => ({ ...grant })),
-      delegated_root: selected.delegated_root
-        ? {
-            ...selected.delegated_root,
-            manager_roles: [...(selected.delegated_root.manager_roles ?? [])],
-            managers: [...(selected.delegated_root.managers ?? [])],
-          }
-        : null,
-    });
+    setDraft(teamDraftFrom(selected));
   }, [selected]);
 
   const selectTeam = (name: string) => {
+    if (isDirty && !window.confirm("Discard unsaved changes for this team?")) return;
+    const nextTeam = overview.team_records.find((team) => team.name === name);
+    if (nextTeam) setDraft(teamDraftFrom(nextTeam));
     setSelectedName(name);
     const next = new URLSearchParams(params);
     next.set("section", "teams");
@@ -608,9 +649,9 @@ function TeamsWorkspace({
   const governedUsers = overview.users.filter((user) => user.governed);
 
   return (
-    <div className="grid min-h-[36rem] gap-0 border border-border lg:grid-cols-[minmax(18rem,0.8fr)_minmax(28rem,1.6fr)]">
+    <div className="space-y-5 pb-20">
       <Toast toast={toast} />
-      <section className="border-b border-border bg-muted/10 lg:border-b-0 lg:border-r">
+      <section className="border border-border bg-muted/10">
         <div className="space-y-3 border-b border-border p-4">
           <div>
             <div className="text-sm font-semibold normal-case">Teams</div>
@@ -643,14 +684,14 @@ function TeamsWorkspace({
             />
           </div>
         </div>
-        <div className="max-h-[54rem] overflow-y-auto">
+        <div className="grid max-h-[24rem] overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((team) => (
             <button
               key={team.name}
               type="button"
               onClick={() => selectTeam(team.name)}
               className={cn(
-                "grid w-full gap-1 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors",
+                "grid w-full gap-1 border-b border-border/70 px-4 py-3 text-left normal-case transition-colors sm:border-r",
                 selected?.name === team.name ? "bg-primary/10" : "hover:bg-muted/30",
               )}
             >
@@ -669,7 +710,7 @@ function TeamsWorkspace({
         </div>
       </section>
 
-      <section className="min-w-0 p-5 lg:p-6">
+      <section className="min-w-0 border border-border p-5 lg:p-6">
         {selected ? (
           <div className="space-y-6">
             <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -683,10 +724,6 @@ function TeamsWorkspace({
                 <Button size="sm" ghost onClick={remove} disabled={busy}>
                   <Trash2 className="h-4 w-4" />
                   Delete team
-                </Button>
-                <Button size="sm" onClick={save} disabled={busy}>
-                  {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  Save team
                 </Button>
               </div>
             </div>
@@ -754,8 +791,8 @@ function TeamsWorkspace({
                 </label>
               </div>
               {draft.delegated_root && (
-                <div className="grid gap-5 border border-border p-4 lg:grid-cols-2">
-                  <label className="grid gap-2 lg:col-span-2">
+                <div className="grid gap-5 border border-border p-4 xl:grid-cols-2">
+                  <label className="grid gap-2 xl:col-span-2">
                     <Label>Server root</Label>
                     <Input
                       value={draft.delegated_root.path}
@@ -810,6 +847,14 @@ function TeamsWorkspace({
           </div>
         )}
       </section>
+      <UnsavedChangesBar
+        dirty={isDirty}
+        saving={busy}
+        onSave={() => void save()}
+        label={selected ? `Unsaved changes for ${selected.name}` : "Unsaved team changes"}
+        description="Membership, file access, and delegated management are saved together."
+        saveLabel="Save team"
+      />
     </div>
   );
 }
@@ -824,6 +869,7 @@ function SettingsWorkspace({
   const [draft, setDraft] = useState(overview);
   const [busy, setBusy] = useState(false);
   const { toast, showToast } = useToast();
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(overview);
 
   useEffect(() => {
     // Refresh the form after a successful save/reload from the server.
@@ -869,7 +915,7 @@ function SettingsWorkspace({
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-20">
       <Toast toast={toast} />
       <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
         <div>
@@ -879,13 +925,9 @@ function SettingsWorkspace({
             is still assigned to a user, file policy, team root, terminal gate, or cron gate.
           </p>
         </div>
-        <Button size="sm" onClick={save} disabled={busy}>
-          {busy ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          Save settings
-        </Button>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>Tenant and roles</CardTitle></CardHeader>
           <CardContent className="grid gap-5 normal-case">
@@ -988,6 +1030,14 @@ function SettingsWorkspace({
           </CardContent>
         </Card>
       </div>
+      <UnsavedChangesBar
+        dirty={isDirty}
+        saving={busy}
+        onSave={() => void save()}
+        label="Unsaved Governance settings"
+        description="Tenant roles, session isolation, terminal, and authorization settings will be saved together."
+        saveLabel="Save settings"
+      />
     </div>
   );
 }
@@ -1067,7 +1117,17 @@ export default function GovernancePage() {
   };
 
   if (loading && !overview) {
-    return <div className="flex items-center justify-center py-24"><Spinner className="text-2xl text-primary" /></div>;
+    return (
+      <div className="flex flex-col gap-5">
+        <PluginSlot name="governance:top" />
+        <OnboardingReturnBar step={3} title="Configure people and Governance" />
+        <DashboardLoadingState
+          title="Restoring saved Governance"
+          description="Loading people, teams, roles, file policies, and authorization settings before showing the workspace."
+          cards={3}
+        />
+      </div>
+    );
   }
 
   if (!overview) {
@@ -1080,6 +1140,7 @@ export default function GovernancePage() {
     <div className="flex flex-col gap-5">
       <PluginSlot name="governance:top" />
       <Toast toast={toast} />
+      <OnboardingReturnBar step={3} title="Configure people and Governance" />
       <header className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
