@@ -111,6 +111,7 @@ function PeopleWorkspace({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | "pending" | "active">("all");
   const [selectedKey, setSelectedKey] = useState(requestedKey);
+  const [gatewayHelpOpen, setGatewayHelpOpen] = useState(false);
   const [draft, setDraft] = useState<UserDraft>({
     name: "",
     roles: [],
@@ -225,6 +226,34 @@ function PeopleWorkspace({
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/gateway"
+              className="group relative inline-flex min-h-8 flex-1 items-center justify-center gap-2 bg-midground px-3 py-1.5 font-mono-ui text-[0.7rem] font-bold uppercase tracking-[0.15em] text-background-base shadow-[inset_-1px_-1px_0_0_#00000080,inset_1px_1px_0_0_#ffffff80] transition-opacity hover:opacity-90"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add user on Gateway
+            </Link>
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary"
+              aria-label="Why users are added from Gateway"
+              aria-expanded={gatewayHelpOpen}
+              title="Users must be admitted by a messaging platform before Governance can assign their access."
+              onClick={() => setGatewayHelpOpen((open) => !open)}
+            >
+              ?
+            </button>
+          </div>
+          {gatewayHelpOpen && (
+            <div
+              role="tooltip"
+              className="border border-border/60 bg-muted/30 p-3 text-xs normal-case leading-5 text-muted-foreground"
+            >
+              This opens Gateway, where you add the person&apos;s Slack, Discord, Mattermost, or Matrix ID first.
+              Return here afterward to grant their role, team membership, and file access.
+            </div>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input

@@ -2848,6 +2848,72 @@ _GATEWAY_TOKEN_ENV_VARS = (
 )
 
 
+def _governance_onboarding_ready(governance: Dict[str, Any]) -> bool:
+    """Return whether Governance is ready for a real multi-user rollout.
+
+    A fresh Gateway allowlist bootstraps its first person as an administrator.
+    That protects administration but does not prove that least-privilege access
+    has been configured for the team. Onboarding is complete only after the
+    allowlist also contains a governed non-admin with an explicit direct or
+    team file grant.
+    """
+    if not isinstance(governance, dict):
+        return False
+
+    configured_users = governance.get("users", {})
+    if not isinstance(configured_users, dict):
+        configured_users = {}
+
+    has_gateway_admin = False
+    has_ready_team_member = False
+
+    for platform in _GATEWAY_ACCESS_PLATFORMS:
+        for gateway_user in _load_gateway_access_users(platform):
+            user_id = str(gateway_user.get("user_id") or "").strip()
+            if not user_id:
+                continue
+
+            actor_key = f"{platform}:{user_id}"
+            raw_record = configured_users.get(actor_key)
+            record_key = actor_key
+            if raw_record is None:
+                # Preserve compatibility with legacy unprefixed Governance
+                # user keys still recognized by the Gateway access loader.
+                raw_record = configured_users.get(user_id)
+                record_key = user_id
+            record = raw_record if isinstance(raw_record, dict) else {}
+            roles = _coerce_role_list(record.get("roles"))
+            if not roles:
+                roles = _coerce_role_list(gateway_user.get("roles"))
+            if not roles:
+                continue
+
+            if "admin" in roles:
+                has_gateway_admin = True
+                continue
+
+            direct_grants = _subject_file_grants(
+                governance,
+                subject=record_key,
+                subject_kind="user",
+            )
+            teams = _coerce_role_list(record.get("teams") or record.get("team"))
+            if not teams:
+                teams = _coerce_role_list(gateway_user.get("teams"))
+            team_grants = any(
+                _subject_file_grants(
+                    governance,
+                    subject=team,
+                    subject_kind="team",
+                )
+                for team in teams
+            )
+            if direct_grants or team_grants:
+                has_ready_team_member = True
+
+    return has_gateway_admin and has_ready_team_member
+
+
 @app.get("/api/onboarding/state")
 def get_onboarding_state():
     """Aggregated first-run setup state for the dashboard onboarding flow.
@@ -2948,7 +3014,7 @@ def get_onboarding_state():
             "current_effort": str(agent_cfg.get("reasoning_effort", "") or ""),
             "valid_efforts": list(VALID_REASONING_EFFORTS),
             "gateway_configured": bool(gateway_configured),
-            "governance_configured": True,
+            "governance_configured": _governance_onboarding_ready(governance_cfg),
             "dashboard_auth_configured": bool(auth_cfg.get("enabled")),
             "providers_catalog": catalog,
         }

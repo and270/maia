@@ -652,7 +652,7 @@ export default function OnboardingPage() {
         done={Boolean(state?.governance_configured)}
         icon={Users}
         title="Set up governance and dashboard access"
-        text="Apply the security baseline below, then approve /dashboard requests, assign roles and teams, and keep admin access narrow. This is what makes Maia safe to share with the whole company."
+        text="Add at least one non-admin teammate from Gateway, then grant that person a role and explicit direct or team file access. The bootstrap administrator alone stays pending because it does not prove the team is ready for a least-privilege rollout."
         to="/governance"
         action="Open Governance"
       />

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowLeft,
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   ExternalLink,
@@ -425,6 +427,61 @@ function gatewayRuntimeLabel(status: StatusResponse | null): string {
   return status.gateway_state || "stopped";
 }
 
+function PlatformLogo({ platform }: { platform: GatewayPlatform }) {
+  const sharedClass = "h-14 w-14";
+
+  if (platform.id === "slack") {
+    return (
+      <svg viewBox="0 0 48 48" className={sharedClass} role="img" aria-label="Slack logo">
+        <rect x="4" y="17" width="19" height="8" rx="4" fill="#36C5F0" />
+        <rect x="17" y="4" width="8" height="19" rx="4" fill="#36C5F0" />
+        <rect x="23" y="4" width="8" height="19" rx="4" fill="#2EB67D" />
+        <rect x="23" y="17" width="21" height="8" rx="4" fill="#2EB67D" />
+        <rect x="23" y="23" width="21" height="8" rx="4" fill="#ECB22E" />
+        <rect x="23" y="23" width="8" height="21" rx="4" fill="#ECB22E" />
+        <rect x="17" y="23" width="8" height="21" rx="4" fill="#E01E5A" />
+        <rect x="4" y="23" width="19" height="8" rx="4" fill="#E01E5A" />
+      </svg>
+    );
+  }
+
+  if (platform.id === "discord") {
+    return (
+      <svg viewBox="0 0 48 48" className={sharedClass} role="img" aria-label="Discord logo">
+        <rect x="3" y="3" width="42" height="42" rx="13" fill="#5865F2" />
+        <path
+          d="M15.2 15.8c5.7-3.5 12-3.5 17.6 0 3.2 4.4 4.2 9.3 3.8 14.1-2.9 2.2-5.8 3.5-8.6 4.2l-1.8-2.5c1.5-.4 2.9-1.1 4.2-2-4 1.9-8.7 1.9-12.8 0 1.3.9 2.7 1.6 4.2 2L20 34.1c-2.8-.7-5.7-2-8.6-4.2-.4-4.8.6-9.7 3.8-14.1Z"
+          fill="white"
+        />
+        <circle cx="20" cy="24.5" r="2.2" fill="#5865F2" />
+        <circle cx="28" cy="24.5" r="2.2" fill="#5865F2" />
+      </svg>
+    );
+  }
+
+  if (platform.id === "mattermost") {
+    return (
+      <svg viewBox="0 0 48 48" className={sharedClass} role="img" aria-label="Mattermost logo">
+        <circle cx="24" cy="24" r="21" fill="#0058CC" />
+        <path
+          d="M12 32.5V16.8c0-1.3.9-2.3 2.1-2.5 1-.2 2 .3 2.5 1.2l7.4 12 7.4-12c.6-.9 1.6-1.4 2.6-1.2 1.2.2 2 1.2 2 2.5v15.7h-5.1v-8.3l-4.7 7.3a2.6 2.6 0 0 1-4.4 0l-4.7-7.3v8.3H12Z"
+          fill="white"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 48 48" className={sharedClass} role="img" aria-label="Matrix logo">
+      <rect x="3" y="3" width="42" height="42" rx="12" fill="#0DBD8B" />
+      <path d="M15 12h-4v24h4M33 12h4v24h-4" fill="none" stroke="white" strokeWidth="2.5" />
+      {[17, 24, 31].flatMap((x) =>
+        [17, 24, 31].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2" fill="white" />),
+      )}
+    </svg>
+  );
+}
+
 export default function GatewayPage() {
   const [env, setEnv] = useState<Record<string, EnvVarInfo>>({});
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -436,6 +493,7 @@ export default function GatewayPage() {
       ),
   );
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
+  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [actionOutput, setActionOutput] = useState<{
@@ -447,6 +505,10 @@ export default function GatewayPage() {
   const configuredCount = useMemo(
     () => PLATFORMS.filter((platform) => platformConfigured(platform, env)).length,
     [env],
+  );
+  const selectedPlatform = useMemo(
+    () => PLATFORMS.find((platform) => platform.id === selectedPlatformId) ?? null,
+    [selectedPlatformId],
   );
 
   const load = useCallback(async () => {
@@ -477,7 +539,9 @@ export default function GatewayPage() {
   }, [showToast]);
 
   useEffect(() => {
-    load();
+    // Initial remote state load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const setDraftValue = (platformId: string, key: string, value: string) => {
@@ -776,8 +840,76 @@ export default function GatewayPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-        {PLATFORMS.map((platform) => {
+      {!selectedPlatform && (
+        <section aria-labelledby="gateway-platforms-heading" className="space-y-4">
+          <div>
+            <h3 id="gateway-platforms-heading" className="text-sm font-semibold normal-case">
+              Choose a messaging platform
+            </h3>
+            <p className="mt-1 text-sm normal-case text-muted-foreground">
+              Select a platform to open its credentials, users, setup guide, and test controls.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            {PLATFORMS.map((platform) => {
+              const configured = platformConfigured(platform, env);
+              return (
+                <Card
+                  key={platform.id}
+                  className={configured ? "border-success/40" : "transition-colors hover:border-primary/50"}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlatformId(platform.id)}
+                    className="group flex min-h-64 w-full flex-col items-start p-5 text-left normal-case"
+                    aria-label={`Configure ${platform.name}`}
+                  >
+                    <div className="flex w-full items-start justify-between gap-4">
+                      <div className="rounded-xl border border-border/60 bg-background p-2 shadow-sm transition-transform group-hover:-translate-y-0.5">
+                        <PlatformLogo platform={platform} />
+                      </div>
+                      <Badge tone={configured ? "success" : "warning"}>
+                        {configured ? "configured" : "needs setup"}
+                      </Badge>
+                    </div>
+                    <div className="mt-5 flex w-full flex-1 flex-col">
+                      <h3 className="text-lg font-semibold text-foreground">{platform.name}</h3>
+                      <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
+                        {platform.description}
+                      </p>
+                      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+                        <span className="text-xs font-semibold text-muted-foreground">{platform.badge}</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.08em] text-primary">
+                          Configure <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {selectedPlatform && (
+        <section className="space-y-4" aria-label={`${selectedPlatform.name} gateway settings`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <Button size="sm" ghost onClick={() => setSelectedPlatformId(null)}>
+              <ArrowLeft className="h-4 w-4" />
+              All gateway options
+            </Button>
+            <div className="flex items-center gap-3 normal-case">
+              <PlatformLogo platform={selectedPlatform} />
+              <div>
+                <div className="text-sm font-semibold text-foreground">{selectedPlatform.name}</div>
+                <div className="text-xs text-muted-foreground">Gateway configuration</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {[selectedPlatform].map((platform) => {
           const configured = platformConfigured(platform, env);
           const draft = drafts[platform.id] ?? {};
           const saveBusy = busy === `save:${platform.id}`;
@@ -788,7 +920,9 @@ export default function GatewayPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <CardTitle className="flex items-center gap-2 text-sm">
-                      <MessageSquare className="h-4 w-4" />
+                      <span className="[&>svg]:h-8 [&>svg]:w-8">
+                        <PlatformLogo platform={platform} />
+                      </span>
                       {platform.name}
                     </CardTitle>
                     <p className="mt-2 text-sm normal-case leading-6 text-muted-foreground">
@@ -954,8 +1088,10 @@ export default function GatewayPage() {
               </CardContent>
             </Card>
           );
-        })}
-      </div>
+            })}
+          </div>
+        </section>
+      )}
 
       <Card>
         <CardHeader>
