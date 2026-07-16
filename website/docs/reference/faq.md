@@ -143,7 +143,7 @@ See the [Python Library guide](../user-guide/features/code-execution.md) for ful
 
 ### Installation Issues
 
-#### `hermes: command not found` after installation
+#### `maia: command not found` after installation
 
 **Cause:** Your shell hasn't reloaded the updated PATH.
 
@@ -158,12 +158,12 @@ source ~/.zshrc     # zsh
 
 If it still doesn't work, verify the install location:
 ```bash
-which hermes
-ls ~/.local/bin/hermes
+command -v maia
+ls ~/.local/bin/maia ~/.maia/bin/maia 2>/dev/null
 ```
 
 :::tip
-The installer adds `~/.local/bin` to your PATH. If you use a non-standard shell config, add `export PATH="$HOME/.local/bin:$PATH"` manually.
+The installer prefers `~/.local/bin` and automatically falls back to `~/.maia/bin` when the preferred directory is unavailable or not writable. It updates standard bash, zsh, and fish shell configs with the directory it actually selected.
 :::
 
 #### Python version too old
@@ -220,18 +220,15 @@ source ~/.bashrc
 
 #### Permission denied errors during install
 
-**Cause:** Insufficient permissions to write to the install directory.
+**Cause:** The selected Maia data directory is not writable. An unwritable `~/.local/bin` by itself is not fatal: the installer automatically falls back to `$MAIA_HOME/bin`.
 
 **Solution:**
 ```bash
-# Don't use sudo with the installer — it installs to ~/.local/bin
-# If you previously installed with sudo, clean up:
-sudo rm /usr/local/bin/hermes
-# Then re-run the standard installer
-git clone https://github.com/and270/maia.git
-cd maia
-./setup-maia.sh
+# Run as your normal user; do not use sudo.
+curl -fsSL https://ampliia.com/maia/install.sh | bash
 ```
+
+If this still fails, use the two paths printed by the installer to identify a non-writable custom `MAIA_HOME` or home directory. The installer should not require customers to repair `~/.local/bin` ownership.
 
 ---
 

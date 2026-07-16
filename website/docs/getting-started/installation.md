@@ -13,9 +13,7 @@ Get Maia up and running in under two minutes with the one-line installer.
 ### Linux / macOS / WSL2
 
 ```bash
-git clone https://github.com/and270/maia.git
-cd maia
-./setup-maia.sh
+curl -fsSL https://ampliia.com/maia/install.sh | bash
 ```
 
 ### Android / Termux
@@ -43,18 +41,18 @@ Native Windows is **not supported**. Please install [WSL2](https://learn.microso
 
 ### What the Installer Does
 
-The installer handles everything automatically — all dependencies (Python, Node.js, ripgrep, ffmpeg), the repo clone, virtual environment, global `hermes` command setup, and LLM provider configuration. By the end, you're ready to chat.
+The installer handles everything automatically — dependencies (Python, Node.js, ripgrep, ffmpeg), the repo clone, virtual environment, the `maia` command, and guided provider configuration. It prefers `~/.local/bin` for user commands. If that directory is unavailable or not writable, it automatically uses `~/.maia/bin` and updates the shell PATH instead.
 
 #### Install Layout
 
 Where the installer puts things depends on whether you're installing as a normal user or as root:
 
-| Installer | Code lives at | `hermes` binary | Data directory |
+| Installer | Code lives at | `maia` launcher | Data directory |
 |---|---|---|---|
-| Per-user (normal) | `~/.maia/hermes-agent/` | `~/.local/bin/hermes` (symlink) | `~/.maia/` |
-| Root-mode (`sudo curl … \| sudo bash`) | `/usr/local/lib/hermes-agent/` | `/usr/local/bin/hermes` | `/root/.hermes/` (or `$MAIA_HOME`) |
+| Per-user (normal) | `~/.maia/maia/` | `~/.local/bin/maia`, or `~/.maia/bin/maia` when needed | `~/.maia/` |
+| Linux root-mode | `/usr/local/lib/maia/` | `/usr/local/bin/maia` | `/root/.maia/` (or `$MAIA_HOME`) |
 
-The root-mode **FHS layout** (`/usr/local/lib/…`, `/usr/local/bin/hermes`) matches where other system-wide developer tools land on Linux. It's useful for shared-machine deployments where one system install should serve every user. Per-user config (auth, skills, sessions) still lives under each user's `~/.maia/` or explicit `MAIA_HOME`.
+The root-mode **FHS layout** (`/usr/local/lib/maia`, `/usr/local/bin/maia`) is Linux-only and matches where other system-wide developer tools land. Normal macOS, Linux, and WSL installs remain user-scoped and do not need `sudo`.
 
 ### After Installation
 
@@ -62,17 +60,17 @@ Reload your shell and start chatting:
 
 ```bash
 source ~/.bashrc   # or: source ~/.zshrc
-hermes             # Start chatting!
+maia               # Open Maia
 ```
 
 To reconfigure individual settings later, use the dedicated commands:
 
 ```bash
-hermes model          # Choose your LLM provider and model
-hermes tools          # Configure which tools are enabled
-hermes gateway setup  # Set up messaging platforms
-hermes config set     # Set individual config values
-hermes setup          # Or run the full setup wizard to configure everything at once
+maia model          # Choose your LLM provider and model
+maia tools          # Configure which tools are enabled
+maia gateway setup  # Set up messaging platforms
+maia config set     # Set individual config values
+maia setup          # Or run the full setup wizard to configure everything at once
 ```
 
 ---
@@ -107,8 +105,8 @@ If you want to clone the repo and install from source — for contributing, runn
 
 | Problem | Solution |
 |---------|----------|
-| `hermes: command not found` | Reload your shell (`source ~/.bashrc`) or check PATH |
-| `API key not set` | Run `hermes model` to configure your provider, or `hermes config set OPENROUTER_API_KEY your_key` |
-| Missing config after update | Run `hermes config check` then `hermes config migrate` |
+| `maia: command not found` | Reload your shell (`source ~/.bashrc` or `source ~/.zshrc`) and check `~/.local/bin` or `~/.maia/bin` in PATH |
+| `API key not set` | Run `maia model` to configure your provider, or `maia config set OPENROUTER_API_KEY your_key` |
+| Missing config after update | Run `maia config check` then `maia config migrate` |
 
-For more diagnostics, run `hermes doctor` — it will tell you exactly what's missing and how to fix it.
+For more diagnostics, run `maia doctor` — it will tell you exactly what's missing and how to fix it.

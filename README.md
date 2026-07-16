@@ -77,7 +77,7 @@ maia-agent        # direct agent runner
 curl -fsSL https://ampliia.com/maia/install.sh | bash
 ```
 
-The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, links the `maia` command into `~/.local/bin`, seeds config templates and bundled skills, and builds the dashboard. It also checks the secure runtime used for governed terminal/code automation: on supported Linux distributions it can offer to install rootless Podman; on macOS and Windows/WSL it shows the operating-system step that still needs your confirmation. Skipping that step does not break Maia: installation finishes in Restricted mode. The dashboard then walks through model, gateway, governance, secure-runtime readiness, and chat.
+The installer checks and installs dependencies (uv, Python 3.11, Git, Node.js), clones the repository into `~/.maia/maia`, creates an isolated virtual environment with lockfile-verified dependencies, and makes the `maia` command available. It prefers `~/.local/bin`; if that directory is unavailable or not writable, it automatically uses `~/.maia/bin` and updates the shell PATH instead. It also seeds config templates and bundled skills, builds the dashboard, and checks the secure runtime used for governed terminal/code automation. On supported Linux distributions it can offer to install rootless Podman; on macOS and Windows/WSL it shows the operating-system step that still needs your confirmation. Skipping that step does not break Maia: installation finishes in Restricted mode. The dashboard then walks through model, gateway, governance, secure-runtime readiness, and chat.
 
 If you skipped that step:
 
