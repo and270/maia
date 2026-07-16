@@ -255,7 +255,8 @@ is_termux() {
 #
 # Defaults:
 #   - Non-root, any OS:       INSTALL_DIR = $MAIA_HOME/maia
-#                             command link in $HOME/.local/bin
+#                             command link in $HOME/.local/bin when writable,
+#                             otherwise $MAIA_HOME/bin
 #   - Termux (any uid):       INSTALL_DIR = $MAIA_HOME/maia
 #                             command link in $PREFIX/bin (already on PATH)
 #   - Root on Linux (new):    INSTALL_DIR = /usr/local/lib/maia
@@ -300,29 +301,72 @@ resolve_install_layout() {
     INSTALL_DIR="$MAIA_HOME/maia"
 }
 
+ensure_writable_dir() {
+    mkdir -p "$1" 2>/dev/null && [ -d "$1" ] && [ -w "$1" ]
+}
+
+get_user_bin_dir() {
+    local preferred_dir="$HOME/.local/bin"
+    local fallback_dir="$MAIA_HOME/bin"
+
+    if ensure_writable_dir "$preferred_dir"; then
+        echo "$preferred_dir"
+        return 0
+    fi
+
+    if ensure_writable_dir "$fallback_dir"; then
+        echo "$fallback_dir"
+        return 0
+    fi
+
+    return 1
+}
+
+get_uv_install_dir() {
+    get_user_bin_dir
+}
+
 get_command_link_dir() {
     if is_termux && [ -n "${PREFIX:-}" ]; then
         echo "$PREFIX/bin"
     elif [ "$ROOT_FHS_LAYOUT" = true ]; then
         echo "/usr/local/bin"
     else
-        echo "$HOME/.local/bin"
+        get_user_bin_dir
     fi
 }
 
 get_command_link_display_dir() {
-    if is_termux && [ -n "${PREFIX:-}" ]; then
+    local resolved_dir="${1:-}"
+    if [ -z "$resolved_dir" ]; then
+        resolved_dir="$(get_command_link_dir 2>/dev/null || true)"
+    fi
+
+    if is_termux && [ -n "${PREFIX:-}" ] && [ "$resolved_dir" = "$PREFIX/bin" ]; then
         echo '$PREFIX/bin'
-    elif [ "$ROOT_FHS_LAYOUT" = true ]; then
+    elif [ "$resolved_dir" = "/usr/local/bin" ]; then
         echo '/usr/local/bin'
-    else
+    elif [ "$resolved_dir" = "$HOME/.local/bin" ]; then
         echo '~/.local/bin'
+    elif [ "$resolved_dir" = "$MAIA_HOME/bin" ]; then
+        if [ "$MAIA_HOME" = "$HOME/.maia" ]; then
+            echo '~/.maia/bin'
+        else
+            echo "$MAIA_HOME/bin"
+        fi
+    elif [[ "$resolved_dir" == "$HOME/"* ]]; then
+        echo "~/${resolved_dir#$HOME/}"
+    else
+        echo "$resolved_dir"
     fi
 }
 
 get_maia_command_path() {
     local link_dir
-    link_dir="$(get_command_link_dir)"
+    if ! link_dir="$(get_command_link_dir)"; then
+        echo "maia"
+        return 0
+    fi
     if [ -x "$link_dir/maia" ]; then
         echo "$link_dir/maia"
     else
@@ -403,6 +447,14 @@ install_uv() {
         return 0
     fi
 
+    # Check Maia's fallback user bin (used when ~/.local/bin is not writable).
+    if [ -x "$MAIA_HOME/bin/uv" ]; then
+        UV_CMD="$MAIA_HOME/bin/uv"
+        UV_VERSION=$($UV_CMD --version 2>/dev/null)
+        log_success "uv found at $MAIA_HOME_DISPLAY/bin ($UV_VERSION)"
+        return 0
+    fi
+
     # Check ~/.cargo/bin (alternative uv install location)
     if [ -x "$HOME/.cargo/bin/uv" ]; then
         UV_CMD="$HOME/.cargo/bin/uv"
@@ -413,17 +465,32 @@ install_uv() {
 
     # Install uv
     log_info "Installing uv (fast Python package manager)..."
-    if curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null; then
-        # uv installs to ~/.local/bin by default
-        if [ -x "$HOME/.local/bin/uv" ]; then
+    local uv_install_dir
+    if ! uv_install_dir="$(get_uv_install_dir)"; then
+        log_error "Could not create a writable user command directory"
+        log_info "Checked: $HOME/.local/bin and $MAIA_HOME/bin"
+        exit 1
+    fi
+    local uv_install_display_dir
+    uv_install_display_dir="$(get_command_link_display_dir "$uv_install_dir")"
+    if [ "$uv_install_dir" != "$HOME/.local/bin" ]; then
+        log_warn "~/.local/bin is not writable; installing uv to $uv_install_display_dir"
+    fi
+
+    if curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$uv_install_dir" sh 2>/dev/null; then
+        if [ -x "$uv_install_dir/uv" ]; then
+            UV_CMD="$uv_install_dir/uv"
+        elif [ -x "$HOME/.local/bin/uv" ]; then
             UV_CMD="$HOME/.local/bin/uv"
+        elif [ -x "$MAIA_HOME/bin/uv" ]; then
+            UV_CMD="$MAIA_HOME/bin/uv"
         elif [ -x "$HOME/.cargo/bin/uv" ]; then
             UV_CMD="$HOME/.cargo/bin/uv"
         elif command -v uv &> /dev/null; then
             UV_CMD="uv"
         else
             log_error "uv installed but not found on PATH"
-            log_info "Try adding ~/.local/bin to your PATH and re-running"
+            log_info "Expected it in $uv_install_display_dir"
             exit 1
         fi
         UV_VERSION=$($UV_CMD --version 2>/dev/null)
@@ -647,16 +714,22 @@ install_node() {
         return 0
     fi
 
-    # Place into $MAIA_HOME/node/ and symlink binaries to ~/.local/bin/
+    # Place into $MAIA_HOME/node/ and expose binaries through the same writable
+    # user bin policy as uv and the Maia launcher.
     rm -rf "$MAIA_HOME/node"
     mkdir -p "$MAIA_HOME"
     mv "$extracted_dir" "$MAIA_HOME/node"
     rm -rf "$tmp_dir"
 
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$MAIA_HOME/node/bin/node" "$HOME/.local/bin/node"
-    ln -sf "$MAIA_HOME/node/bin/npm"  "$HOME/.local/bin/npm"
-    ln -sf "$MAIA_HOME/node/bin/npx"  "$HOME/.local/bin/npx"
+    local user_bin_dir
+    if user_bin_dir="$(get_user_bin_dir)"; then
+        ln -sf "$MAIA_HOME/node/bin/node" "$user_bin_dir/node"
+        ln -sf "$MAIA_HOME/node/bin/npm"  "$user_bin_dir/npm"
+        ln -sf "$MAIA_HOME/node/bin/npx"  "$user_bin_dir/npx"
+    else
+        log_warn "Could not create a persistent user bin directory for Node.js"
+        log_info "Node.js remains available to Maia from $MAIA_HOME_DISPLAY/node/bin"
+    fi
 
     export PATH="$MAIA_HOME/node/bin:$PATH"
 
@@ -1153,8 +1226,17 @@ setup_path() {
 
     local command_link_dir
     local command_link_display_dir
-    command_link_dir="$(get_command_link_dir)"
-    command_link_display_dir="$(get_command_link_display_dir)"
+    if ! command_link_dir="$(get_command_link_dir)"; then
+        log_error "Could not create a writable directory for the maia command"
+        log_info "Checked: $HOME/.local/bin and $MAIA_HOME/bin"
+        exit 1
+    fi
+    command_link_display_dir="$(get_command_link_display_dir "$command_link_dir")"
+
+    if [ "$ROOT_FHS_LAYOUT" != true ] && [ "$DISTRO" != "termux" ] \
+            && [ "$command_link_dir" != "$HOME/.local/bin" ]; then
+        log_warn "~/.local/bin is not writable; using $command_link_display_dir automatically"
+    fi
 
     # Create a user-facing shim for the maia command.
     # We intentionally clear PYTHONPATH/PYTHONHOME here so inherited env vars
@@ -1211,10 +1293,12 @@ EOF
         return 0
     fi
 
-    # Check if ~/.local/bin is on PATH; if not, add it to shell config.
+    # Check if the resolved user command directory is on PATH; if not, add it
+    # to the relevant shell config. This is normally ~/.local/bin, with
+    # $MAIA_HOME/bin as an automatic fallback when ~/.local/bin is unwritable.
     # Detect the user's actual login shell (not the shell running this script,
     # which is always bash when piped from curl).
-    if ! echo "$PATH" | tr ':' '\n' | grep -q "^$command_link_dir$"; then
+    if ! echo "$PATH" | tr ':' '\n' | grep -Fxq "$command_link_dir"; then
         SHELL_CONFIGS=()
         IS_FISH=false
         LOGIN_SHELL="$(basename "${SHELL:-/bin/bash}")"
@@ -1248,33 +1332,39 @@ EOF
         # Ubuntu/Debian/WSL even when ~/.bashrc is skipped)
         [ "$IS_FISH" = "false" ] && [ -f "$HOME/.profile" ] && SHELL_CONFIGS+=("$HOME/.profile")
 
-        PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+        PATH_EXPORT_DIR="$command_link_dir"
+        if [[ "$command_link_dir" == "$HOME/"* ]]; then
+            PATH_EXPORT_DIR="\$HOME/${command_link_dir#$HOME/}"
+        fi
+        PATH_LINE="export PATH=\"$PATH_EXPORT_DIR:\$PATH\""
 
         for SHELL_CONFIG in "${SHELL_CONFIGS[@]}"; do
-            if ! grep -v '^[[:space:]]*#' "$SHELL_CONFIG" 2>/dev/null | grep -qE 'PATH=.*\.local/bin'; then
+            if ! grep -v '^[[:space:]]*#' "$SHELL_CONFIG" 2>/dev/null | grep -Fq "$command_link_dir" \
+                    && ! grep -v '^[[:space:]]*#' "$SHELL_CONFIG" 2>/dev/null | grep -Fq "$PATH_EXPORT_DIR"; then
                 echo "" >> "$SHELL_CONFIG"
-                echo "# Maia - ensure ~/.local/bin is on PATH" >> "$SHELL_CONFIG"
+                echo "# Maia - ensure $command_link_display_dir is on PATH" >> "$SHELL_CONFIG"
                 echo "$PATH_LINE" >> "$SHELL_CONFIG"
-                log_success "Added ~/.local/bin to PATH in $SHELL_CONFIG"
+                log_success "Added $command_link_display_dir to PATH in $SHELL_CONFIG"
             fi
         done
 
         # fish uses fish_add_path instead of export PATH=...
         if [ "$IS_FISH" = "true" ]; then
-            if ! grep -q 'fish_add_path.*\.local/bin' "$FISH_CONFIG" 2>/dev/null; then
+            FISH_PATH_LINE="fish_add_path \"$PATH_EXPORT_DIR\""
+            if ! grep -Fq "$FISH_PATH_LINE" "$FISH_CONFIG" 2>/dev/null; then
                 echo "" >> "$FISH_CONFIG"
-                echo "# Maia - ensure ~/.local/bin is on PATH" >> "$FISH_CONFIG"
-                echo 'fish_add_path "$HOME/.local/bin"' >> "$FISH_CONFIG"
-                log_success "Added ~/.local/bin to PATH in $FISH_CONFIG"
+                echo "# Maia - ensure $command_link_display_dir is on PATH" >> "$FISH_CONFIG"
+                echo "$FISH_PATH_LINE" >> "$FISH_CONFIG"
+                log_success "Added $command_link_display_dir to PATH in $FISH_CONFIG"
             fi
         fi
 
         if [ "$IS_FISH" = "false" ] && [ ${#SHELL_CONFIGS[@]} -eq 0 ]; then
-            log_warn "Could not detect shell config file to add ~/.local/bin to PATH"
+            log_warn "Could not detect shell config file to add $command_link_display_dir to PATH"
             log_info "Add manually: $PATH_LINE"
         fi
     else
-        log_info "~/.local/bin already on PATH"
+        log_info "$command_link_display_dir already on PATH"
     fi
 
     # Export for current session so maia works immediately
