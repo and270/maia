@@ -122,8 +122,15 @@ export type GovernanceFileGrant = {
   recursive: boolean;
   read: boolean;
   write: boolean;
+  write_requires_approval?: boolean;
   write_approval_roles?: string[];
   write_approval_users?: string[];
+};
+
+export type GovernanceApprovalUser = {
+  actor_key: string;
+  name: string;
+  roles: string[];
 };
 
 export type GovernanceSandboxStatus = {
@@ -228,9 +235,9 @@ export type FolderPolicy = {
   read_users?: string[];
   write_users?: string[];
   deny_users?: string[];
-  // Non-empty: conditional writers are blocked until a sender with one of
-  // these roles/users performs the edit. Present-but-empty: explicit opt-out
-  // from an ancestor's requirement.
+  // Non-empty: conditional writers are blocked until a named reviewer (or a
+  // legacy role-based reviewer) performs the edit. Present-but-empty:
+  // explicit opt-out from an ancestor's requirement.
   write_approval_roles?: string[];
   write_approval_users?: string[];
 };
@@ -238,6 +245,7 @@ export type FolderPolicy = {
 export type FolderPoliciesResponse = {
   enabled: boolean;
   folder_policies: FolderPolicy[];
+  approval_users: GovernanceApprovalUser[];
   team_file_roots: Record<string, { path: string; [key: string]: unknown }>;
   actor: {
     teams: string[];
@@ -392,7 +400,11 @@ export const api = {
     }),
   getOnboardingState: () => fetchJSON<OnboardingState>("/api/onboarding/state"),
   getGovernanceOptions: () =>
-    fetchJSON<{ roles: string[]; teams: string[] }>("/api/governance/options"),
+    fetchJSON<{
+      roles: string[];
+      teams: string[];
+      approval_users: GovernanceApprovalUser[];
+    }>("/api/governance/options"),
   getGovernanceOverview: () =>
     fetchJSON<GovernanceOverview>("/api/governance/overview"),
   getSecureRuntimeStatus: () =>

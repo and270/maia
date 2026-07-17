@@ -126,6 +126,42 @@ governance:
     assert _mode_for(resolve_sandbox_mounts(actor=manager), finance) == "rw"
 
 
+def test_named_manager_approver_gets_rw_mount_without_separate_path_grant(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    finance = tmp_path / "finance"
+    finance.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+governance:
+  enabled: true
+  default_file_policy: deny
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "discord:U_WRITER":
+      roles: [operator]
+    "discord:U_MANAGER":
+      roles: [manager]
+  folder_policies:
+    - path: '{finance}'
+      read_users: ["discord:U_WRITER"]
+      write_users: ["discord:U_WRITER"]
+      write_approval_users: ["discord:U_MANAGER"]
+""",
+    )
+
+    from agent.governance import Actor
+    from agent.sandbox import resolve_sandbox_mounts
+
+    writer = Actor(platform="discord", user_id="U_WRITER")
+    manager = Actor(platform="discord", user_id="U_MANAGER")
+    assert _mode_for(resolve_sandbox_mounts(actor=writer), finance) == "ro"
+    assert _mode_for(resolve_sandbox_mounts(actor=manager), finance) == "rw"
+
+
 def test_nonexistent_paths_are_skipped(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))

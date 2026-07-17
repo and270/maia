@@ -34,6 +34,7 @@ import {
   type GovernanceTeam,
   type GovernanceUser,
 } from "@/lib/api";
+import { validateGovernanceFileGrants } from "@/lib/governance-file-approvals";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
 import FileAccessPage from "@/pages/FileAccessPage";
@@ -149,6 +150,9 @@ function PeopleWorkspace({
 
   const selected =
     overview.users.find((user) => user.actor_key === selectedKey) ?? filtered[0] ?? null;
+  const approvalUsers = overview.users.filter(
+    (user) => user.governed && user.actor_key !== selected?.actor_key,
+  );
   const isDirty = Boolean(
     selected && JSON.stringify(draft) !== JSON.stringify(userDraftFrom(selected)),
   );
@@ -175,6 +179,15 @@ function PeopleWorkspace({
     if (!selected) return;
     if (draft.roles.length === 0) {
       showToast("Select at least one role before granting access.", "error");
+      return;
+    }
+    const fileAccessError = validateGovernanceFileGrants(
+      draft.file_access,
+      approvalUsers,
+      overview.role_hierarchy,
+    );
+    if (fileAccessError) {
+      showToast(fileAccessError, "error");
       return;
     }
     setBusy(true);
@@ -457,9 +470,7 @@ function PeopleWorkspace({
                 setDraft((current) => ({ ...current, file_access }))
               }
               approvalRoles={overview.role_hierarchy}
-              approvalUsers={overview.users.filter(
-                (user) => user.governed && user.actor_key !== selected.actor_key,
-              )}
+              approvalUsers={approvalUsers}
               description="These grants apply only to this identity and merge with team and role policies for the same path."
             />
 
@@ -578,6 +589,7 @@ function TeamsWorkspace({
     overview.team_records.find((team) => team.name === selectedName) ??
     filtered[0] ??
     null;
+  const governedUsers = overview.users.filter((user) => user.governed);
   const isDirty = Boolean(
     selected && JSON.stringify(draft) !== JSON.stringify(teamDraftFrom(selected)),
   );
@@ -627,6 +639,15 @@ function TeamsWorkspace({
 
   const save = async () => {
     if (!selected) return;
+    const fileAccessError = validateGovernanceFileGrants(
+      draft.file_access,
+      governedUsers,
+      overview.role_hierarchy,
+    );
+    if (fileAccessError) {
+      showToast(fileAccessError, "error");
+      return;
+    }
     setBusy(true);
     try {
       await api.saveGovernanceTeam(selected.name, draft);
@@ -682,8 +703,6 @@ function TeamsWorkspace({
         },
       };
     });
-
-  const governedUsers = overview.users.filter((user) => user.governed);
 
   return (
     <div className="space-y-5 pb-20">

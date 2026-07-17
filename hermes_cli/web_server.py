@@ -721,6 +721,20 @@ def _replace_subject_file_grants(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _validate_file_approval_policies(
+    governance: Dict[str, Any], policies: List[Dict[str, Any]]
+) -> None:
+    from agent.governance_admin import (
+        GovernanceAdminError,
+        validate_file_approval_policies,
+    )
+
+    try:
+        validate_file_approval_policies(governance, policies)
+    except GovernanceAdminError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _governance_team_payload(governance: Dict[str, Any], name: str) -> Dict[str, Any]:
     from agent.governance_admin import governance_team_payload
 
@@ -1341,6 +1355,7 @@ class GovernanceFileGrant(BaseModel):
     recursive: bool = True
     read: bool = False
     write: bool = False
+    write_requires_approval: bool = False
     write_approval_roles: Optional[List[str]] = None
     write_approval_users: Optional[List[str]] = None
 
@@ -3121,6 +3136,17 @@ async def get_folder_policies(request: Request):
     return {
         "enabled": True,
         "folder_policies": policies,
+        "approval_users": _file_approval_user_options(
+            governance,
+            allowed_keys=None
+            if admin
+            else (
+                _governance_user_keys_by_team(
+                    governance, sorted(managed_roots.keys())
+                )
+                | _governance_admin_keys(governance.get("users"))
+            ),
+        ),
         "team_file_roots": _team_root_entries(governance) if admin else {
             team: {"path": str(path)}
             for team, path in managed_roots.items()
@@ -3158,13 +3184,16 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
                 )
 
     if admin:
-        governance["folder_policies"] = incoming
+        next_policies = incoming
     else:
         managed_roots = _manageable_team_roots(request, governance)
         if not managed_roots:
             raise HTTPException(status_code=403, detail="No team file roots are delegated to this dashboard user.")
         actor_teams = sorted(managed_roots.keys())
-        allowed_user_keys = _governance_user_keys_by_team(governance, actor_teams)
+        allowed_user_keys = (
+            _governance_user_keys_by_team(governance, actor_teams)
+            | _governance_admin_keys(governance.get("users"))
+        )
         for policy in incoming:
             _validate_team_managed_policy(
                 policy,
@@ -3181,7 +3210,10 @@ async def update_folder_policies(body: FolderPoliciesUpdate, request: Request):
             policy for policy in current
             if not _policy_matches_any_team_root(policy, managed_roots)
         ]
-        governance["folder_policies"] = retained + incoming
+        next_policies = retained + incoming
+
+    _validate_file_approval_policies(governance, next_policies)
+    governance["folder_policies"] = next_policies
 
     cfg["governance"] = governance
     try:
@@ -3231,6 +3263,48 @@ def _governance_team_options() -> List[str]:
     return sorted(_governance_team_registry(governance), key=str.lower)
 
 
+def _file_approval_user_options(
+    governance: Dict[str, Any],
+    *,
+    allowed_keys: Optional[set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Return named manager/admin identities selectable for file review."""
+
+    from agent.governance import Actor, actor_can_approve_file_changes
+
+    users = governance.get("users")
+    users = users if isinstance(users, dict) else {}
+    result: List[Dict[str, Any]] = []
+    for raw_key, raw_record in users.items():
+        actor_key = str(raw_key or "").strip()
+        if not actor_key or (allowed_keys is not None and actor_key not in allowed_keys):
+            continue
+        platform, separator, user_id = actor_key.partition(":")
+        actor = Actor(
+            platform=platform if separator else "local",
+            user_id=user_id if separator else actor_key,
+        )
+        if not actor_can_approve_file_changes(actor, governance):
+            continue
+        record = raw_record if isinstance(raw_record, dict) else {}
+        result.append(
+            {
+                "actor_key": actor_key,
+                "name": str(record.get("name") or actor_key),
+                "roles": _coerce_role_list(
+                    record.get("roles") if isinstance(record, dict) else raw_record
+                ),
+            }
+        )
+    return sorted(
+        result,
+        key=lambda item: (
+            str(item.get("name") or "").casefold(),
+            str(item.get("actor_key") or "").casefold(),
+        ),
+    )
+
+
 @app.get("/api/governance/options")
 async def get_governance_options():
     """Selectable governance vocabulary for dashboard forms.
@@ -3239,9 +3313,13 @@ async def get_governance_options():
     ``teams`` is the first-class team registry (plus legacy references until
     migration), so forms can use select-only assignment.
     """
+    cfg = load_config()
+    governance = cfg.get("governance", {}) if isinstance(cfg, dict) else {}
+    governance = governance if isinstance(governance, dict) else {}
     return {
         "roles": _governance_role_options(),
         "teams": _governance_team_options(),
+        "approval_users": _file_approval_user_options(governance),
     }
 
 

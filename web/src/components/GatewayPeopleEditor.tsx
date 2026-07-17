@@ -17,6 +17,7 @@ import { RoleMultiSelect, TeamMultiSelect } from "@/components/GovernanceFields"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { GovernanceUser } from "@/lib/api";
+import { validateGovernanceFileGrants } from "@/lib/governance-file-approvals";
 import {
   normalizeGatewayPersonId,
   type GatewayPersonDraft,
@@ -249,6 +250,14 @@ function GatewayPersonDialog({
       index !== editingIndex &&
       normalizeGatewayPersonId(platform.id, candidate.user_id) === normalizedId,
   );
+  const selectableApprovers = approvalUsers.filter(
+    (user) => user.actor_key !== `${platform.id}:${normalizedId}`,
+  );
+  const fileAccessError = validateGovernanceFileGrants(
+    draft.file_access,
+    selectableApprovers,
+    roleOptions,
+  );
   const validationError = !normalizedId
     ? `Enter a valid ${platform.name} user ID.`
     : duplicate
@@ -257,7 +266,7 @@ function GatewayPersonDialog({
         ? "Display name is required."
         : draft.roles.length === 0
           ? "Select at least one Governance role."
-          : null;
+          : fileAccessError;
   const changed = JSON.stringify(draft) !== JSON.stringify(row);
   const requestClose = useCallback(() => {
     if (saving) return;
@@ -395,7 +404,7 @@ function GatewayPersonDialog({
             grants={draft.file_access}
             onChange={(file_access) => setDraft((current) => ({ ...current, file_access }))}
             approvalRoles={roleOptions}
-            approvalUsers={approvalUsers}
+            approvalUsers={selectableApprovers}
             title="Direct file and folder access"
             description="Add only the server paths this user needs. Team access can be managed later in Governance."
             disabled={saving}

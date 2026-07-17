@@ -94,6 +94,14 @@ _FILE_GRANT_SCHEMA = {
         "recursive": {"type": "boolean", "default": True},
         "read": {"type": "boolean", "default": False},
         "write": {"type": "boolean", "default": False},
+        "write_requires_approval": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                "When true, write_approval_users must name at least one governed "
+                "manager or administrator."
+            ),
+        },
         "write_approval_roles": {
             "type": "array",
             "items": {"type": "string"},

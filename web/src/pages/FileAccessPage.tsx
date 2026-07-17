@@ -16,7 +16,16 @@ import { Label } from "@/components/ui/label";
 import { Toast } from "@/components/Toast";
 import { DashboardLoadingState } from "@/components/DashboardLoadingState";
 import { UnsavedChangesBar } from "@/components/UnsavedChangesBar";
-import { api, type FolderPoliciesResponse, type FolderPolicy } from "@/lib/api";
+import {
+  api,
+  type FolderPoliciesResponse,
+  type FolderPolicy,
+  type GovernanceApprovalUser,
+} from "@/lib/api";
+import {
+  isFileApprovalUser,
+  selectedFileApproverKeys,
+} from "@/lib/governance-file-approvals";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/useToast";
 import { PluginSlot } from "@/plugins";
@@ -143,6 +152,23 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
   };
 
   const save = async () => {
+    for (const policy of policies) {
+      const selectedApprovers = selectedFileApproverKeys(
+        policy,
+        data?.approval_users ?? [],
+        roleOptions,
+      );
+      const hasApprovalRule =
+        (policy.write_approval_roles?.length ?? 0) > 0 ||
+        (policy.write_approval_users?.length ?? 0) > 0;
+      if (hasApprovalRule && selectedApprovers.length === 0) {
+        showToast(
+          `Select at least one manager or administrator to approve writes for ${policy.path}.`,
+          "error",
+        );
+        return;
+      }
+    }
     setSaving(true);
     try {
       await api.saveFolderPolicies({
@@ -277,7 +303,6 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                     roles={roleOptions}
                     readRoles={policy.read_roles ?? []}
                     writeRoles={policy.write_roles ?? []}
-                    approvalRoles={policy.write_approval_roles ?? []}
                     onChange={(key, roles) =>
                       updatePolicy(index, { ...policy, [key]: roles })
                     }
@@ -330,14 +355,17 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                   options={teamOptions}
                 />
               </div>
-              <Field
-                label="Write approval users"
-                value={listToText(policy.write_approval_users)}
-                onChange={(value) =>
-                  updatePolicy(index, updateListField(policy, "write_approval_users", value))
+              <PolicyApproverSelector
+                policy={policy}
+                users={data?.approval_users ?? []}
+                hierarchy={roleOptions}
+                onChange={(write_approval_users) =>
+                  updatePolicy(index, {
+                    ...policy,
+                    write_approval_roles: [],
+                    write_approval_users,
+                  })
                 }
-                placeholder="slack:U_MANAGER"
-                help={actorKeyHelp}
               />
               <div className="space-y-2 xl:col-span-2">
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -362,11 +390,11 @@ export default function FileAccessPage({ embedded = false }: { embedded?: boolea
                   Opt out of inherited write approval (saves an explicit empty list)
                 </label>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Write approval roles/users stage every modification under this
-                  policy for human review before it is applied — even for users
-                  who hold a write grant. Leave both empty to inherit from a
-                  parent policy; use the opt-out to cancel an inherited
-                  requirement for this subtree.
+                  Named approvers review edits in the same shared conversation.
+                  Selecting a manager or administrator lets that person inspect
+                  and execute the reviewed edit on this path. Leave the
+                  selection empty to inherit from a parent policy; use the
+                  opt-out to cancel an inherited requirement for this subtree.
                 </p>
               </div>
             </CardContent>
@@ -395,20 +423,15 @@ function RoleAccessMatrix({
   roles,
   readRoles,
   writeRoles,
-  approvalRoles,
   onChange,
 }: {
   roles: string[];
   readRoles: string[];
   writeRoles: string[];
-  approvalRoles: string[];
-  onChange: (
-    key: "read_roles" | "write_roles" | "write_approval_roles",
-    roles: string[],
-  ) => void;
+  onChange: (key: "read_roles" | "write_roles", roles: string[]) => void;
 }) {
   const toggle = (
-    key: "read_roles" | "write_roles" | "write_approval_roles",
+    key: "read_roles" | "write_roles",
     current: string[],
     role: string,
   ) => {
@@ -427,8 +450,8 @@ function RoleAccessMatrix({
           Access by role
         </div>
         <p className="mt-1 text-xs normal-case leading-5 text-muted-foreground">
-          Read and write grant access to this path. Approve writes identifies who may accept staged changes;
-          selecting an approver also turns on human confirmation for other writers.
+          Read and write grant access to this path. Named write approvers are
+          selected separately below.
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -438,7 +461,6 @@ function RoleAccessMatrix({
               <th className="px-3 py-2 font-medium">Role</th>
               <th className="px-3 py-2 text-center font-medium">Read</th>
               <th className="px-3 py-2 text-center font-medium">Write</th>
-              <th className="px-3 py-2 text-center font-medium">Approve writes</th>
             </tr>
           </thead>
           <tbody>
@@ -461,19 +483,85 @@ function RoleAccessMatrix({
                     onChange={() => toggle("write_roles", writeRoles, role)}
                   />
                 </td>
-                <td className="px-3 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    aria-label={`${role} may approve writes`}
-                    checked={approvalRoles.includes(role)}
-                    onChange={() => toggle("write_approval_roles", approvalRoles, role)}
-                  />
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function PolicyApproverSelector({
+  policy,
+  users,
+  hierarchy,
+  onChange,
+}: {
+  policy: FolderPolicy;
+  users: GovernanceApprovalUser[];
+  hierarchy: string[];
+  onChange: (users: string[]) => void;
+}) {
+  const selected = selectedFileApproverKeys(policy, users, hierarchy);
+  const candidates = users.filter(
+    (user) =>
+      isFileApprovalUser(user, hierarchy) ||
+      selected.includes(user.actor_key),
+  );
+  const unknownSelected = selected.filter(
+    (actorKey) => !users.some((user) => user.actor_key === actorKey),
+  );
+  const toggle = (actorKey: string) =>
+    onChange(
+      selected.includes(actorKey)
+        ? selected.filter((item) => item !== actorKey)
+        : [...selected, actorKey],
+    );
+
+  return (
+    <div className="space-y-2 xl:col-span-2">
+      <div>
+        <Label>Write approvers</Label>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          Select named managers or administrators. Role-wide approval is no
+          longer used for new policies.
+        </p>
+      </div>
+      <div className="grid max-h-44 overflow-y-auto border border-border sm:grid-cols-2">
+        {candidates.map((user) => (
+          <label
+            key={user.actor_key}
+            className="flex items-start gap-2 border-b border-border/70 px-3 py-2 text-xs sm:border-r"
+          >
+            <input
+              type="checkbox"
+              checked={selected.includes(user.actor_key)}
+              onChange={() => toggle(user.actor_key)}
+            />
+            <span className="min-w-0">
+              <span className="block truncate font-medium text-foreground">
+                {user.name || user.actor_key}
+              </span>
+              <span className="block truncate font-mono-ui text-[0.7rem] text-muted-foreground">
+                {user.actor_key}
+              </span>
+            </span>
+          </label>
+        ))}
+        {candidates.length === 0 && (
+          <div className="p-3 text-xs text-muted-foreground sm:col-span-2">
+            Add a governed manager or administrator before enabling write
+            approval.
+          </div>
+        )}
+      </div>
+      {unknownSelected.length > 0 && (
+        <p className="text-xs leading-5 text-red-600 dark:text-red-400">
+          These saved approvers are no longer eligible:{" "}
+          {unknownSelected.join(", ")}.
+        </p>
+      )}
     </div>
   );
 }

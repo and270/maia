@@ -13,7 +13,11 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from agent.governance import Actor, role_satisfies
+from agent.governance import (
+    Actor,
+    eligible_file_change_approvers,
+    role_satisfies,
+)
 
 
 DEFAULT_ROLES = ["viewer", "operator", "manager", "admin"]
@@ -102,6 +106,69 @@ def normalize_folder_policy(raw: dict[str, Any]) -> dict[str, Any]:
         ):
             policy[key] = []
     return policy
+
+
+def validate_file_approval_policies(
+    governance: dict[str, Any],
+    policies: Iterable[dict[str, Any]],
+) -> None:
+    """Validate named file approvers against identities and effective access."""
+
+    normalized = [
+        normalize_folder_policy(policy)
+        for policy in policies
+        if isinstance(policy, dict)
+    ]
+    users = governance.get("users")
+    users = users if isinstance(users, dict) else {}
+    hierarchy = coerce_list(governance.get("role_hierarchy")) or DEFAULT_ROLES
+    validation_config = dict(governance)
+    validation_config["folder_policies"] = normalized
+
+    for policy in normalized:
+        path = str(policy.get("path") or "").strip()
+        roles = coerce_list(policy.get("write_approval_roles"))
+        approvers = coerce_list(policy.get("write_approval_users"))
+        if not roles and not approvers:
+            continue
+
+        unknown_roles = sorted(set(roles) - set(hierarchy))
+        if unknown_roles:
+            raise GovernanceAdminError(
+                f"Unknown write approver roles: {', '.join(unknown_roles)}"
+            )
+        unknown_users = sorted(set(approvers) - set(users))
+        if unknown_users:
+            raise GovernanceAdminError(
+                f"Unknown write approvers: {', '.join(unknown_users)}"
+            )
+        ineligible_users = []
+        for actor_key in approvers:
+            record = users.get(actor_key)
+            granted_roles = coerce_list(
+                record.get("roles") if isinstance(record, dict) else record
+            )
+            if not any(
+                role_satisfies(governance, granted_role, "manager")
+                for granted_role in granted_roles
+            ):
+                ineligible_users.append(actor_key)
+        if ineligible_users:
+            raise GovernanceAdminError(
+                "Write approvers must have manager or administrator level: "
+                + ", ".join(sorted(ineligible_users))
+            )
+
+        requirement = {"roles": roles, "users": approvers}
+        if not eligible_file_change_approvers(
+            requirement,
+            path=path,
+            config=validation_config,
+        ):
+            raise GovernanceAdminError(
+                f"Write after approval for {path} has no selected approver who "
+                "can execute the edit."
+            )
 
 
 def team_root_entries(governance: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -253,7 +320,10 @@ def replace_subject_file_grants(
         recursive = bool(_grant_value(grant, "recursive", True))
         read = bool(_grant_value(grant, "read", False))
         write = bool(_grant_value(grant, "write", False))
-        declares_approval = any(
+        requires_approval = bool(
+            _grant_value(grant, "write_requires_approval", False)
+        )
+        declares_approval = requires_approval or any(
             _grant_declares(grant, field)
             for field in ("write_approval_roles", "write_approval_users")
         )
@@ -282,9 +352,14 @@ def replace_subject_file_grants(
                 set(coerce_list(policy.get(write_key))) | {subject}
             )
         if declares_approval:
-            if not write and (approval_roles or approval_users):
+            if not write and (requires_approval or approval_roles or approval_users):
                 raise GovernanceAdminError(
                     f"Write approval for {path} requires write access"
+                )
+            if requires_approval and not approval_users:
+                raise GovernanceAdminError(
+                    f"Write after approval for {path} requires at least one "
+                    "named approver. Select a manager or administrator before saving."
                 )
             hierarchy = coerce_list(governance.get("role_hierarchy")) or DEFAULT_ROLES
             unknown_roles = sorted(set(approval_roles) - set(hierarchy))
@@ -301,35 +376,48 @@ def replace_subject_file_grants(
                 raise GovernanceAdminError(
                     f"Unknown write approvers: {', '.join(unknown_users)}"
                 )
-            eligible_users = set(approval_users)
-            if approval_roles:
-                for actor_key, record in configured_users.items():
-                    granted_roles = coerce_list(
-                        record.get("roles") if isinstance(record, dict) else record
-                    )
-                    if any(
-                        role_satisfies(
-                            governance, granted_role, required_role
-                        )
-                        for granted_role in granted_roles
-                        for required_role in approval_roles
-                    ):
-                        eligible_users.add(str(actor_key))
-            if write and (approval_roles or approval_users) and not eligible_users:
-                required = ", ".join(
-                    [f"role {role}" for role in approval_roles] + approval_users
+            ineligible_users = []
+            for actor_key in approval_users:
+                record = configured_users.get(actor_key)
+                granted_roles = coerce_list(
+                    record.get("roles") if isinstance(record, dict) else record
                 )
+                if not any(
+                    role_satisfies(governance, granted_role, "manager")
+                    for granted_role in granted_roles
+                ):
+                    ineligible_users.append(actor_key)
+            if ineligible_users:
                 raise GovernanceAdminError(
-                    f"Write after approval for {path} has no eligible approver. "
-                    f"The selected requirement ({required}) is not satisfied by "
-                    "any governed gateway identity. Assign that role to a user "
-                    "or choose a specific approver before saving."
+                    "Write approvers must have manager or administrator level: "
+                    + ", ".join(sorted(ineligible_users))
                 )
             # Approval is a property of the matching path policy, so it applies
             # to every non-approver who can write that same path. Empty lists
             # explicitly mean direct write and opt out of an ancestor rule.
             policy["write_approval_roles"] = sorted(set(approval_roles))
             policy["write_approval_users"] = sorted(set(approval_users))
+            if write and (approval_roles or approval_users):
+                validation_config = dict(governance)
+                validation_config["folder_policies"] = policies
+                requirement = {
+                    "roles": approval_roles,
+                    "users": approval_users,
+                }
+                if not eligible_file_change_approvers(
+                    requirement,
+                    path=path,
+                    config=validation_config,
+                ):
+                    required = ", ".join(
+                        [f"role {role}" for role in approval_roles]
+                        + approval_users
+                    )
+                    raise GovernanceAdminError(
+                        f"Write after approval for {path} has no eligible approver "
+                        f"who can execute the edit. The selected requirement "
+                        f"({required}) is not satisfied by an authorized writer."
+                    )
 
     governance["folder_policies"] = policies
 
@@ -1047,6 +1135,9 @@ def execute_governance_admin_action(
                                 coerce_list(raw.get("teams") or raw.get("team"))
                             )
                         }
+                        actor_team_users.update(
+                            _known_admin_keys(full_config, governance)
+                        )
                         _validate_team_managed_policy(
                             existing,
                             managed_roots=roots,
@@ -1103,6 +1194,9 @@ def execute_governance_admin_action(
                                 coerce_list(raw.get("teams") or raw.get("team"))
                             )
                         }
+                        actor_team_users.update(
+                            _known_admin_keys(full_config, governance)
+                        )
                         _validate_team_managed_policy(
                             policy,
                             managed_roots=roots,
@@ -1119,6 +1213,7 @@ def execute_governance_admin_action(
                             break
                     if not replaced:
                         policies.append(policy)
+                    validate_file_approval_policies(governance, policies)
                     result = {"policy": policy, "replaced": replaced}
                 governance["folder_policies"] = policies
                 full_config["governance"] = governance
