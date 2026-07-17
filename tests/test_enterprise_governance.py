@@ -188,7 +188,9 @@ def test_malformed_governance_config_fails_closed(tmp_path, monkeypatch):
     assert "blocked until the governance configuration is fixed" in reason
 
 
-def test_folder_policy_designated_users_and_explicit_denies(tmp_path, monkeypatch):
+def test_folder_policy_designated_users_and_admin_bypasses_explicit_denies(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     legal_dir = tmp_path / "legal"
@@ -227,8 +229,60 @@ governance:
         "read",
         actor=Actor(platform="slack", user_id="U_BLOCKED"),
     )
-    assert allowed is False
-    assert "explicitly denied" in reason
+    assert allowed is True
+    assert reason == ""
+
+
+def test_admin_has_global_file_access_and_projects_every_governed_root(tmp_path):
+    from agent.governance import Actor, check_file_access, readable_governed_paths
+
+    finance = tmp_path / "finance"
+    legal = tmp_path / "legal"
+    outside = tmp_path / "outside"
+    config = {
+        "enabled": True,
+        "default_file_policy": "deny",
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        "users": {
+            "discord:ADMIN": {
+                "roles": ["admin"],
+                "teams": ["leadership"],
+            }
+        },
+        "folder_policies": [
+            {
+                "path": str(finance),
+                "read_users": ["discord:SOMEONE_ELSE"],
+                "write_users": ["discord:SOMEONE_ELSE"],
+                "deny_users": ["discord:ADMIN"],
+            },
+            {
+                "path": str(legal),
+                "deny_teams": ["leadership"],
+            },
+        ],
+    }
+    admin = Actor(platform="discord", user_id="ADMIN")
+
+    for target in (
+        finance / "numbers.xlsx",
+        legal / "contract.docx",
+        outside / "unconfigured.txt",
+    ):
+        for operation in ("read", "write", "search"):
+            allowed, reason = check_file_access(
+                str(target),
+                operation,
+                actor=admin,
+                config=config,
+            )
+            assert allowed is True
+            assert reason == ""
+
+    assert readable_governed_paths(actor=admin, config=config) == [
+        {"path": str(finance.resolve()), "recursive": True},
+        {"path": str(legal.resolve()), "recursive": True},
+    ]
 
 
 def test_folder_policy_supports_team_read_write_and_team_denies(tmp_path, monkeypatch):

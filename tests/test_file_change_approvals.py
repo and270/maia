@@ -143,7 +143,74 @@ def test_eligible_approvers_resolved_from_role_map(tmp_path, monkeypatch):
     approvers = eligible_file_change_approvers(
         {"roles": [], "users": ["discord:12345"]}
     )
-    assert approvers == ["discord:12345"]
+    assert approvers == []
+
+
+def test_named_manager_approver_can_inspect_and_execute_selected_path(tmp_path):
+    from agent.governance import (
+        Actor,
+        check_file_access,
+        eligible_file_change_approvers,
+    )
+
+    governed = tmp_path / "finance"
+    config = {
+        "enabled": True,
+        "default_file_policy": "deny",
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        "users": {
+            "discord:WRITER": {"roles": ["operator"]},
+            "discord:MANAGER": {"roles": ["manager"]},
+        },
+        "folder_policies": [
+            {
+                "path": str(governed),
+                "write_users": ["discord:WRITER"],
+                "write_approval_users": ["discord:MANAGER"],
+            }
+        ],
+    }
+    requirement = {"roles": [], "users": ["discord:MANAGER"]}
+    target = str(governed / "numbers.xlsx")
+
+    assert eligible_file_change_approvers(
+        requirement,
+        path=target,
+        config=config,
+    ) == ["discord:MANAGER"]
+    for operation in ("read", "write"):
+        allowed, reason = check_file_access(
+            target,
+            operation,
+            actor=Actor(platform="discord", user_id="MANAGER"),
+            config=config,
+        )
+        assert allowed is True
+        assert reason == ""
+
+
+def test_named_operator_cannot_become_file_approver(tmp_path):
+    from agent.governance import eligible_file_change_approvers
+
+    governed = tmp_path / "finance"
+    config = {
+        "enabled": True,
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        "users": {"discord:OPERATOR": {"roles": ["operator"]}},
+        "folder_policies": [
+            {
+                "path": str(governed),
+                "write_users": ["discord:OPERATOR"],
+                "write_approval_users": ["discord:OPERATOR"],
+            }
+        ],
+    }
+
+    assert eligible_file_change_approvers(
+        {"roles": [], "users": ["discord:OPERATOR"]},
+        path=str(governed / "numbers.xlsx"),
+        config=config,
+    ) == []
 
 
 def test_file_grant_rejects_approval_role_with_no_eligible_identity():
@@ -174,6 +241,66 @@ def test_file_grant_rejects_approval_role_with_no_eligible_identity():
                 }
             ],
         )
+
+
+def test_file_grant_requires_named_manager_or_admin_for_new_approval_mode():
+    from agent.governance_admin import (
+        GovernanceAdminError,
+        replace_subject_file_grants,
+    )
+    import pytest
+
+    governance = {
+        "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+        "users": {
+            "discord:WRITER": {"roles": ["operator"]},
+            "discord:MANAGER": {"roles": ["manager"]},
+        },
+        "folder_policies": [],
+    }
+    grant = {
+        "path": "/srv/finance",
+        "recursive": True,
+        "read": True,
+        "write": True,
+        "write_requires_approval": True,
+        "write_approval_roles": [],
+        "write_approval_users": [],
+    }
+    with pytest.raises(GovernanceAdminError, match="at least one named approver"):
+        replace_subject_file_grants(
+            governance,
+            subject="discord:WRITER",
+            subject_kind="user",
+            grants=[grant],
+        )
+
+    grant["write_approval_users"] = ["discord:WRITER"]
+    with pytest.raises(GovernanceAdminError, match="manager or administrator"):
+        replace_subject_file_grants(
+            governance,
+            subject="discord:WRITER",
+            subject_kind="user",
+            grants=[grant],
+        )
+
+    grant["write_approval_users"] = ["discord:MANAGER"]
+    replace_subject_file_grants(
+        governance,
+        subject="discord:WRITER",
+        subject_kind="user",
+        grants=[grant],
+    )
+    assert governance["folder_policies"] == [
+        {
+            "path": "/srv/finance",
+            "recursive": True,
+            "read_users": ["discord:WRITER"],
+            "write_users": ["discord:WRITER"],
+            "write_approval_roles": [],
+            "write_approval_users": ["discord:MANAGER"],
+        }
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -518,10 +645,71 @@ def test_write_file_tool_blocks_conditional_writer_without_staging(
     assert "conditional write access" in result["error"]
     assert "slack:U_MANAGER" in result["eligible_approvers"]
     assert "slack:U_ADMIN" in result["same_platform_approvers"]
+    assert result["approver_mention_text"] == "<@U_MANAGER> <@U_ADMIN>"
+    assert result["same_platform_approver_mentions"] == [
+        "<@U_MANAGER>",
+        "<@U_ADMIN>",
+    ]
     assert "Do not say the requester lacks write access" in result["agent_instruction"]
     assert "Do not stage or queue" in result["agent_instruction"]
     assert not target.exists()
     assert list_file_change_approvals("pending") == []
+
+
+def test_discord_admin_is_mentioned_and_can_execute_the_reviewed_edit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+governance:
+  enabled: true
+  default_file_policy: deny
+  role_hierarchy: [viewer, operator, manager, admin]
+  users:
+    "discord:WRITER":
+      roles: [operator]
+    "discord:ADMIN":
+      roles: [admin]
+  folder_policies:
+    - path: '{governed}'
+      read_users: ["discord:WRITER"]
+      write_users: ["discord:WRITER"]
+      write_approval_users: ["discord:ADMIN"]
+""",
+    )
+
+    from tools import file_tools
+
+    class Result:
+        def to_dict(self):
+            return {"success": True}
+
+    class FileOps:
+        def write_file(self, path, content):
+            target.write_text(content, encoding="utf-8")
+            return Result()
+
+    target = governed / "numbers.xlsx"
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda _task_id: FileOps())
+    monkeypatch.setenv("MAIA_USER_PLATFORM", "discord")
+    monkeypatch.setenv("MAIA_USER_ID", "WRITER")
+
+    blocked = json.loads(file_tools.write_file_tool(str(target), "reviewed"))
+    assert blocked["code"] == "governed_write_review_required"
+    assert blocked["eligible_approvers"] == ["discord:ADMIN"]
+    assert blocked["approver_mention_text"] == "<@ADMIN>"
+    assert "<@ADMIN>" in blocked["error"]
+    assert not target.exists()
+
+    monkeypatch.setenv("MAIA_USER_ID", "ADMIN")
+    written = json.loads(file_tools.write_file_tool(str(target), "reviewed"))
+    assert written["success"] is True
+    assert target.read_text(encoding="utf-8") == "reviewed"
 
 
 def test_write_file_tool_writes_directly_for_approver(tmp_path, monkeypatch):

@@ -182,6 +182,51 @@ def test_admin_policy_rejects_unknown_governed_user(service_state, tmp_path):
         )
 
 
+def test_admin_policy_accepts_named_manager_without_second_path_grant(
+    service_state, tmp_path
+):
+    target = tmp_path / "finance" / "reviewed"
+    result = execute_governance_admin_action(
+        "set_file_policy",
+        {
+            "path": str(target),
+            "policy": {
+                "read_users": ["discord:300"],
+                "write_users": ["discord:300"],
+                "write_approval_users": ["discord:200"],
+            },
+        },
+        actor=Actor(platform="discord", user_id="100"),
+    )
+
+    assert result["success"] is True
+    saved = service_state["config"]["governance"]["folder_policies"][0]
+    assert saved["write_approval_users"] == ["discord:200"]
+    assert "discord:200" not in saved.get("write_users", [])
+
+
+def test_manager_can_choose_global_admin_as_reviewer_inside_delegated_root(
+    service_state, tmp_path
+):
+    target = tmp_path / "finance" / "manager-reviewed"
+    result = execute_governance_admin_action(
+        "set_file_policy",
+        {
+            "path": str(target),
+            "policy": {
+                "read_users": ["discord:200"],
+                "write_users": ["discord:200"],
+                "write_approval_users": ["discord:100"],
+            },
+        },
+        actor=Actor(platform="discord", user_id="200"),
+    )
+
+    assert result["success"] is True
+    saved = service_state["config"]["governance"]["folder_policies"][0]
+    assert saved["write_approval_users"] == ["discord:100"]
+
+
 def test_tool_uses_task_local_gateway_identity_not_environment(service_state, monkeypatch):
     import tools.maia_admin_tool as tool
 
@@ -211,5 +256,6 @@ def test_tool_schema_exposes_no_requester_or_secret_fields():
     assert "requester" not in _PAYLOAD_KEYS
     assert "actor" not in _PAYLOAD_KEYS
     assert "api_key" not in _PAYLOAD_KEYS
+    assert "write_requires_approval" in _FILE_GRANT_SCHEMA["properties"]
     assert "write_approval_roles" in _FILE_GRANT_SCHEMA["properties"]
     assert "write_approval_users" in _FILE_GRANT_SCHEMA["properties"]

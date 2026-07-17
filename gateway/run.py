@@ -1584,7 +1584,14 @@ class GatewayRunner:
 
         set_file_approval_notifier(_notify)
 
-    def _file_approval_mentions(self, platform_value: str, requirement: dict, adapter) -> str:
+    def _file_approval_mentions(
+        self,
+        platform_value: str,
+        requirement: dict,
+        adapter,
+        *,
+        path: str = "",
+    ) -> str:
         """Build @mention markup for approvers reachable on this platform.
 
         Eligible approvers come from the governance role map as actor keys
@@ -1594,7 +1601,10 @@ class GatewayRunner:
         try:
             from agent.governance import eligible_file_change_approvers
 
-            approvers = eligible_file_change_approvers(requirement or {})
+            approvers = eligible_file_change_approvers(
+                requirement or {},
+                path=path or None,
+            )
         except Exception:
             approvers = []
         prefix = f"{platform_value}:"
@@ -1627,11 +1637,20 @@ class GatewayRunner:
             return
 
         requirement = request.get("requirement") or {}
-        mention_text = self._file_approval_mentions(platform_value, requirement, adapter)
+        governed_path = str(request.get("path") or "")
+        mention_text = self._file_approval_mentions(
+            platform_value,
+            requirement,
+            adapter,
+            path=governed_path,
+        )
         try:
             from agent.governance import eligible_file_change_approvers
 
-            eligible_approvers = eligible_file_change_approvers(requirement)
+            eligible_approvers = eligible_file_change_approvers(
+                requirement,
+                path=governed_path or None,
+            )
         except Exception:
             eligible_approvers = []
         same_platform = [

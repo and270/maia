@@ -34,7 +34,10 @@ Provision the stable ID in **Gateway**, then add the same `platform:user_id` wit
 
 An authorized admin can ask Maia in a private gateway conversation to admit a user, assign roles or teams, manage direct file grants, create delegated roots, or update folder policies. Maia uses the structured `maia_admin` tool, derives the requester from the authenticated message, and rechecks Governance for each operation. Team managers are limited to their delegated roots and members; provider secrets and dashboard login credentials cannot be changed through this tool. Successes and denials are audit events.
 
-This is the normal alternative when you do not want to publish the dashboard. Existing message approval controls also let authorized managers decide governed write requests without opening the web UI.
+This is the normal alternative when you do not want to publish the dashboard.
+For protected file writes, Maia can mention the selected manager or
+administrator in a shared Discord or Slack thread and recheck that person's
+authenticated natural-language turn without opening the web UI.
 
 ## Dashboard Access
 
@@ -176,14 +179,18 @@ approval. For a folder, keep **Include files and subfolders** enabled; disabling
 it creates an exact-path grant and does not cover files inside that folder.
 
 When write after approval is selected, a file-tool call by the conditional
-writer changes nothing and returns the eligible authorized writers. The model
-can finish planning and tag one of them in the same shared thread. Their later
+writer changes nothing and returns the eligible authorized writers. New rules
+require at least one named manager or administrator; role-wide approvers remain
+supported only for existing YAML. The model can finish planning and tag a
+reviewer in the same shared thread. Slack and Discord receive native
+`<@USER_ID>` markup, and the requester may also tag the reviewer. Their later
 message is an ordinary natural-language turn under their own authenticated
 identity, so they may agree, reject, or revise the edit. If they ask Maia to
-proceed, the tool rechecks that sender and a direct writer can execute. Maia
-does not use approval keywords, create a staged edit/card, grant access, or
-change a file policy. Gateway threads are shared by default; non-thread groups
-must use a thread or set `group_sessions_per_user: false` for this handoff.
+proceed, the tool rechecks that sender; a selected manager can inspect and
+execute the reviewed path. Administrators have global file access. Maia does
+not use approval keywords or create a staged edit/card. Gateway threads are
+shared by default; non-thread groups must use a thread or set
+`group_sessions_per_user: false` for this handoff.
 
 Team leader workflow:
 

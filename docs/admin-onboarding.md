@@ -187,6 +187,11 @@ System admin workflow:
 4. Open **File Access** for advanced role, deny, and write-approval rules.
 5. Save and test with real users, then review `governance.file_access` audit events.
 
+For **Write after approval**, select at least one named governed manager or
+administrator; Maia will not save a new approval-mode path without one.
+Selected managers can inspect and execute the reviewed edit on that path.
+Administrators have global file access and cannot be excluded by folder policy.
+
 Example baseline:
 
 ```yaml

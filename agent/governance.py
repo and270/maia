@@ -335,6 +335,35 @@ def actor_has_any_role(
     )
 
 
+def actor_is_admin(
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Return whether *actor* holds Maia's global ``admin`` authority."""
+
+    cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg):
+        return False
+    return actor_has_any_role(["admin"], actor=actor, config=cfg)
+
+
+def actor_can_approve_file_changes(
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Return whether *actor* is at a file-approval-capable level.
+
+    File approvers are managers or any higher role in the configured
+    hierarchy.  With Maia's default hierarchy this means ``manager`` and
+    ``admin``.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    if _governance_config_error(cfg):
+        return False
+    return actor_has_any_role(["manager"], actor=actor, config=cfg)
+
+
 def resolve_governed_path(raw: Any) -> Optional[Path]:
     """Resolve native, WSL, and Windows-style paths to one host identity."""
 
@@ -439,6 +468,29 @@ def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[
     return matches[0] if matches else None
 
 
+def _write_approval_requirement_from_policies(
+    path: str, config: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """Return the nearest declared write-review requirement for *path*."""
+
+    for policy in _all_matching_folder_policies(path, config):
+        if (
+            "write_approval_roles" not in policy
+            and "write_approval_users" not in policy
+        ):
+            continue
+        roles = _coerce_list(policy.get("write_approval_roles"))
+        users = _coerce_list(policy.get("write_approval_users"))
+        if not roles and not users:
+            return None
+        return {
+            "roles": roles,
+            "users": users,
+            "policy_path": str(_resolve_policy_path(policy.get("path"))),
+        }
+    return None
+
+
 def _allowed_nonrecursive_parent(
     path: str,
     operation: str,
@@ -519,6 +571,7 @@ def check_file_access(
     *,
     actor: Optional[Actor] = None,
     config: Optional[dict[str, Any]] = None,
+    audit: bool = True,
 ) -> tuple[bool, str]:
     """Return ``(allowed, reason)`` for a file read/write/search operation."""
 
@@ -529,7 +582,8 @@ def check_file_access(
     def _deny(reason: str) -> tuple[bool, str]:
         if _ACCESS_REQUEST_GUIDANCE not in reason:
             reason = f"{reason} {_ACCESS_REQUEST_GUIDANCE}"
-        _audit_file_access(who, path, op, False, reason)
+        if audit:
+            _audit_file_access(who, path, op, False, reason)
         return False, reason
 
     config_error = _governance_config_error(cfg)
@@ -540,7 +594,11 @@ def check_file_access(
             f"configuration is fixed. {config_error}",
         )
 
-    if is_trusted_local_operator(who, cfg):
+    # ``admin`` is Maia's global file authority.  Folder grants, missing
+    # policies, and explicit deny entries scope every lower role, but never an
+    # authenticated administrator.  Config-load errors still fail closed
+    # because Maia cannot safely establish the role in that state.
+    if is_trusted_local_operator(who, cfg) or actor_is_admin(who, cfg):
         return True, ""
 
     # Malformed folder_policies must fail closed, matching the top-level
@@ -576,6 +634,22 @@ def check_file_access(
                 f"Access denied by governance: {actor_display(who)} is explicitly "
                 f"denied by team for {path!r} (by a folder policy on this path or a parent).",
             )
+
+    # A specifically selected write approver is trusted to inspect and execute
+    # the reviewed edit on this policy path.  This is intentionally user-based:
+    # legacy role requirements still need an independent path grant.
+    approval_requirement = _write_approval_requirement_from_policies(path, cfg)
+    approval_users = (
+        _coerce_list(approval_requirement.get("users"))
+        if approval_requirement
+        else []
+    )
+    if (
+        approval_users
+        and _actor_matches_any(who, approval_users)
+        and actor_can_approve_file_changes(who, cfg)
+    ):
+        return True, ""
 
     if policy is None:
         exact_parent = _allowed_nonrecursive_parent(
@@ -660,6 +734,8 @@ def readable_governed_paths(
     through the same path normalizer and rechecked with ``check_file_access``.
     Malformed configuration and trusted-local mode return no projected roots;
     the former fails closed while the latter does not need an allowlist.
+    Administrators receive every configured root because their file authority
+    is global.
     """
 
     cfg = load_governance_config() if config is None else config
@@ -771,11 +847,15 @@ def can_approve_file_change(
             "be loaded until the governance configuration is fixed. "
             f"{config_error}",
         )
-    if is_trusted_local_operator(who, cfg):
+    if is_trusted_local_operator(who, cfg) or actor_is_admin(who, cfg):
         return True, ""
 
     users = _coerce_list(requirement.get("users"))
-    if users and _actor_matches_any(who, users):
+    if (
+        users
+        and _actor_matches_any(who, users)
+        and actor_can_approve_file_changes(who, cfg)
+    ):
         return True, ""
     roles = _coerce_list(requirement.get("roles"))
     if roles and actor_has_any_role(roles, actor=who, config=cfg):
@@ -816,41 +896,29 @@ def file_write_approval_requirement(
         return None
 
     who = current_actor() if actor is None else actor
-    for policy in _all_matching_folder_policies(path, cfg):
-        if (
-            "write_approval_roles" not in policy
-            and "write_approval_users" not in policy
-        ):
-            continue
-        roles = _coerce_list(policy.get("write_approval_roles"))
-        users = _coerce_list(policy.get("write_approval_users"))
-        if not roles and not users:
-            return None
-        requirement = {
-            "roles": roles,
-            "users": users,
-            "policy_path": str(_resolve_policy_path(policy.get("path"))),
-        }
-        allowed, _reason = can_approve_file_change(
-            requirement, actor=who, config=cfg
-        )
-        if allowed:
-            return None
-        return requirement
-    return None
+    requirement = _write_approval_requirement_from_policies(path, cfg)
+    if requirement is None:
+        return None
+    allowed, _reason = can_approve_file_change(
+        requirement, actor=who, config=cfg
+    )
+    return None if allowed else requirement
 
 
 def eligible_file_change_approvers(
     requirement: dict[str, Any],
     *,
+    path: Optional[str] = None,
     config: Optional[dict[str, Any]] = None,
 ) -> list[str]:
-    """Return actor keys that satisfy *requirement*, for notification routing.
+    """Return actor keys that can approve and execute the requested edit.
 
     Combines the requirement's explicit ``users`` with every entry in
     ``governance.users`` whose roles satisfy one of the required roles.
     Keys keep their configured form (e.g. ``slack:U123``) so callers can
-    filter by platform prefix when formatting mentions.
+    filter by platform prefix when formatting mentions.  When *path* is
+    supplied, candidates are also checked for effective write access to that
+    exact path so Maia never tags someone who cannot perform the edit.
     """
 
     cfg = load_governance_config() if config is None else config
@@ -858,13 +926,13 @@ def eligible_file_change_approvers(
         return []
     req_users = _coerce_list(requirement.get("users"))
     req_roles = _coerce_list(requirement.get("roles"))
-    result: list[str] = list(req_users)
+    candidates: list[str] = list(req_users)
 
     users = cfg.get("users", {})
     if isinstance(users, dict) and req_roles:
         for key, record in users.items():
             key_str = str(key).strip()
-            if not key_str or key_str in result:
+            if not key_str or key_str in candidates:
                 continue
             if isinstance(record, dict):
                 granted = _coerce_list(record.get("roles"))
@@ -875,7 +943,31 @@ def eligible_file_change_approvers(
                 for granted_role in granted
                 for required_role in req_roles
             ):
-                result.append(key_str)
+                candidates.append(key_str)
+
+    result: list[str] = []
+    for key in candidates:
+        platform, separator, user_id = str(key).partition(":")
+        candidate = Actor(
+            platform=platform if separator else "local",
+            user_id=user_id if separator else str(key),
+        )
+        allowed, _reason = can_approve_file_change(
+            requirement, actor=candidate, config=cfg
+        )
+        if not allowed:
+            continue
+        if path:
+            can_write, _reason = check_file_access(
+                path,
+                "write",
+                actor=candidate,
+                config=cfg,
+                audit=False,
+            )
+            if not can_write:
+                continue
+        result.append(str(key))
     return result
 
 
@@ -1039,7 +1131,11 @@ def governance_posture_warnings(
             }
             if not requirement["roles"] and not requirement["users"]:
                 continue
-            if eligible_file_change_approvers(requirement, config=cfg):
+            if eligible_file_change_approvers(
+                requirement,
+                path=str(policy.get("path") or ""),
+                config=cfg,
+            ):
                 continue
             warnings.append({
                 "severity": "error",

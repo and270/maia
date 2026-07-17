@@ -112,6 +112,7 @@ export default function FileApprovalsPage({
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load(status);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
@@ -180,7 +181,8 @@ export default function FileApprovalsPage({
         </div>
         <p className="text-xs normal-case leading-5 text-muted-foreground">
           Explicit staged-file workflows appear here until an approver accepts
-          them. Interactive writes governed by approval roles use a natural
+          them. Interactive writes governed by named approvers (or legacy
+          approval roles) use a natural
           handoff to an authorized writer in the shared conversation and do not
           create a card. For records shown here, approving applies the exact
           reviewed content; if the file changed on disk after staging, the

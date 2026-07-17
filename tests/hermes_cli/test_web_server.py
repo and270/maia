@@ -721,6 +721,129 @@ class TestWebServerEndpoints:
         assert policy["write_approval_roles"] == []
         assert policy["write_approval_users"] == []
 
+    def test_governance_user_approval_mode_requires_named_eligible_approver(self):
+        from hermes_cli.config import save_config
+
+        writer = "discord:WRITER"
+        save_config(
+            {
+                "governance": {
+                    "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+                    "users": {
+                        writer: {"name": "Writer", "roles": ["operator"]},
+                        "discord:MANAGER": {
+                            "name": "Manager",
+                            "roles": ["manager"],
+                        },
+                    },
+                }
+            }
+        )
+        grant = {
+            "path": "/srv/finance",
+            "recursive": True,
+            "read": True,
+            "write": True,
+            "write_requires_approval": True,
+            "write_approval_roles": [],
+            "write_approval_users": [],
+        }
+
+        missing = self.client.put(
+            f"/api/governance/users/{writer}",
+            json={
+                "name": "Writer",
+                "roles": ["operator"],
+                "teams": [],
+                "file_access": [grant],
+            },
+        )
+        assert missing.status_code == 400
+        assert "at least one named approver" in missing.json()["detail"]
+
+        grant["write_approval_users"] = [writer]
+        ineligible = self.client.put(
+            f"/api/governance/users/{writer}",
+            json={
+                "name": "Writer",
+                "roles": ["operator"],
+                "teams": [],
+                "file_access": [grant],
+            },
+        )
+        assert ineligible.status_code == 400
+        assert "manager or administrator" in ineligible.json()["detail"]
+
+    def test_file_policy_options_return_named_manager_and_admin_only(self):
+        from hermes_cli.config import save_config
+
+        save_config(
+            {
+                "governance": {
+                    "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+                    "users": {
+                        "slack:OPERATOR": {
+                            "name": "Operator",
+                            "roles": ["operator"],
+                        },
+                        "slack:MANAGER": {
+                            "name": "Manager",
+                            "roles": ["manager"],
+                        },
+                        "discord:ADMIN": {
+                            "name": "Administrator",
+                            "roles": ["admin"],
+                        },
+                    },
+                }
+            }
+        )
+
+        options = self.client.get("/api/governance/options")
+        assert options.status_code == 200
+        assert [
+            item["actor_key"] for item in options.json()["approval_users"]
+        ] == ["discord:ADMIN", "slack:MANAGER"]
+
+        policies = self.client.get("/api/governance/folder-policies")
+        assert policies.status_code == 200
+        assert [
+            item["actor_key"] for item in policies.json()["approval_users"]
+        ] == ["discord:ADMIN", "slack:MANAGER"]
+
+    def test_folder_policy_save_rejects_ineligible_named_approver(self):
+        from hermes_cli.config import save_config
+
+        save_config(
+            {
+                "governance": {
+                    "role_hierarchy": ["viewer", "operator", "manager", "admin"],
+                    "users": {
+                        "discord:WRITER": {
+                            "name": "Writer",
+                            "roles": ["operator"],
+                        },
+                    },
+                }
+            }
+        )
+
+        response = self.client.put(
+            "/api/governance/folder-policies",
+            json={
+                "folder_policies": [
+                    {
+                        "path": "/srv/finance",
+                        "read_users": ["discord:WRITER"],
+                        "write_users": ["discord:WRITER"],
+                        "write_approval_users": ["discord:WRITER"],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 400
+        assert "manager or administrator" in response.json()["detail"]
+
     def test_governance_team_lifecycle_manages_members_grants_and_root(self):
         from hermes_cli.config import load_config, save_config
 

@@ -51,7 +51,11 @@ An authorized user can request common administration in a private gateway conver
 
 The requester is always derived from the authenticated gateway event, never from prompt text or a tool argument. Authorization is checked again for every action: system admins can manage people, teams, admission, and global policies; team managers can only change file policies below their delegated team roots and can reference only their own teams and members. Every success or denial is audited. Provider secrets and dashboard login credentials remain server-only.
 
-This means a company can keep the dashboard local and still handle most day-to-day governance from Discord, Slack, WhatsApp, Telegram, or another configured gateway. Governed write approvals can also be decided with the existing message approval controls.
+This means a company can keep the dashboard local and still handle most
+day-to-day governance from Discord, Slack, WhatsApp, Telegram, or another
+configured gateway. For protected file writes, Maia can mention the selected
+manager or administrator in a shared Discord or Slack thread and recheck that
+person's authenticated natural-language turn without opening the dashboard.
 
 ## Dashboard Access
 
@@ -278,13 +282,20 @@ Use this when you are deciding the maximum server folders Maia may ever touch.
 5. Save, test with real approved users, and review `governance.file_access` audit events for denials.
 
 Direct grants in **People** and **Teams** offer three write modes: no write,
-direct write, or write after approval. Approval mode selects the roles and/or
-named governed identities that may carry out the reviewed change. The
-requirement belongs to the matching path policy, so it applies to every
-non-approver who has write access to that same path. Any grant, revocation,
-read/write change, or approval mode change replaces the affected gateway
-sandbox when the user's next gateway request starts; no gateway restart is
-required.
+direct write, or write after approval. For a new approval-mode grant, select at
+least one named manager or administrator; Maia refuses to save the grant
+without one. The requirement belongs to the matching path policy, so it applies
+to every non-approver who has write access to that same path. A selected
+approver can inspect and execute the reviewed edit on that path. Existing YAML
+that uses `write_approval_roles` remains supported, but the dashboard writes
+named `write_approval_users` for new rules. Any grant, revocation, read/write
+change, or approval mode change replaces the affected gateway sandbox when the
+user's next gateway request starts; no gateway restart is required.
+
+An authenticated `admin` has global read, search, and write authority over
+files, including unmatched paths and paths with user/team deny entries. Maia
+still fails closed when it cannot load Governance well enough to authenticate
+that role.
 
 For a folder, leave **Include files and subfolders** enabled. Turning it off
 makes the grant apply to that exact path only; it does not cover files inside
@@ -303,7 +314,10 @@ Team leaders use the same dashboard URL, but the File Access page is filtered by
 6. They use **Recursive directory policy** for folders. They turn it off for one exact file, such as a read-only PDF.
 7. They save and ask the affected user to retry the file operation.
 
-Team leaders cannot edit another team's root, cannot grant role-wide access such as `read_roles: [viewer]`, and cannot reference users outside the managed team unless they also have system-admin dashboard access.
+Team leaders cannot edit another team's root or grant role-wide access such as
+`read_roles: [viewer]`. They can grant access only to users inside the managed
+team, while governed system administrators remain available as named write
+approvers.
 
 ### Complete Marketing Example
 
@@ -383,26 +397,32 @@ governance:
 
 1. Maia resolves the actor key from the channel, CLI, cron, or dashboard session.
 2. It finds that actor in `governance.users` and reads their roles and teams.
-3. It resolves the requested path and finds the most-specific matching policy.
-4. `deny_users` and `deny_teams` win over grants.
-5. For reads/searches, the actor must match `read_users`, `read_teams`, or `read_roles`.
-6. For writes/patches/deletes, the actor must match `write_users`, `write_teams`, or `write_roles`.
-7. If no policy matches, access is denied and audited.
-8. A matching policy without an applicable read/write grant is also denied.
-9. If the nearest matching policy that declares `write_approval_roles` / `write_approval_users` has a non-empty requirement, a file-tool call by a grant-holder returns a planning-only review block without changing or staging the file. Actors who satisfy the requirement themselves write directly.
+3. An authenticated `admin` receives global file access. Configuration-load failures still fail closed.
+4. For every lower role, Maia resolves the requested path and finds the most-specific matching policy.
+5. `deny_users` and `deny_teams` win over grants for those lower roles.
+6. For reads/searches, the actor must match `read_users`, `read_teams`, or `read_roles`.
+7. For writes/patches/deletes, the actor must match `write_users`, `write_teams`, or `write_roles`.
+8. If no policy matches, access is denied and audited.
+9. A matching policy without an applicable read/write grant is also denied.
+10. If the nearest matching policy declares a non-empty write-approval requirement, a file-tool call by a conditional writer returns a planning-only review block without changing or staging the file. A named manager selected in `write_approval_users` can inspect and execute the reviewed edit on that path; administrators can execute globally.
 
 ### Conversational Write Review (`write_approval_roles` / `write_approval_users`)
 
-Folder policies can require a human sign-off on every modification, on top of the
-write grant itself:
+Folder policies can require a human sign-off on every modification. New
+dashboard rules select named people rather than roles:
 
 ```yaml
 governance:
   folder_policies:
     - path: "/srv/company/finance"
       write_users: ["sso:felipe@company.com"]   # Felipe MAY write...
-      write_approval_roles: [manager]           # ...but each change needs a manager
+      write_approval_users: ["sso:ana@company.com"] # ...after Ana reviews it
 ```
+
+The selected identity must be a governed manager or administrator. Selecting a
+manager also gives that reviewer the path access needed to inspect and execute
+the reviewed edit. Administrators already have global file authority.
+`write_approval_roles` remains a supported legacy/YAML form.
 
 How it works:
 
@@ -412,15 +432,18 @@ How it works:
    that the employee already has conditional write access and lists the
    eligible governed identities.
 2. The model can finish planning the exact change and ask/tag those identities
-   in the same shared conversation. The conversation itself stays natural:
-   Maia has no list of approval words and the gateway does not intercept text
-   before the model sees it.
-3. When a manager answers, that message starts an ordinary agent turn under the
-   manager's authenticated gateway identity. The model can understand assent,
-   rejection, questions, or a revised instruction such as “do that, but change
-   this field too.” If the manager asks Maia to proceed, the model calls the
-   file tool normally. Governance checks the current sender again; an eligible
-   writer passes the requirement and writes directly.
+   in the same shared conversation. For a same-platform Slack or Discord
+   reviewer, the tool returns native `<@USER_ID>` mention markup and instructs
+   the model to copy it exactly; the requester can also tag the reviewer. The
+   conversation itself stays natural: Maia has no list of approval words and
+   the gateway does not intercept text before the model sees it.
+3. When the selected manager or an administrator answers, that message starts
+   an ordinary agent turn under that person's authenticated gateway identity.
+   The model can understand assent, rejection, questions, or a revised
+   instruction such as “do that, but change this field too.” If they ask Maia
+   to proceed, the model calls the file tool normally. Governance checks the
+   current sender again; the selected manager can execute that path and an
+   administrator can execute any path.
 4. This handoff requires a shared agent session so the manager's turn includes
    the employee's discussion. Gateway threads are shared by default. For a
    non-thread group/channel, either start a thread or configure
@@ -453,7 +476,7 @@ tool.
 | Read users / Write users | `read_users`, `write_users` | Grant named actor keys such as `sso:ana@company.com` or `slack:U123`. | Admin; team leader only for users in managed team. |
 | Deny users / Deny teams | `deny_users`, `deny_teams` | Block a specific user or team even if a broader rule would allow them. | Admin; team leader only inside managed team. |
 | Read roles / Write roles | `read_roles`, `write_roles` | Broad tenant-wide grants by role. | System admin only. |
-| Write approval roles / users | `write_approval_roles`, `write_approval_users` | Stage every write by a grant-holder for approval by these roles/users before it applies. Empty lists on a child policy opt out of an ancestor's requirement. | Admin; team leader only inside managed team. |
+| Write approvers | `write_approval_users` (`write_approval_roles` is legacy-compatible) | Block each conditional writer without changing or staging the file, then name the manager/admin identities that can continue in the shared conversation. At least one named approver is required for new approval-mode grants. Empty lists on a child policy opt out of an ancestor's requirement. | Admin; team leader only inside managed team, plus global admins as approvers. |
 
 ## Terminal Governance
 

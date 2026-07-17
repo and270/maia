@@ -866,11 +866,15 @@ def _block_governed_write_for_review(
     blocked: list[dict] = []
     all_eligible: list[str] = []
     same_platform: list[str] = []
+    same_platform_mentions: list[str] = []
     for display_path, governance_path, requirement in gated_paths:
         eligible = list(
             dict.fromkeys(
                 str(item)
-                for item in eligible_file_change_approvers(requirement)
+                for item in eligible_file_change_approvers(
+                    requirement,
+                    path=governance_path,
+                )
                 if str(item)
             )
         )
@@ -883,6 +887,11 @@ def _block_governed_write_for_review(
                 and identity not in same_platform
             ):
                 same_platform.append(identity)
+                user_id = identity.split(":", 1)[1]
+                if platform in {"discord", "slack"}:
+                    mention = f"<@{user_id}>"
+                    if mention not in same_platform_mentions:
+                        same_platform_mentions.append(mention)
         blocked.append(
             {
                 "path": display_path,
@@ -898,7 +907,13 @@ def _block_governed_write_for_review(
 
     shown_paths = ", ".join(item["path"] for item in blocked)
     requester = actor_display(actor)
-    if all_eligible:
+    mention_text = " ".join(same_platform_mentions)
+    if mention_text:
+        review_route = (
+            "Use this shared conversation and notify these eligible authorized "
+            f"writers with the exact platform mentions {mention_text}."
+        )
+    elif all_eligible:
         review_route = (
             "Use a shared conversation and ask or tag one of these eligible "
             f"authorized writers: {', '.join(all_eligible)}."
@@ -940,12 +955,17 @@ def _block_governed_write_for_review(
             "paths": blocked,
             "eligible_approvers": all_eligible,
             "same_platform_approvers": same_platform,
+            "same_platform_approver_mentions": same_platform_mentions,
+            "approver_mention_text": mention_text,
             "error": message,
             "agent_instruction": (
                 "Do not say the requester lacks write access and do not create "
                 "or modify a file-access policy. Explain that their existing "
                 "write access requires review, continue planning the exact edit, "
-                "and ask/tag the eligible people returned here. If this session "
+                "and ask/tag the eligible people returned here. When "
+                "`approver_mention_text` is non-empty, include that exact markup "
+                "verbatim in the response; do not translate it into 'Discord "
+                "user', 'Slack user', an actor key, or plain text. If this session "
                 "is not marked as multi-user/shared, tell the requester to start "
                 "a shared thread and carry the plan there. Do not stage or queue "
                 "a change and do not interpret any fixed word as approval. In "
