@@ -146,8 +146,8 @@ registry.register(
         "policies under delegated roots and for their own teams. Use inspect first when the "
         "requester's scope or current names are unclear. This tool never manages provider "
         "secrets or dashboard authentication credentials. Never use this tool merely because "
-        "an approver accepted a staged file edit: edit approval is transaction-specific and "
-        "does not change file-access policy."
+        "an authorized writer responded to an edit discussion: carrying out that edit and "
+        "changing file-access policy are separate actions."
     ),
     schema={
         "name": "maia_admin",
@@ -155,8 +155,8 @@ registry.register(
             "Governed Maia administration for gateway users. Actions: inspect; upsert_user "
             "or remove_user; create_team, update_team, delete_team; set_file_policy or "
             "remove_file_policy. Authorization uses the authenticated sender, never an "
-            "actor/requester argument. A staged file-edit approval is not authorization to "
-            "call this tool or modify access."
+            "actor/requester argument. A conversational response about one file edit is not "
+            "authorization to call this tool or modify access."
         ),
         "parameters": {
             "type": "object",

@@ -1675,20 +1675,6 @@ class GatewayRunner:
                     metadata=metadata,
                 )
                 if result and getattr(result, "success", False):
-                    message_id = str(getattr(result, "message_id", "") or "")
-                    if message_id:
-                        from agent.file_change_approvals import (
-                            record_file_change_approval_delivery,
-                        )
-
-                        await asyncio.to_thread(
-                            record_file_change_approval_delivery,
-                            str(request.get("id") or ""),
-                            platform=platform_value,
-                            chat_id=chat_id,
-                            thread_id=thread_id,
-                            message_id=message_id,
-                        )
                     return
                 logger.warning(
                     "File-approval card failed (send returned error), "
@@ -1705,142 +1691,17 @@ class GatewayRunner:
         who = ", ".join([f"role {r}" for r in roles] + list(users)) or "an approver"
         text = (
             (f"{mention_text}\n" if mention_text else "")
-            + f"📄 **Specific file edit awaiting approval**\n"
+            + f"📄 **File change awaiting approval**\n"
             + f"Path: `{path}`\nRequested by: {requested_by}\n"
             + f"Needs approval from: {who}.\n"
-            + "Status: the requester has conditional write access; the "
-            + "original file is unchanged and this exact edit is staged.\n"
+            + "Status: the original file is unchanged; the update is staged.\n"
             + f"{approver_summary}\n"
-            + "Reply `approve` / `aprovo` when this is the only pending edit "
-            + "in this conversation, or review it in the dashboard File "
-            + "Approvals panel. This approves only the staged edit; it does "
-            + "not change file-access permissions."
+            + "Review it in the dashboard File Approvals panel."
         )
         try:
-            result = await adapter.send(chat_id, text, metadata=metadata)
-            message_id = str(getattr(result, "message_id", "") or "")
-            if result and getattr(result, "success", False) and message_id:
-                from agent.file_change_approvals import (
-                    record_file_change_approval_delivery,
-                )
-
-                await asyncio.to_thread(
-                    record_file_change_approval_delivery,
-                    str(request.get("id") or ""),
-                    platform=platform_value,
-                    chat_id=chat_id,
-                    thread_id=thread_id,
-                    message_id=message_id,
-                )
+            await adapter.send(chat_id, text, metadata=metadata)
         except Exception as exc:
             logger.warning("File-approval text notification failed: %s", exc)
-
-    async def _maybe_handle_file_change_text_decision(
-        self,
-        event: MessageEvent,
-    ) -> Optional[str]:
-        """Resolve an unambiguous file-edit approval before the model sees it."""
-
-        if event.is_command() or getattr(event, "internal", False):
-            return None
-        source = event.source
-        if source is None or not source.user_id:
-            return None
-
-        from agent.file_change_approvals import decide_file_change_from_text
-
-        resolution = await asyncio.to_thread(
-            decide_file_change_from_text,
-            event.text or "",
-            platform=source.platform.value,
-            chat_id=str(source.chat_id or ""),
-            thread_id=str(source.thread_id or ""),
-            user_id=str(source.user_id or ""),
-            user_name=str(source.user_name or ""),
-            reply_to_message_id=str(event.reply_to_message_id or ""),
-        )
-        if resolution is None:
-            return None
-
-        language = str(resolution.get("language") or "en")
-        code = str(resolution.get("code") or "")
-        if code == "no_pending_file_change":
-            if language == "pt":
-                return (
-                    "Não há uma edição de arquivo pendente nesta conversa. "
-                    "“Aprovo” não concede acesso de escrita e não altera "
-                    "políticas de permissão."
-                )
-            return (
-                "There is no pending file edit in this conversation. "
-                "“Approve” does not grant write access or change permission policies."
-            )
-
-        if code == "ambiguous_file_change":
-            candidates = resolution.get("candidates") or []
-            choices = "\n".join(
-                f"- `{str(item.get('approval_id') or '')[:8]}` — "
-                f"{item.get('path') or 'unknown path'}"
-                for item in candidates
-            )
-            if language == "pt":
-                return (
-                    "Há mais de uma edição pendente nesta conversa. Responda "
-                    "ao pedido específico, use o botão correspondente ou envie "
-                    "`aprovo <id>` / `rejeito <id>`:\n"
-                    f"{choices}"
-                )
-            return (
-                "More than one file edit is pending in this conversation. "
-                "Reply to the specific request, use its button, or send "
-                "`approve <id>` / `reject <id>`:\n"
-                f"{choices}"
-            )
-
-        if not resolution.get("success"):
-            reason = str(
-                resolution.get("error")
-                or "The pending file-edit decision could not be completed."
-            )
-            if language == "pt":
-                return (
-                    f"Não foi possível decidir essa edição: {reason} "
-                    "Nenhuma permissão de arquivo foi alterada."
-                )
-            return (
-                f"Could not decide this file edit: {reason} "
-                "No file permission was changed."
-            )
-
-        approval = resolution.get("approval") or {}
-        path = str(
-            approval.get("display_path")
-            or approval.get("path")
-            or resolution.get("path")
-            or "the requested file"
-        )
-        approved = resolution.get("decision") == "approve"
-        if language == "pt":
-            if approved:
-                return (
-                    f"✅ Edição específica aprovada e aplicada em `{path}`. "
-                    "Esta decisão vale somente para a alteração preparada; "
-                    "as permissões de acesso não foram modificadas."
-                )
-            return (
-                f"❌ Edição específica rejeitada para `{path}`. O arquivo "
-                "original permanece inalterado e nenhuma permissão foi modificada."
-            )
-        if approved:
-            return (
-                f"✅ The specific edit was approved and applied to `{path}`. "
-                "This decision covered only the staged change; access permissions "
-                "were not modified."
-            )
-        return (
-            f"❌ The specific edit to `{path}` was rejected. The original file "
-            "remains unchanged and no access permission was modified."
-        )
 
     def _telegram_topic_mode_enabled(self, source: SessionSource) -> bool:
         """Return whether Telegram DM topic mode is active for this chat."""
@@ -5614,12 +5475,6 @@ class GatewayRunner:
             # clearly moved on.
             _slash_confirm_mod.clear_if_stale(_quick_key)
 
-        _file_change_decision = await self._maybe_handle_file_change_text_decision(
-            event
-        )
-        if _file_change_decision is not None:
-            return _file_change_decision
-
         # PRIORITY handling when an agent is already running for this session.
         # Default behavior is to interrupt immediately so user text/stop messages
         # are handled with minimal latency.
@@ -6330,10 +6185,9 @@ class GatewayRunner:
             except Exception as e:
                 logger.debug("Skill command check failed (non-fatal): %s", e)
         
-        # Pending dangerous-command approvals are handled by /approve and /deny
-        # commands above. Their bare-text matching stays disabled; the narrowly
-        # scoped file-edit decisions were resolved before the agent-running
-        # priority block.
+        # Pending exec approvals are handled by /approve and /deny commands above.
+        # No bare text matching — "yes" in normal conversation must not trigger
+        # execution of a dangerous command.
 
         if self._is_telegram_topic_root_lobby(source):
             # Debounce the lobby reminder so a user who forgets about
@@ -13457,7 +13311,11 @@ class GatewayRunner:
                 self._agent_cache.pop(session_key, None)
 
     @staticmethod
-    def _init_cached_agent_for_turn(agent: Any, interrupt_depth: int) -> None:
+    def _init_cached_agent_for_turn(
+        agent: Any,
+        interrupt_depth: int,
+        source: Optional[SessionSource] = None,
+    ) -> None:
         """Reset per-turn state on a cached agent before a new turn starts.
 
         Both _last_activity_ts and _last_activity_desc are only reset for
@@ -13470,6 +13328,17 @@ class GatewayRunner:
         idle for 29 min would otherwise trip the watchdog before the new
         turn makes its first API call (#9051).
         """
+        if source is not None:
+            # Shared sessions can move from an employee to a manager without
+            # rebuilding the AIAgent (for example, when both users have the
+            # same prompt/cache signature). Keep all per-sender attribution
+            # aligned with the authenticated message that owns this turn.
+            agent._user_id = source.user_id
+            agent._user_name = source.user_name
+            agent._chat_id = source.chat_id
+            agent._chat_name = source.chat_name
+            agent._chat_type = source.chat_type
+            agent._thread_id = source.thread_id
         if interrupt_depth == 0:
             agent._last_activity_ts = time.time()
             agent._last_activity_desc = "starting new turn (cached)"
@@ -14663,7 +14532,11 @@ class GatewayRunner:
                                 _cache.move_to_end(session_key)
                             except KeyError:
                                 pass
-                        self._init_cached_agent_for_turn(agent, _interrupt_depth)
+                        self._init_cached_agent_for_turn(
+                            agent,
+                            _interrupt_depth,
+                            source=source,
+                        )
                         logger.debug("Reusing cached agent for session %s", session_key)
 
             if agent is None:

@@ -56,7 +56,7 @@ def test_requirement_applies_to_writer_but_not_to_approver(tmp_path, monkeypatch
     assert requirement is not None
     assert requirement["roles"] == ["manager"]
 
-    # Managers satisfy the requirement themselves — no staging for them.
+    # Managers satisfy the requirement themselves and can write directly.
     assert (
         file_write_approval_requirement(
             target, actor=Actor(platform="slack", user_id="U_MANAGER")
@@ -491,215 +491,13 @@ def test_notifier_fires_on_stage(tmp_path, monkeypatch):
     assert seen[0]["requirement"]["roles"] == ["manager"]
 
 
-def test_plain_text_approval_applies_only_staged_edit(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    governed = tmp_path / "finance"
-    governed.mkdir()
-    _governed_config(tmp_path, governed)
-
-    from agent import file_change_approvals as fca
-    from agent.governance import Actor
-
-    origin = {"platform": "slack", "chat_id": "C1", "thread_id": "T1"}
-    monkeypatch.setattr(fca, "_origin_payload", lambda: origin)
-    config_before = (tmp_path / "config.yaml").read_text(encoding="utf-8")
-    target = governed / "report.md"
-    staged = fca.stage_file_change(
-        path=str(target),
-        content="approved from conversation\n",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-
-    result = fca.decide_file_change_from_text(
-        "ok, i aproove",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_MANAGER",
-        user_name="Manager",
-    )
-
-    assert result["success"] is True
-    assert result["decision"] == "approve"
-    assert result["approval_id"] == staged["approval_id"]
-    assert target.read_text(encoding="utf-8") == "approved from conversation\n"
-    assert (tmp_path / "config.yaml").read_text(encoding="utf-8") == config_before
-
-
-def test_plain_text_decision_requires_authorized_approver(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    governed = tmp_path / "finance"
-    governed.mkdir()
-    _governed_config(tmp_path, governed)
-
-    from agent import file_change_approvals as fca
-    from agent.governance import Actor
-
-    monkeypatch.setattr(
-        fca,
-        "_origin_payload",
-        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
-    )
-    target = governed / "report.md"
-    fca.stage_file_change(
-        path=str(target),
-        content="must not apply",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-
-    result = fca.decide_file_change_from_text(
-        "aprovo",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_WRITER",
-    )
-
-    assert result["success"] is False
-    assert result["status_code"] == 403
-    assert not target.exists()
-
-
-def test_plain_text_decision_with_no_pending_edit_never_grants_access(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-
-    from agent.file_change_approvals import decide_file_change_from_text
-
-    result = decide_file_change_from_text(
-        "aprovo",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_MANAGER",
-    )
-
-    assert result["success"] is False
-    assert result["code"] == "no_pending_file_change"
-    assert result["language"] == "pt"
-
-
-def test_plain_text_decision_disambiguates_with_approval_id(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    governed = tmp_path / "finance"
-    governed.mkdir()
-    _governed_config(tmp_path, governed)
-
-    from agent import file_change_approvals as fca
-    from agent.governance import Actor
-
-    monkeypatch.setattr(
-        fca,
-        "_origin_payload",
-        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
-    )
-    first_target = governed / "first.md"
-    second_target = governed / "second.md"
-    first = fca.stage_file_change(
-        path=str(first_target),
-        content="first",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-    fca.stage_file_change(
-        path=str(second_target),
-        content="second",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-
-    ambiguous = fca.decide_file_change_from_text(
-        "aprovo",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_MANAGER",
-    )
-    selected = fca.decide_file_change_from_text(
-        f"aprovo {first['approval_id'][:8]}",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_MANAGER",
-    )
-
-    assert ambiguous["code"] == "ambiguous_file_change"
-    assert len(ambiguous["candidates"]) == 2
-    assert selected["success"] is True
-    assert first_target.read_text(encoding="utf-8") == "first"
-    assert not second_target.exists()
-
-
-def test_reply_to_approval_message_selects_exact_pending_edit(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    governed = tmp_path / "finance"
-    governed.mkdir()
-    _governed_config(tmp_path, governed)
-
-    from agent import file_change_approvals as fca
-    from agent.governance import Actor
-
-    monkeypatch.setattr(
-        fca,
-        "_origin_payload",
-        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
-    )
-    first_target = governed / "first.md"
-    second_target = governed / "second.md"
-    first = fca.stage_file_change(
-        path=str(first_target),
-        content="first",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-    second = fca.stage_file_change(
-        path=str(second_target),
-        content="second",
-        requirement={"roles": ["manager"], "users": []},
-        actor=Actor(platform="slack", user_id="U_WRITER"),
-    )
-    assert fca.record_file_change_approval_delivery(
-        second["approval_id"],
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        message_id="M_SECOND",
-    )
-
-    result = fca.decide_file_change_from_text(
-        "rejeito",
-        platform="slack",
-        chat_id="C1",
-        thread_id="T1",
-        user_id="U_MANAGER",
-        reply_to_message_id="M_SECOND",
-    )
-
-    assert result["success"] is True
-    assert result["approval_id"] == second["approval_id"]
-    assert fca.get_file_change_approval(second["approval_id"])["status"] == "denied"
-    assert fca.get_file_change_approval(first["approval_id"])["status"] == "pending"
-    assert not first_target.exists()
-    assert not second_target.exists()
-
-
 # ---------------------------------------------------------------------------
 # file tools integration
 # ---------------------------------------------------------------------------
 
-def test_write_file_tool_stages_instead_of_writing(tmp_path, monkeypatch):
+def test_write_file_tool_blocks_conditional_writer_without_staging(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     governed = tmp_path / "finance"
@@ -707,22 +505,23 @@ def test_write_file_tool_stages_instead_of_writing(tmp_path, monkeypatch):
     _governed_config(tmp_path, governed)
     _as_writer(monkeypatch)
 
+    from agent.file_change_approvals import list_file_change_approvals
     from tools.file_tools import write_file_tool
-    from agent.file_change_approvals import decide_file_change_approval
-    from agent.governance import Actor
 
     target = governed / "report.md"
     result = json.loads(write_file_tool(str(target), "hello governed world"))
-    assert result.get("pending_approval") is True
+    assert result["success"] is False
+    assert result["code"] == "governed_write_review_required"
+    assert result["approval_required"] is True
+    assert result["planning_only"] is True
+    assert result["original_unchanged"] is True
+    assert "conditional write access" in result["error"]
+    assert "slack:U_MANAGER" in result["eligible_approvers"]
+    assert "slack:U_ADMIN" in result["same_platform_approvers"]
+    assert "Do not say the requester lacks write access" in result["agent_instruction"]
+    assert "Do not stage or queue" in result["agent_instruction"]
     assert not target.exists()
-
-    decided = decide_file_change_approval(
-        result["approval_id"],
-        approve=True,
-        actor=Actor(platform="slack", user_id="U_MANAGER"),
-    )
-    assert decided["success"] is True
-    assert target.read_text(encoding="utf-8") == "hello governed world"
+    assert list_file_change_approvals("pending") == []
 
 
 def test_write_file_tool_writes_directly_for_approver(tmp_path, monkeypatch):
@@ -734,15 +533,94 @@ def test_write_file_tool_writes_directly_for_approver(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_USER_ID", "U_MANAGER")
     monkeypatch.setenv("MAIA_USER_PLATFORM", "slack")
 
-    from tools.file_tools import write_file_tool
+    from tools import file_tools
+
+    class Result:
+        def to_dict(self):
+            return {"success": True}
+
+    class FileOps:
+        def write_file(self, path, content):
+            target.write_text(content, encoding="utf-8")
+            return Result()
 
     target = governed / "report.md"
-    result = json.loads(write_file_tool(str(target), "manager writes directly"))
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda _task_id: FileOps())
+    result = json.loads(
+        file_tools.write_file_tool(str(target), "manager writes directly")
+    )
     assert result.get("pending_approval") is None
+    assert result["success"] is True
     assert target.read_text(encoding="utf-8") == "manager writes directly"
 
 
-def test_replace_file_tool_exports_remote_binary_and_stages_it(
+def test_shared_conversation_rechecks_authenticated_sender_on_each_tool_call(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("MAIA_USER_ID", raising=False)
+    monkeypatch.delenv("MAIA_USER_PLATFORM", raising=False)
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from gateway.session_context import clear_session_vars, set_session_vars
+    from tools import file_tools
+
+    target = governed / "report.md"
+
+    class Result:
+        def to_dict(self):
+            return {"success": True}
+
+    class FileOps:
+        def write_file(self, path, content):
+            target.write_text(content, encoding="utf-8")
+            return Result()
+
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda _task_id: FileOps())
+    session_key = "agent:main:slack:channel:C1:T1"
+
+    writer_tokens = set_session_vars(
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_WRITER",
+        user_name="Employee",
+        session_key=session_key,
+    )
+    try:
+        blocked = json.loads(
+            file_tools.write_file_tool(str(target), "manager-approved result")
+        )
+    finally:
+        clear_session_vars(writer_tokens)
+
+    assert blocked["code"] == "governed_write_review_required"
+    assert blocked["requester"] == "slack:U_WRITER"
+    assert not target.exists()
+
+    manager_tokens = set_session_vars(
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+        user_name="Manager",
+        session_key=session_key,
+    )
+    try:
+        written = json.loads(
+            file_tools.write_file_tool(str(target), "manager-approved result")
+        )
+    finally:
+        clear_session_vars(manager_tokens)
+
+    assert written["success"] is True
+    assert target.read_text(encoding="utf-8") == "manager-approved result"
+
+
+def test_replace_file_tool_blocks_before_export_for_conditional_writer(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
@@ -752,8 +630,6 @@ def test_replace_file_tool_exports_remote_binary_and_stages_it(
     _governed_config(tmp_path, governed)
     _as_writer(monkeypatch)
 
-    replacement = b"PK\x03\x04remote-generated-xlsx\x00\xff"
-
     class RemoteEnvironment:
         pass
 
@@ -761,14 +637,9 @@ def test_replace_file_tool_exports_remote_binary_and_stages_it(
         env = RemoteEnvironment()
 
         def export_file_to_host(self, source_path, destination_path, *, max_bytes):
-            assert source_path == "/tmp/updated.xlsx"
-            assert len(replacement) < max_bytes
-            destination_path.write_bytes(replacement)
-            return {"success": True, "bytes": len(replacement)}
+            raise AssertionError("conditional writer must be blocked before export")
 
     from tools import file_tools
-    from agent import file_change_approvals as fca
-    from agent.governance import Actor
 
     monkeypatch.setattr(file_tools, "_get_file_ops", lambda task_id: FakeFileOps())
     target = governed / "report.xlsx"
@@ -778,19 +649,9 @@ def test_replace_file_tool_exports_remote_binary_and_stages_it(
             "/tmp/updated.xlsx", str(target), note="Updated expenses"
         )
     )
-    assert result["pending_approval"] is True
+    assert result["code"] == "governed_write_review_required"
+    assert result["planning_only"] is True
     assert target.read_bytes() == b"old"
-    request = fca.get_file_change_approval(result["approval_id"])
-    assert request["artifact"]["source_name"] == "updated.xlsx"
-    assert request["note"] == "Updated expenses"
-
-    decided = fca.decide_file_change_approval(
-        result["approval_id"],
-        approve=True,
-        actor=Actor(platform="slack", user_id="U_MANAGER"),
-    )
-    assert decided["success"] is True
-    assert target.read_bytes() == replacement
 
 
 def test_replace_file_tool_applies_directly_when_no_approval_is_required(
@@ -828,7 +689,9 @@ def test_replace_file_tool_applies_directly_when_no_approval_is_required(
     assert target.read_bytes() == replacement
 
 
-def test_patch_replace_stages_final_content(tmp_path, monkeypatch):
+def test_patch_replace_blocks_conditional_writer_without_staging(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     governed = tmp_path / "finance"
@@ -840,7 +703,6 @@ def test_patch_replace_stages_final_content(tmp_path, monkeypatch):
     target.write_text("total: 100\nnotes: draft\n", encoding="utf-8")
 
     from tools.file_tools import patch_tool
-    from agent.file_change_approvals import get_file_change_approval
 
     result = json.loads(
         patch_tool(
@@ -850,17 +712,14 @@ def test_patch_replace_stages_final_content(tmp_path, monkeypatch):
             new_string="total: 250",
         )
     )
-    assert result.get("pending_approval") is True
-    # Nothing applied yet.
+    assert result["code"] == "governed_write_review_required"
+    assert result["planning_only"] is True
     assert target.read_text(encoding="utf-8") == "total: 100\nnotes: draft\n"
 
-    staged = get_file_change_approval(result["approval_id"])
-    assert staged["content"] == "total: 250\nnotes: draft\n"
-    assert "-total: 100" in staged["diff"]
-    assert "+total: 250" in staged["diff"]
 
-
-def test_patch_v4a_rejected_on_gated_paths(tmp_path, monkeypatch):
+def test_patch_v4a_returns_same_review_block_on_gated_paths(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     governed = tmp_path / "finance"
@@ -882,5 +741,6 @@ def test_patch_v4a_rejected_on_gated_paths(tmp_path, monkeypatch):
         "*** End Patch\n"
     )
     result = json.loads(patch_tool(mode="patch", patch=patch))
-    assert "require human approval" in result.get("error", "")
+    assert result["code"] == "governed_write_review_required"
+    assert result["planning_only"] is True
     assert target.read_text(encoding="utf-8") == "line\n"

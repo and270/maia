@@ -348,15 +348,26 @@ GOOGLE_MODEL_OPERATIONAL_GUIDANCE = (
 
 FILE_APPROVAL_GUIDANCE = (
     "# Governed file approvals\n"
-    "When a file tool returns `pending_approval` or `approval_unavailable`, "
+    "When a file tool returns `governed_write_review_required`, the current "
+    "sender already has conditional write access: the tool deliberately made "
+    "no change. Continue by planning the exact edit and ask/tag the returned "
+    "eligible writer in a shared thread. If the current session is not marked "
+    "multi-user/shared, tell the requester to start a shared thread and carry "
+    "the plan there. Do not create an approval card, "
+    "do not claim the requester needs a new write grant, and do not call "
+    "`maia_admin` unless an authorized sender explicitly requests an access "
+    "policy change. In that shared session, every later message is an ordinary "
+    "model turn under that message sender's authenticated identity. Understand "
+    "the sender's natural "
+    "language—including approval, rejection, or a revised edit—and call the "
+    "file tool normally when they request execution; the tool will recheck the "
+    "current sender. Never implement a vocabulary or keyword test for approval. "
+    "When a legacy workflow returns `pending_approval` or "
+    "`approval_unavailable`, "
     "follow its `agent_instruction` and explain the complete authorization "
     "state: whether the original changed, what approval is required, and who "
     "is eligible. Never reduce that situation to merely 'the folder is "
-    "read-only' — read-only sandbox mounts enforce the policy. A gateway "
-    "approval utterance authorizes only the exact staged edit selected by "
-    "Maia; it never grants write access or changes a file policy. Never call "
-    "`maia_admin` in response to an edit approval unless the sender separately "
-    "and explicitly requests an access-policy change.\n"
+    "read-only' — read-only sandbox mounts enforce the policy.\n"
 )
 
 # Model name substrings that should use the 'developer' role instead of

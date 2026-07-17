@@ -23,8 +23,8 @@ _ACCESS_REQUEST_GUIDANCE = (
     "Do not try another tool or alternate path. Tell the requester that Maia "
     "Governance does not grant them access to this resource and that an "
     "authorized manager or administrator must review the path grant. This is "
-    "different from approving one prepared file edit: a message such as "
-    "'approve' must never be treated as permission to change access policies."
+    "different from a conditional edit review. Never change an access policy "
+    "unless an authorized sender explicitly asks to administer access."
 )
 
 
@@ -793,20 +793,20 @@ def file_write_approval_requirement(
     actor: Optional[Actor] = None,
     config: Optional[dict[str, Any]] = None,
 ) -> Optional[dict[str, Any]]:
-    """Return the staged-approval requirement for a write to *path*, if any.
+    """Return the review requirement for a write to *path*, if any.
 
     Folder policies may declare ``write_approval_roles`` and/or
-    ``write_approval_users``. When they do, writes by actors who hold a write
-    grant are STAGED for human approval instead of applied directly. The
-    nearest (most specific) matching policy that declares either key wins;
-    declaring both keys empty on a child policy explicitly opts its subtree
-    out of an ancestor's requirement.
+    ``write_approval_users``. When they do, file tools block execution for an
+    actor who holds a conditional write grant and return the eligible writers
+    to involve in the conversation. A sender who satisfies the requirement
+    writes directly. The nearest (most specific) matching policy that declares
+    either key wins; declaring both keys empty on a child policy explicitly
+    opts its subtree out of an ancestor's requirement.
 
     Returns ``None`` when no approval is needed: governance is misconfigured
     (``check_file_access`` already fails closed on config
     errors, so this helper stays quiet), no matching policy declares a
-    requirement, or *actor* satisfies the requirement themselves —
-    self-approval would be a no-op, so approvers write directly.
+    requirement, or *actor* satisfies the requirement themselves.
     """
 
     cfg = load_governance_config() if config is None else config
@@ -1329,9 +1329,10 @@ def render_self_configuration_context(
         ),
         (
             "- Folders whose policy declares write_approval_roles/"
-            "write_approval_users stage writes as pending file changes; the "
-            "change applies only after an approver accepts it (dashboard "
-            "File Approvals panel or the approval card in chat)."
+            "write_approval_users block conditional writers without changing "
+            "or staging the file. Plan the edit and involve an eligible writer "
+            "in the same shared thread; their later tool call is checked under "
+            "their own authenticated identity."
         ),
         (
             "- Terminal and code execution can be restricted by "

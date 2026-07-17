@@ -175,13 +175,15 @@ Direct grants use three write modes: no write, direct write, or write after
 approval. For a folder, keep **Include files and subfolders** enabled; disabling
 it creates an exact-path grant and does not cover files inside that folder.
 
-When write after approval is selected, Maia prepares the exact change and leaves
-the original file untouched. The chat card tags eligible approvers and clearly
-asks about that staged edit. An eligible approver can use **Approve edit** /
-**Reject edit**, or reply `approve` / `aprovo` in the same conversation when
-only one edit is pending. Replies to a card and `approve <id>` disambiguate
-multiple requests. The decision applies the stored edit directly; it never
-grants write access or changes a file policy.
+When write after approval is selected, a file-tool call by the conditional
+writer changes nothing and returns the eligible authorized writers. The model
+can finish planning and tag one of them in the same shared thread. Their later
+message is an ordinary natural-language turn under their own authenticated
+identity, so they may agree, reject, or revise the edit. If they ask Maia to
+proceed, the tool rechecks that sender and a direct writer can execute. Maia
+does not use approval keywords, create a staged edit/card, grant access, or
+change a file policy. Gateway threads are shared by default; non-thread groups
+must use a thread or set `group_sessions_per_user: false` for this handoff.
 
 Team leader workflow:
 

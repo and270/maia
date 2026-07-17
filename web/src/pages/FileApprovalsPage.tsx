@@ -117,16 +117,14 @@ export default function FileApprovalsPage({
   }, [status]);
 
   const decide = async (approval: FileChangeApproval, approve: boolean) => {
-    const note = approve
-      ? ""
-      : window.prompt("Reason for rejecting this staged edit") || "";
+    const note = approve ? "" : window.prompt("Reason for denial") || "";
     setBusyId(approval.id);
     try {
       await api.decideFileChangeApproval(approval.id, { approve, note });
       showToast(
-        `Staged edit ${approve ? "approved" : "rejected"} for ${
+        `${approve ? "Approved" : "Denied"} change to ${
           approval.display_path || approval.path
-        }. File-access permissions were not changed.`,
+        }`,
         "success",
       );
       load();
@@ -181,13 +179,12 @@ export default function FileApprovalsPage({
           </div>
         </div>
         <p className="text-xs normal-case leading-5 text-muted-foreground">
-          The requester already has conditional write access. Maia keeps the
-          original file unchanged and stages the exact edit here until an
-          approver decides it. Approving applies only the reviewed content; it
-          never grants write access or changes a file policy. If the file
-          changed on disk after staging, the request is marked stale instead.
-          Which folders require approval, and who approves, is configured per
-          policy in{" "}
+          Explicit staged-file workflows appear here until an approver accepts
+          them. Interactive writes governed by approval roles use a natural
+          handoff to an authorized writer in the shared conversation and do not
+          create a card. For records shown here, approving applies the exact
+          reviewed content; if the file changed on disk after staging, the
+          request is marked stale instead. Related policy is configured in{" "}
           <Link
             to="/governance?section=files"
             className="font-bold text-primary hover:underline"
@@ -284,7 +281,7 @@ export default function FileApprovalsPage({
                             disabled={busyId === approval.id}
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                            Approve edit
+                            Approve
                           </Button>
                           <Button
                             size="sm"
@@ -293,7 +290,7 @@ export default function FileApprovalsPage({
                             disabled={busyId === approval.id}
                           >
                             <XCircle className="h-4 w-4" />
-                            Reject edit
+                            Deny
                           </Button>
                         </>
                       )}
