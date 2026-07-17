@@ -11,9 +11,18 @@ import uuid
 from pathlib import Path
 
 from agent.file_safety import get_read_block_error
-from agent.governance import file_access_error, governance_tool_error
+from agent.governance import (
+    check_file_access,
+    current_actor,
+    file_access_error,
+    governance_tool_error,
+    load_governance_config,
+    readable_governed_paths,
+    resolve_governed_path,
+)
 from tools.binary_extensions import has_binary_extension
 from tools.file_operations import (
+    SearchResult,
     ShellFileOperations,
     normalize_read_pagination,
     normalize_search_pagination,
@@ -822,7 +831,7 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
 
 
 def _write_approval_requirement(display_path: str, governance_path: str):
-    """Resolve the staged-approval requirement for a governed write.
+    """Resolve the review requirement for a governed write.
 
     Returns ``(requirement_or_None, error_json_or_None)``. Evaluation failures
     fail closed: a folder policy declared approval intent, so a crash here
@@ -839,35 +848,116 @@ def _write_approval_requirement(display_path: str, governance_path: str):
         )
 
 
-def _stage_governed_write(governance_path: str, display_path: str,
-                          content: str, requirement) -> str:
-    """Stage *content* for approval instead of writing it. Returns tool JSON.
+def _block_governed_write_for_review(
+    gated_paths: list[tuple[str, str, dict]],
+) -> str:
+    """Return a planning-only block for conditional writers.
 
-    Staged changes are captured from and applied to the HOST filesystem. When
-    the terminal backend is remote (docker/ssh/...), the reviewed diff would
-    not describe the file the tools actually write — fail closed instead.
+    Conversation is intentionally not parsed here. Each later tool call is
+    authorized against the authenticated sender of that message. An eligible
+    manager can therefore answer naturally in the same shared conversation
+    and, if the model calls the file tool on that turn, write directly.
     """
-    try:
-        from tools.terminal_tool import _get_env_config
 
-        env_type = str(_get_env_config().get("env_type", "local") or "local")
-    except Exception:
-        env_type = "local"
-    if env_type != "local":
-        return tool_error(
-            f"Writes to {display_path} require human approval (folder policy: "
-            f"{requirement.get('policy_path')}), which is only supported for "
-            f"the local terminal environment (current: {env_type})."
+    from agent.governance import actor_display, eligible_file_change_approvers
+
+    actor = current_actor()
+    platform = str(actor.platform or "").strip().lower()
+    blocked: list[dict] = []
+    all_eligible: list[str] = []
+    same_platform: list[str] = []
+    for display_path, governance_path, requirement in gated_paths:
+        eligible = list(
+            dict.fromkeys(
+                str(item)
+                for item in eligible_file_change_approvers(requirement)
+                if str(item)
+            )
         )
-    from agent.file_change_approvals import stage_file_change
+        for identity in eligible:
+            if identity not in all_eligible:
+                all_eligible.append(identity)
+            if (
+                platform
+                and identity.lower().startswith(f"{platform}:")
+                and identity not in same_platform
+            ):
+                same_platform.append(identity)
+        blocked.append(
+            {
+                "path": display_path,
+                "resolved_path": governance_path,
+                "policy_path": requirement.get("policy_path"),
+                "required_approvers": {
+                    "roles": list(requirement.get("roles") or []),
+                    "users": list(requirement.get("users") or []),
+                },
+                "eligible_approvers": eligible,
+            }
+        )
 
-    staged = stage_file_change(
-        path=governance_path,
-        content=content,
-        requirement=requirement,
-        display_path=display_path,
+    shown_paths = ", ".join(item["path"] for item in blocked)
+    requester = actor_display(actor)
+    if all_eligible:
+        review_route = (
+            "Use a shared conversation and ask or tag one of these eligible "
+            f"authorized writers: {', '.join(all_eligible)}."
+        )
+    else:
+        review_route = (
+            "No configured identity currently satisfies the review requirement; "
+            "an administrator must correct Governance before anyone can perform "
+            "the edit."
+        )
+    message = (
+        f"No file was changed. {requester} has conditional write access to "
+        f"{shown_paths}, but this sender cannot execute the edit. {review_route}"
     )
-    return json.dumps(staged, ensure_ascii=False)
+
+    try:
+        from agent.audit_log import record_audit_event
+
+        record_audit_event(
+            "file_write.review_required",
+            actor=actor,
+            action="file.write",
+            resource=shown_paths,
+            outcome="blocked",
+            reason=message,
+            metadata={"blocked_paths": blocked},
+        )
+    except Exception:
+        pass
+
+    return json.dumps(
+        {
+            "success": False,
+            "code": "governed_write_review_required",
+            "approval_required": True,
+            "planning_only": True,
+            "original_unchanged": True,
+            "requester": requester,
+            "paths": blocked,
+            "eligible_approvers": all_eligible,
+            "same_platform_approvers": same_platform,
+            "error": message,
+            "agent_instruction": (
+                "Do not say the requester lacks write access and do not create "
+                "or modify a file-access policy. Explain that their existing "
+                "write access requires review, continue planning the exact edit, "
+                "and ask/tag the eligible people returned here. If this session "
+                "is not marked as multi-user/shared, tell the requester to start "
+                "a shared thread and carry the plan there. Do not stage or queue "
+                "a change and do not interpret any fixed word as approval. In "
+                "that shared session, a later message is a normal model turn "
+                "under that sender's authenticated identity; "
+                "understand their natural-language instruction, including any "
+                "requested changes to the plan, and call the file tool normally "
+                "when they ask to proceed. The tool will recheck that sender."
+            ),
+        },
+        ensure_ascii=False,
+    )
 
 
 def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
@@ -894,7 +984,9 @@ def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
     if _approval_err is not None:
         return _approval_err
     if _approval_req:
-        return _stage_governed_write(_resolved or path, path, content, _approval_req)
+        return _block_governed_write_for_review(
+            [(path, _resolved or path, _approval_req)]
+        )
     try:
         if _resolved is None:
             stale_warning = _check_file_staleness(path, task_id)
@@ -944,8 +1036,9 @@ def replace_file_tool(
 
     This is the binary/generated-file counterpart to ``write_file``. The
     source may live only inside Docker or another remote backend; it is first
-    exported into Maia-owned private storage, then either applied atomically
-    or submitted to the destination folder's durable approval workflow.
+    exported into Maia-owned private storage and applied atomically. When the
+    current sender has conditional write access, the tool returns a
+    planning-only review block before exporting or changing either file.
     """
 
     if not source_path or not destination_path:
@@ -969,11 +1062,14 @@ def replace_file_tool(
     )
     if approval_err is not None:
         return approval_err
+    if approval_req:
+        return _block_governed_write_for_review(
+            [(destination_path, destination, approval_req)]
+        )
 
     from agent.file_change_approvals import (
         apply_file_artifact,
         max_artifact_bytes,
-        stage_file_artifact,
     )
     from hermes_constants import get_hermes_home
 
@@ -1034,25 +1130,15 @@ def replace_file_tool(
                     f"Could not export generated file: {exported.get('error')}"
                 )
 
-        if approval_req:
-            result = stage_file_artifact(
+        with file_state.lock_path(destination):
+            result = apply_file_artifact(
                 path=destination,
                 source_path=str(incoming),
-                requirement=approval_req,
                 display_path=destination_path,
-                source_name=Path(source_path.replace("\\", "/")).name,
-                note=note,
             )
-        else:
-            with file_state.lock_path(destination):
-                result = apply_file_artifact(
-                    path=destination,
-                    source_path=str(incoming),
-                    display_path=destination_path,
-                )
-            if result.get("success"):
-                file_state.note_write(task_id, destination)
-                _update_read_timestamp(destination_path, task_id)
+        if result.get("success"):
+            file_state.note_write(task_id, destination)
+            _update_read_timestamp(destination_path, task_id)
         return json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         logger.error("replace_file error: %s", exc, exc_info=True)
@@ -1106,41 +1192,7 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
             _approval_gated.append((_p, _governance_path, _approval_req))
 
     if _approval_gated:
-        if mode != "replace":
-            _gated_names = ", ".join(entry[0] for entry in _approval_gated)
-            return tool_error(
-                "These files require human approval before writes: "
-                f"{_gated_names}. V4A patches cannot be staged for approval — "
-                "apply the change per file with write_file or patch "
-                "mode='replace' so each change can be reviewed."
-            )
-        # replace mode touches exactly one file: compute the final content in
-        # memory with the same fuzzy matcher patch_replace uses, then stage it.
-        if not path:
-            return tool_error("path required")
-        if old_string is None or new_string is None:
-            return tool_error("old_string and new_string required")
-        _display_path, _gov_path, _requirement = _approval_gated[0]
-        try:
-            _current = Path(_gov_path).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return tool_error(f"File not found: {path}")
-        except UnicodeDecodeError:
-            return tool_error(
-                f"Cannot stage {path} for approval: the file is not UTF-8 text."
-            )
-        except OSError as _exc:
-            return tool_error(f"Failed to read file: {path}: {_exc}")
-        from tools.fuzzy_match import fuzzy_find_and_replace
-
-        _new_content, _match_count, _strategy, _match_error = fuzzy_find_and_replace(
-            _current, old_string, new_string, replace_all
-        )
-        if _match_error or _match_count == 0:
-            return tool_error(
-                _match_error or f"Could not find match for old_string in {path}"
-            )
-        return _stage_governed_write(_gov_path, _display_path, _new_content, _requirement)
+        return _block_governed_write_for_review(_approval_gated)
     try:
         # Resolve paths for locking.  Ordered + deduplicated so concurrent
         # callers lock in the same order — prevents deadlock on overlapping
@@ -1270,6 +1322,211 @@ def _filter_read_blocked_search_results(result, task_id: str = "default") -> int
     return omitted
 
 
+def _filter_governance_blocked_search_results(
+    result,
+    *,
+    actor,
+    config: dict,
+    task_id: str = "default",
+) -> int:
+    """Remove search results the current actor cannot read.
+
+    Authorizing only the requested search root is insufficient because a more
+    specific child policy may deny access beneath an otherwise-readable parent.
+    Rechecking every result keeps searches aligned with ``read_file`` and avoids
+    leaking names, match content, or counts from denied paths.
+    """
+
+    omitted = 0
+
+    def allowed(path: str) -> bool:
+        try:
+            resolved = str(_resolve_path_for_task(path, task_id))
+        except (OSError, ValueError, RuntimeError):
+            resolved = path
+        ok, _ = check_file_access(resolved, "read", actor=actor, config=config)
+        return ok
+
+    if hasattr(result, "matches") and result.matches:
+        filtered_matches = []
+        for match in result.matches:
+            if not allowed(match.path):
+                omitted += 1
+                continue
+            filtered_matches.append(match)
+        result.matches = filtered_matches
+
+    if hasattr(result, "files") and result.files:
+        filtered_files = []
+        for file_path in result.files:
+            if not allowed(file_path):
+                omitted += 1
+                continue
+            filtered_files.append(file_path)
+        result.files = filtered_files
+
+    if hasattr(result, "counts") and result.counts:
+        filtered_counts = {}
+        for file_path, count in result.counts.items():
+            if not allowed(file_path):
+                omitted += 1
+                continue
+            filtered_counts[file_path] = count
+        result.counts = filtered_counts
+
+    if omitted:
+        # A backend's truncation flag may have been caused entirely by denied
+        # rows beyond the visible page. Do not expose that cardinality
+        # side-channel; multi-scope merging can set it again from visible data.
+        result.truncated = False
+        if getattr(result, "counts", None):
+            result.total_count = sum(result.counts.values())
+        elif getattr(result, "matches", None):
+            result.total_count = len(result.matches)
+        elif getattr(result, "files", None):
+            result.total_count = len(result.files)
+        else:
+            result.total_count = 0
+
+    return omitted
+
+
+def _path_is_within(path: str, root: str) -> bool:
+    target = resolve_governed_path(path)
+    parent = resolve_governed_path(root)
+    if target is None or parent is None:
+        return False
+    try:
+        target.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _governed_search_scopes(
+    raw_path: str,
+    resolved_path: str,
+    *,
+    actor,
+    config: dict,
+) -> list[str]:
+    """Return readable policy paths suitable for a denied broad-root search."""
+
+    grants = readable_governed_paths(actor=actor, config=config)
+    default_scope = not str(raw_path or "").strip() or str(raw_path).strip() == "."
+    candidates = [
+        grant
+        for grant in grants
+        if default_scope or _path_is_within(str(grant["path"]), resolved_path)
+    ]
+
+    # A readable recursive parent already covers its readable descendants.
+    # Collapse those redundant scopes to avoid duplicate traversal and results.
+    selected: list[dict] = []
+    for grant in sorted(candidates, key=lambda item: len(str(item["path"]))):
+        if any(
+            bool(parent.get("recursive", True))
+            and _path_is_within(str(grant["path"]), str(parent["path"]))
+            for parent in selected
+        ):
+            continue
+        selected.append(grant)
+    return [str(grant["path"]) for grant in selected]
+
+
+def _merge_governed_search_results(
+    file_ops,
+    *,
+    scopes: list[str],
+    pattern: str,
+    target: str,
+    file_glob: str | None,
+    limit: int,
+    offset: int,
+    output_mode: str,
+    context: int,
+    actor,
+    config: dict,
+    task_id: str,
+) -> tuple[SearchResult, int]:
+    """Search multiple authorized scopes and apply pagination after merging."""
+
+    fetch_limit = max(1, limit + offset)
+    merged = SearchResult()
+    all_matches = []
+    all_files: list[str] = []
+    all_counts: dict[str, tuple[str, int]] = {}
+    seen_matches: set[tuple[str, int, str]] = set()
+    seen_files: set[str] = set()
+    errors: list[str] = []
+    safety_omitted = 0
+
+    for scope in scopes:
+        if get_read_block_error(scope):
+            continue
+        result = file_ops.search(
+            pattern=pattern,
+            path=scope,
+            target=target,
+            file_glob=file_glob,
+            limit=fetch_limit,
+            offset=0,
+            output_mode=output_mode,
+            context=context,
+        )
+        safety_omitted += _filter_read_blocked_search_results(result, task_id)
+        _filter_governance_blocked_search_results(
+            result,
+            actor=actor,
+            config=config,
+            task_id=task_id,
+        )
+        merged.truncated = merged.truncated or bool(
+            getattr(result, "truncated", False)
+        )
+        if getattr(result, "error", None):
+            errors.append(str(result.error))
+
+        for match in getattr(result, "matches", []) or []:
+            key = (
+                os.path.normcase(str(match.path)),
+                int(match.line_number),
+                str(match.content),
+            )
+            if key not in seen_matches:
+                seen_matches.add(key)
+                all_matches.append(match)
+
+        for file_path in getattr(result, "files", []) or []:
+            key = os.path.normcase(str(file_path))
+            if key not in seen_files:
+                seen_files.add(key)
+                all_files.append(file_path)
+
+        for file_path, count in (getattr(result, "counts", {}) or {}).items():
+            key = os.path.normcase(str(file_path))
+            if key not in all_counts:
+                all_counts[key] = (file_path, count)
+
+    if all_matches:
+        merged.total_count = len(all_matches)
+        merged.matches = all_matches[offset:offset + limit]
+        merged.truncated = merged.truncated or len(all_matches) > offset + limit
+    elif all_files:
+        merged.total_count = len(all_files)
+        merged.files = all_files[offset:offset + limit]
+        merged.truncated = merged.truncated or len(all_files) > offset + limit
+    elif all_counts:
+        merged.counts = {
+            original_path: count for original_path, count in all_counts.values()
+        }
+        merged.total_count = sum(merged.counts.values())
+    elif errors and len(errors) == len(scopes):
+        merged.error = errors[0]
+
+    return merged, safety_omitted
+
+
 def search_tool(pattern: str, target: str = "content", path: str = ".",
                 file_glob: str = None, limit: int = 50, offset: int = 0,
                 output_mode: str = "content", context: int = 0,
@@ -1280,15 +1537,32 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             _resolved_path = str(_resolve_path_for_task(path, task_id))
         except Exception:
             _resolved_path = path
-        governance_error = file_access_error(_resolved_path, "read")
-        if governance_error:
-            return governance_tool_error(
-                governance_error, operation="search", resource=_resolved_path
-            )
         block_error = get_read_block_error(_resolved_path)
         if block_error:
             return json.dumps({"error": block_error}, ensure_ascii=False)
         offset, limit = normalize_search_pagination(offset, limit)
+        governance_config = load_governance_config()
+        actor = current_actor()
+        root_allowed, governance_error = check_file_access(
+            _resolved_path,
+            "read",
+            actor=actor,
+            config=governance_config,
+        )
+        governed_scopes: list[str] = []
+        if not root_allowed:
+            governed_scopes = _governed_search_scopes(
+                path,
+                _resolved_path,
+                actor=actor,
+                config=governance_config,
+            )
+            if not governed_scopes:
+                return governance_tool_error(
+                    governance_error,
+                    operation="search",
+                    resource=_resolved_path,
+                )
 
         # Track searches to detect *consecutive* repeated search loops.
         # Include pagination args so users can page through truncated
@@ -1325,11 +1599,33 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             }, ensure_ascii=False)
 
         file_ops = _get_file_ops(task_id)
-        result = file_ops.search(
-            pattern=pattern, path=path, target=target, file_glob=file_glob,
-            limit=limit, offset=offset, output_mode=output_mode, context=context
-        )
-        omitted = _filter_read_blocked_search_results(result, task_id)
+        if governed_scopes:
+            result, omitted = _merge_governed_search_results(
+                file_ops,
+                scopes=governed_scopes,
+                pattern=pattern,
+                target=target,
+                file_glob=file_glob,
+                limit=limit,
+                offset=offset,
+                output_mode=output_mode,
+                context=context,
+                actor=actor,
+                config=governance_config,
+                task_id=task_id,
+            )
+        else:
+            result = file_ops.search(
+                pattern=pattern, path=path, target=target, file_glob=file_glob,
+                limit=limit, offset=offset, output_mode=output_mode, context=context
+            )
+            omitted = _filter_read_blocked_search_results(result, task_id)
+            _filter_governance_blocked_search_results(
+                result,
+                actor=actor,
+                config=governance_config,
+                task_id=task_id,
+            )
         if hasattr(result, 'matches'):
             for m in result.matches:
                 if hasattr(m, 'content') and m.content:
@@ -1340,6 +1636,11 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             result_dict["_omitted"] = (
                 f"{omitted} result(s) omitted because they target credential, "
                 "token, cache, or secret-bearing environment files."
+            )
+        if governed_scopes:
+            result_dict["_governed_search"] = (
+                f"Searched {len(governed_scopes)} path grant(s) readable by "
+                "the current requester because the broader search root was not granted."
             )
 
         if count >= 3:

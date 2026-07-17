@@ -1306,6 +1306,38 @@ class TestCachedAgentInactivityReset:
 
         assert agent._last_activity_desc == "starting new turn (cached)"
 
+    def test_shared_session_refreshes_cached_agent_sender_identity(self):
+        """A later manager turn must not inherit the employee's attribution."""
+        from gateway.config import Platform
+        from gateway.run import GatewayRunner
+        from gateway.session import SessionSource
+
+        agent = self._fake_agent()
+        agent._user_id = "U_EMPLOYEE"
+        agent._user_name = "Employee"
+        source = SessionSource(
+            platform=Platform.SLACK,
+            chat_id="C1",
+            thread_id="T1",
+            chat_type="channel",
+            user_id="U_MANAGER",
+            user_name="Manager",
+            chat_name="Finance",
+        )
+
+        with patch("gateway.run.time") as mock_time:
+            mock_time.time.return_value = _FAKE_NOW
+            GatewayRunner._init_cached_agent_for_turn(
+                agent,
+                interrupt_depth=0,
+                source=source,
+            )
+
+        assert agent._user_id == "U_MANAGER"
+        assert agent._user_name == "Manager"
+        assert agent._chat_id == "C1"
+        assert agent._thread_id == "T1"
+
     def test_interrupt_turn_preserves_idle_clock(self):
         """interrupt_depth=1: clock preserved so accumulated stuck-turn
         idle time is not discarded by an interrupt-recursive re-entry (#15654)."""

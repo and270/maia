@@ -1,12 +1,11 @@
-"""Staged file-change approvals.
+"""Legacy durable staged file-change approvals.
 
-Folder policies may require managerial approval for writes by declaring
-``write_approval_roles`` / ``write_approval_users`` (see
-``agent.governance.file_write_approval_requirement``). When a write to such a
-path is requested by an actor who cannot approve it themselves, the file tools
-stage the FINAL proposed content here instead of applying it. The staged
-change mutates the filesystem only after an authorized human approves it via
-the dashboard API or a gateway approval card.
+Interactive file tools use conversational review for folder policies that
+declare ``write_approval_roles`` / ``write_approval_users``: they do not create
+records in this store. This module remains for explicit programmatic/dashboard
+workflows that deliberately stage final proposed content. Such a staged change
+mutates the filesystem only after an authorized human approves it via the
+dashboard API or a gateway approval card.
 
 The store mirrors ``agent.enterprise_knowledge`` approvals: a JSON list under
 HERMES_HOME with audit events on request and decision. Unlike the synchronous
@@ -332,11 +331,15 @@ def _pending_approval_result(
         "agent_instruction": (
             "Tell the user that the requested update has been prepared, the "
             "original file is unchanged, and the change is pending human "
-            "approval. State the required roles/users and the eligible approvers "
-            "returned here. Do not say the task failed because the folder is "
-            "read-only: that read-only mount is deliberately enforcing review. "
-            "Maia posts an approval card in the originating conversation and "
-            "@mentions every eligible approver on that same platform."
+            "approval. The requester already has conditional write access; do "
+            "not say that they need a write grant. State the required roles/users "
+            "and the eligible approvers returned here. Do not say the task failed "
+            "because the folder is read-only: that read-only mount deliberately "
+            "enforces review. Maia posts an approval request in the originating "
+            "conversation and @mentions every eligible approver on that same "
+            "platform. The approval applies only to this staged edit. Never call "
+            "`maia_admin` or change a file-access policy unless an authorized "
+            "sender explicitly asks to administer access."
         ),
     }
     if extra:

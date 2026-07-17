@@ -130,10 +130,10 @@ def resolve_sandbox_mounts(
         mode = "ro"
         write_ok, _ = check_file_access(host, "write", actor=who, config=cfg)
         if write_ok:
-            # A write that must be staged for approval must NOT be directly
-            # writable from the shell — fail safe to ro so the file tool's
-            # staging is the only path. Approvers (requirement resolves to
-            # None) keep rw.
+            # A conditional writer must NOT bypass conversational review through
+            # the shell. Keep the mount read-only so only a later tool call by
+            # an eligible authenticated sender can write. Eligible writers
+            # (requirement resolves to None) keep rw.
             requirement = file_write_approval_requirement(
                 host, actor=who, config=cfg
             )

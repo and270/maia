@@ -22,7 +22,7 @@ Maia is a private one-tenant corporate AI assistant by [AmpliIA](https://ampliia
 
 | | |
 |---|---|
-| 🗂️ **Governed file access:** always-on, deny-by-default folder policies by role, team, or user; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals:** file changes staged as reviewable diffs, flagged commands routed to approver roles, knowledge and cron approvals with chat buttons and @mentions. |
+| 🗂️ **Governed file access:** always-on, deny-by-default folder policies by role, team, or user; delegated roots that team leads manage themselves. | ✅ **Human-in-the-loop approvals:** conditional edits handed to authorized writers in shared conversations, plus governed command, knowledge, and cron approvals. |
 | 🧠 **Layered knowledge:** corporate, team, and user memories/skills with explicit precedence; shared layers change only through approval. | 💬 **Multi-channel gateway:** Slack, Discord, Mattermost, Matrix, Telegram, WhatsApp, and more, with per-user sessions and `platform:user_id` identity mapping. |
 | 🔁 **Model agnostic:** major cloud APIs, OpenAI-compatible endpoints, or fully local models on your servers, with multi-provider fallback. | 📜 **Audit & observability:** append-only audit JSONL for every allow, deny, and approval, plus optional SIEM webhook export. |
 
@@ -32,15 +32,15 @@ Maia is a private one-tenant corporate AI assistant by [AmpliIA](https://ampliia
 flowchart LR
     U["Employee<br/>(Slack · Discord · Teams · WhatsApp)"] --> G["Maia governance<br/>identity → roles & teams"]
     G -->|"cleared to see"| R["Read<br/>company docs & memory"]
-    G -->|"protected folder"| E["Edit<br/>staged as a diff"]
+    G -->|"conditional writer"| E["Edit<br/>planned, not executed"]
     G -->|"flagged command"| C["Command<br/>held for an approver"]
-    E --> M["Manager approves<br/>in dashboard or chat"]
+    E --> M["Manager continues<br/>in the shared conversation"]
     C --> M
     R --> A["Audit log"]
     M --> A
 ```
 
-Every allow, deny, and approval is recorded; anything outside the actor's policy is blocked. Requesters can never approve their own gated changes.
+Every allow, deny, and review block is recorded; anything outside the current sender's policy is blocked. Each file-tool call is authorized again from the authenticated sender of that message.
 
 ## Model agnostic by design
 
@@ -123,7 +123,7 @@ This matters because Governance determines which host paths a person may use, wh
 | State | What happens |
 |---|---|
 | **Full automation** | Governed terminal, code, Office/Python, and delegated command execution can run inside Docker or Podman with only authorized paths mounted. |
-| **Restricted mode** | Maia remains safe and usable, but those command-based capabilities are blocked. Safe file reads and supported staged file changes still follow Governance normally. |
+| **Restricted mode** | Maia remains safe and usable, but those command-based capabilities are blocked. Safe file reads and conversational edit-review handoffs still follow Governance normally. |
 
 The quick installer performs this check. To configure or repair it later:
 
@@ -224,7 +224,7 @@ maia dashboard --host 0.0.0.0 --no-open
 
 For a small private deployment, [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) is a practical way to publish the localhost service only inside a tailnet. For an identity-aware public endpoint, [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) plus [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/) is another option. Keep Maia's own dashboard authentication enabled behind either boundary, terminate TLS at the access layer, and never use `--insecure` as a permanent deployment mode.
 
-You often do not need to publish the dashboard at all. An authorized admin can ask Maia in a private gateway conversation to admit a user, assign roles and teams, or change file/folder policies. Maia uses the authenticated sender identity and rechecks Governance for every operation. Team managers are limited to delegated roots; provider secrets and dashboard credentials remain server-only. Existing message approval buttons also let authorized managers approve governed writes from the messaging application.
+You often do not need to publish the dashboard at all. An authorized admin can ask Maia in a private gateway conversation to admit a user, assign roles and teams, or change file/folder policies. Maia uses the authenticated sender identity and rechecks Governance for every operation. Team managers are limited to delegated roots; provider secrets and dashboard credentials remain server-only.
 
 Use the local token for bootstrap and system-admin access. Default built-in flow for team leaders is dashboard-first:
 
@@ -305,7 +305,9 @@ What this enforces today:
 - Gateway users can be mapped to roles by `platform:user_id`.
 - Governance cannot be disabled. A gateway role admits the person to Maia but grants no files by itself; with no matching policy, every file path is denied.
 - Shared gateway threads remain multi-user by default, while non-thread group chats stay isolated per participant.
-- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. Grant, revocation, read/write, and approval-mode changes rebuild that environment when the user's next gateway request starts, so no new thread or gateway restart is required. If secure isolation is unavailable, Maia leaves permissions unchanged and refuses execution instead of using the host.
+- `read_file`, `search_files`, `write_file`, and `patch` check configured folder policies. The gateway tells the agent which exact paths the current requester may read, so a natural-language reference such as "the finance spreadsheet" can resolve to an exact-file grant. If a broad search root is denied, `search_files` searches only the requester's readable grants and rechecks every result, never exposing denied siblings or child paths.
+- A **Write after approval** grant means the requester already has conditional write access. Their file-tool call is blocked without changing or staging the file, and the agent can finish planning the edit and tag eligible writers in the same shared thread. An eligible manager's later message is handled as ordinary natural language under that manager's authenticated identity—even if it revises the requested change. If the model calls the file tool, Governance rechecks that sender and allows a direct writer to execute. No approval keyword grants access or changes file permissions.
+- Gateway `terminal` and `execute_code` run in a per-session Docker environment that mounts only those same granted paths; subagents inherit it. Grant, revocation, read/write, and approval-mode changes rebuild that environment when the user's next gateway request starts, so no new thread or gateway restart is required. If secure isolation is unavailable, Maia leaves permissions unchanged and refuses execution instead of using the host.
 - Admins manage gateway admission, people, teams, and global file access from the dashboard or by asking Maia in an authenticated private gateway conversation. Team leaders can manage file policy only for delegated roots such as `/srv/company/marketing`, and only for users or teams assigned to that managed team.
 - Corporate memory/skills are injected into every conversation; team memory/skills are injected by team membership; user memory/skills stay profile-level.
 - Corporate and team memory/skill edits are staged for approval and applied only by authorized humans in the Knowledge panel/API.

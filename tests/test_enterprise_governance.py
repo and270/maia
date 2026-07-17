@@ -102,6 +102,67 @@ governance:
     assert "no folder policy allows read" in reason
 
 
+def test_readable_governed_paths_projects_only_actor_grants(tmp_path):
+    from agent.governance import Actor, readable_governed_paths
+
+    finance_file = tmp_path / "finance" / "financas.xlsx"
+    team_dir = tmp_path / "shared-finance"
+    denied_child = team_dir / "executive"
+    other_dir = tmp_path / "legal"
+    actor = Actor(platform="slack", user_id="U_FINANCE")
+    config = {
+        "enabled": True,
+        "users": {
+            "slack:U_FINANCE": {
+                "roles": ["viewer"],
+                "teams": ["finance"],
+            },
+            "slack:U_LEGAL": {"roles": ["viewer"]},
+        },
+        "folder_policies": [
+            {
+                "path": str(finance_file),
+                "recursive": False,
+                "read_users": ["slack:U_FINANCE"],
+            },
+            {
+                "path": str(team_dir),
+                "read_teams": ["finance"],
+            },
+            {
+                "path": str(denied_child),
+                "read_teams": ["finance"],
+                "deny_users": ["slack:U_FINANCE"],
+            },
+            {
+                "path": str(other_dir),
+                "read_users": ["slack:U_LEGAL"],
+            },
+        ],
+    }
+
+    grants = readable_governed_paths(actor=actor, config=config)
+
+    assert grants == [
+        {"path": str(finance_file.resolve()), "recursive": False},
+        {"path": str(team_dir.resolve()), "recursive": True},
+    ]
+
+
+def test_readable_governed_paths_fails_closed_for_malformed_policies(tmp_path):
+    from agent.governance import Actor, readable_governed_paths
+
+    grants = readable_governed_paths(
+        actor=Actor(platform="slack", user_id="U_FINANCE"),
+        config={
+            "enabled": True,
+            "folder_policies": {"path": str(tmp_path)},
+        },
+    )
+
+    assert grants == []
+
+
 def test_malformed_governance_config_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setenv("MAIA_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -529,6 +590,44 @@ governance:
     )
     assert allowed is False
     assert "has no read grant" in reason
+
+
+def test_nonrecursive_folder_grant_explains_child_scope_mismatch(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    finance = tmp_path / "finance"
+    finance.mkdir()
+    _write_config(
+        tmp_path,
+        f"""
+governance:
+  enabled: true
+  users:
+    "slack:U1":
+      roles: [operator]
+  folder_policies:
+    - path: '{finance}'
+      recursive: false
+      read_users: ["slack:U1"]
+      write_users: ["slack:U1"]
+""",
+    )
+
+    from agent.governance import Actor, check_file_access
+
+    actor = Actor(platform="slack", user_id="U1")
+    exact_allowed, _ = check_file_access(str(finance), "write", actor=actor)
+    child_allowed, reason = check_file_access(
+        str(finance / "report.xlsx"), "write", actor=actor
+    )
+
+    assert exact_allowed is True
+    assert child_allowed is False
+    assert "exact path only" in reason
+    assert "does not include files or subfolders" in reason
+    assert "not an approval decision" in reason
 
 
 def test_wellformed_deny_default_still_denies_unmatched(tmp_path, monkeypatch):

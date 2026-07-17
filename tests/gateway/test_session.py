@@ -327,6 +327,54 @@ class TestBuildSessionContextPrompt:
 
         assert "~/.hermes/profiles/coder/cron/output/" in prompt
 
+    def test_governance_prompt_includes_only_current_actor_readable_paths(
+        self, tmp_path
+    ):
+        finance_file = tmp_path / "finance" / "financas.xlsx"
+        legal_file = tmp_path / "legal" / "contracts.docx"
+        governance = {
+            "enabled": True,
+            "users": {
+                "slack:U_FINANCE": {"roles": ["viewer"]},
+                "slack:U_LEGAL": {"roles": ["viewer"]},
+            },
+            "folder_policies": [
+                {
+                    "path": str(finance_file),
+                    "recursive": False,
+                    "read_users": ["slack:U_FINANCE"],
+                },
+                {
+                    "path": str(legal_file),
+                    "recursive": False,
+                    "read_users": ["slack:U_LEGAL"],
+                },
+            ],
+        }
+        config = GatewayConfig(
+            platforms={Platform.SLACK: PlatformConfig(enabled=True, token="fake")}
+        )
+        source = SessionSource(
+            platform=Platform.SLACK,
+            chat_id="D123",
+            chat_type="dm",
+            user_id="U_FINANCE",
+            user_name="Finance User",
+        )
+        ctx = build_session_context(source, config)
+
+        with patch(
+            "agent.governance.load_governance_config",
+            return_value=governance,
+        ):
+            prompt = build_session_context_prompt(ctx)
+
+        assert "**Readable file paths for this requester:**" in prompt
+        assert json.dumps(str(finance_file.resolve())) in prompt
+        assert json.dumps(str(legal_file.resolve())) not in prompt
+        assert "exact path only" in prompt
+        assert "resolve natural-language file or folder names" in prompt
+
     def test_whatsapp_prompt(self):
         config = GatewayConfig(
             platforms={

@@ -228,9 +228,9 @@ export type FolderPolicy = {
   read_users?: string[];
   write_users?: string[];
   deny_users?: string[];
-  // Non-empty: every write under this policy is staged for approval by these
-  // roles/users. Present-but-empty: explicit opt-out from an ancestor's
-  // requirement.
+  // Non-empty: conditional writers are blocked until a sender with one of
+  // these roles/users performs the edit. Present-but-empty: explicit opt-out
+  // from an ancestor's requirement.
   write_approval_roles?: string[];
   write_approval_users?: string[];
 };

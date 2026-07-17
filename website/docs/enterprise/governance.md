@@ -159,6 +159,8 @@ Before creating policies:
 
 Governance is always active. Adding a person and assigning a role admits that identity to Maia but does not grant any files. Unmatched paths are always denied. File tools enforce the policy directly; gateway `terminal` and `execute_code` sessions run through Docker or Podman with only granted paths mounted, and delegated agents inherit that boundary. If isolation is unavailable, Maia enters Restricted mode: chat and path-checked file tools continue, command automation returns `secure_execution_unavailable`, and nothing falls back to the host. Operators can run `maia secure-runtime status` or `maia secure-runtime setup`.
 
+The gateway includes only the current requester's readable policy paths in the agent's session context. A user with an exact grant for `finance/financas.xlsx` can therefore refer to "the finance spreadsheet" without knowing its full server path. If `search_files` starts at `.` or another broad parent that is not granted, Maia searches only that user's readable grants within the requested scope. It authorizes every returned filename, content match, and count again, so denied siblings and more-specific denied child paths remain invisible.
+
 System admins manage people, teams, direct grants, sensitive folders, role-wide grants, and delegated team roots. Team leaders use File Access after approved `/dashboard` access but see only the roots delegated to them.
 
 System admin workflow:
@@ -168,6 +170,20 @@ System admin workflow:
 3. Add a **Delegated management root** on the team when a team leader should manage one bounded folder.
 4. Open **File Access** for advanced role, deny, and write-approval policy fields.
 5. Save and review `governance.file_access` audit events for denied attempts.
+
+Direct grants use three write modes: no write, direct write, or write after
+approval. For a folder, keep **Include files and subfolders** enabled; disabling
+it creates an exact-path grant and does not cover files inside that folder.
+
+When write after approval is selected, a file-tool call by the conditional
+writer changes nothing and returns the eligible authorized writers. The model
+can finish planning and tag one of them in the same shared thread. Their later
+message is an ordinary natural-language turn under their own authenticated
+identity, so they may agree, reject, or revise the edit. If they ask Maia to
+proceed, the tool rechecks that sender and a direct writer can execute. Maia
+does not use approval keywords, create a staged edit/card, grant access, or
+change a file policy. Gateway threads are shared by default; non-thread groups
+must use a thread or set `group_sessions_per_user: false` for this handoff.
 
 Team leader workflow:
 

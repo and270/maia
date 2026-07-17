@@ -258,6 +258,8 @@ File authorization is configured in one place for normal operators: **Dashboard 
 
 The policy is checked before `read_file`, `search_files`, `write_file`, `patch`, delete/move operations, cron jobs, and dashboard-triggered actions. A prompt cannot grant itself a path. If the operating-system service account cannot read a folder, Maia cannot read it either; OS permissions remain the last line of defense.
 
+For gateway conversations, Maia adds the current actor's readable policy paths to the session context. This lets the agent resolve a natural-language reference such as "the finance spreadsheet" to an exact-file grant without learning any other user's paths. When `search_files` starts from `.` or another broad parent that is not itself granted, it searches only readable grants inside that scope. Every returned filename, content match, and count is authorized again, so a denied sibling or more-specific denied child is never exposed by a permitted parent search.
+
 ### What To Do First
 
 1. Ask each real user who needs dashboard or delegated file administration to run `/dashboard` in a private channel chat.
@@ -277,11 +279,17 @@ Use this when you are deciding the maximum server folders Maia may ever touch.
 
 Direct grants in **People** and **Teams** offer three write modes: no write,
 direct write, or write after approval. Approval mode selects the roles and/or
-named governed identities that may review the change. The requirement belongs
-to the matching path policy, so it applies to every non-approver who has write
-access to that same path. Any grant, revocation, read/write change, or approval
-mode change replaces the affected gateway sandbox when the user's next gateway
-request starts; no new message thread or gateway restart is required.
+named governed identities that may carry out the reviewed change. The
+requirement belongs to the matching path policy, so it applies to every
+non-approver who has write access to that same path. Any grant, revocation,
+read/write change, or approval mode change replaces the affected gateway
+sandbox when the user's next gateway request starts; no gateway restart is
+required.
+
+For a folder, leave **Include files and subfolders** enabled. Turning it off
+makes the grant apply to that exact path only; it does not cover files inside
+the folder. Maia reports this as a path-scope mismatch, not as a missing
+write-approval decision.
 
 ### Team Leader Flow
 
@@ -381,9 +389,9 @@ governance:
 6. For writes/patches/deletes, the actor must match `write_users`, `write_teams`, or `write_roles`.
 7. If no policy matches, access is denied and audited.
 8. A matching policy without an applicable read/write grant is also denied.
-8. If the nearest matching policy that declares `write_approval_roles` / `write_approval_users` has a non-empty requirement, a write by a grant-holder is **staged for approval** instead of applied (see below). Actors who satisfy the requirement themselves write directly.
+9. If the nearest matching policy that declares `write_approval_roles` / `write_approval_users` has a non-empty requirement, a file-tool call by a grant-holder returns a planning-only review block without changing or staging the file. Actors who satisfy the requirement themselves write directly.
 
-### Staged Write Approvals (`write_approval_roles` / `write_approval_users`)
+### Conversational Write Review (`write_approval_roles` / `write_approval_users`)
 
 Folder policies can require a human sign-off on every modification, on top of the
 write grant itself:
@@ -398,26 +406,37 @@ governance:
 
 How it works:
 
-1. When a grant-holding actor writes (write/patch) to such a path, the file tools
-   stage the FINAL proposed content — nothing touches disk. The staged request
-   (with a unified diff and the requester's identity) lands in
-   `<MAIA_HOME>/file_changes/approvals.json`.
-2. Approvers see it in the dashboard **File Approvals** panel. If the request
-   came from a chat session, an approval card is also posted to that channel,
-   @mentioning eligible approvers on that platform (Slack, Discord, Telegram get
-   Approve/Deny buttons; other platforms get a text notice). Button clicks are
-   validated against the approver requirement — a non-approver clicking gets a
-   private error.
-3. Approving applies the exact reviewed content atomically and audits it. If the
-   file changed on disk after staging, the request is marked `stale` instead of
-   applied and must be re-staged. Denying discards the change. The requester's
-   write grant is re-checked at apply time, so revoking access also invalidates
-   pending requests.
-4. A child policy can opt its subtree out of an ancestor's requirement by
+1. When a grant-holding employee calls a file write/patch/replace tool, the tool
+   returns `governed_write_review_required`. Nothing touches disk and no
+   approval request, diff, card, or queued mutation is created. The result says
+   that the employee already has conditional write access and lists the
+   eligible governed identities.
+2. The model can finish planning the exact change and ask/tag those identities
+   in the same shared conversation. The conversation itself stays natural:
+   Maia has no list of approval words and the gateway does not intercept text
+   before the model sees it.
+3. When a manager answers, that message starts an ordinary agent turn under the
+   manager's authenticated gateway identity. The model can understand assent,
+   rejection, questions, or a revised instruction such as “do that, but change
+   this field too.” If the manager asks Maia to proceed, the model calls the
+   file tool normally. Governance checks the current sender again; an eligible
+   writer passes the requirement and writes directly.
+4. This handoff requires a shared agent session so the manager's turn includes
+   the employee's discussion. Gateway threads are shared by default. For a
+   non-thread group/channel, either start a thread or configure
+   `group_sessions_per_user: false`; direct messages and isolated sessions
+   cannot hand conversation context to another person.
+5. A natural-language response never changes `folder_policies` or grants
+   permanent access. Access administration remains a separate, explicit
+   `maia_admin` request by an authorized sender. A child policy can opt its
+   subtree out of an ancestor's review requirement by
    declaring the keys empty (`write_approval_roles: []`).
 
-Unlike dangerous-command prompts, staged approvals are asynchronous and durable:
-the agent finishes its turn immediately and nothing expires.
+The hard-coded boundary is authorization, not language: the gateway supplies the
+current sender through task-local context, sandbox mounts are rebuilt for that
+actor, and every tool call rechecks the policy. The model decides what the
+person meant in context; it cannot choose or forge the identity used by the
+tool.
 
 ### Field Guide
 

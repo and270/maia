@@ -13311,7 +13311,11 @@ class GatewayRunner:
                 self._agent_cache.pop(session_key, None)
 
     @staticmethod
-    def _init_cached_agent_for_turn(agent: Any, interrupt_depth: int) -> None:
+    def _init_cached_agent_for_turn(
+        agent: Any,
+        interrupt_depth: int,
+        source: Optional[SessionSource] = None,
+    ) -> None:
         """Reset per-turn state on a cached agent before a new turn starts.
 
         Both _last_activity_ts and _last_activity_desc are only reset for
@@ -13324,6 +13328,17 @@ class GatewayRunner:
         idle for 29 min would otherwise trip the watchdog before the new
         turn makes its first API call (#9051).
         """
+        if source is not None:
+            # Shared sessions can move from an employee to a manager without
+            # rebuilding the AIAgent (for example, when both users have the
+            # same prompt/cache signature). Keep all per-sender attribution
+            # aligned with the authenticated message that owns this turn.
+            agent._user_id = source.user_id
+            agent._user_name = source.user_name
+            agent._chat_id = source.chat_id
+            agent._chat_name = source.chat_name
+            agent._chat_type = source.chat_type
+            agent._thread_id = source.thread_id
         if interrupt_depth == 0:
             agent._last_activity_ts = time.time()
             agent._last_activity_desc = "starting new turn (cached)"
@@ -14517,7 +14532,11 @@ class GatewayRunner:
                                 _cache.move_to_end(session_key)
                             except KeyError:
                                 pass
-                        self._init_cached_agent_for_turn(agent, _interrupt_depth)
+                        self._init_cached_agent_for_turn(
+                            agent,
+                            _interrupt_depth,
+                            source=source,
+                        )
                         logger.debug("Reusing cached agent for session %s", session_key)
 
             if agent is None:
