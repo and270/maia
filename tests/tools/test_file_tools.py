@@ -265,6 +265,200 @@ class TestSearchHandler:
         result = json.loads(search_tool(pattern="x"))
         assert "error" in result
 
+    def test_denied_parent_searches_exact_readable_file_grant(self, tmp_path):
+        from agent.governance import Actor
+        from tools.file_operations import SearchResult
+        from tools.file_tools import search_tool
+
+        finance_file = tmp_path / "finance" / "financas.xlsx"
+        actor = Actor(platform="slack", user_id="U_FINANCE")
+        config = {
+            "enabled": True,
+            "users": {"slack:U_FINANCE": {"roles": ["viewer"]}},
+            "folder_policies": [
+                {
+                    "path": str(finance_file),
+                    "recursive": False,
+                    "read_users": ["slack:U_FINANCE"],
+                }
+            ],
+        }
+        mock_ops = MagicMock()
+        mock_ops.search.return_value = SearchResult(
+            files=[str(finance_file.resolve())],
+            total_count=1,
+        )
+
+        with (
+            patch("tools.file_tools.current_actor", return_value=actor),
+            patch("tools.file_tools.load_governance_config", return_value=config),
+            patch("tools.file_tools._get_file_ops", return_value=mock_ops),
+        ):
+            result = json.loads(
+                search_tool(
+                    pattern="*financas*",
+                    target="files",
+                    path=".",
+                    task_id="governed-exact-file",
+                )
+            )
+
+        assert result["files"] == [str(finance_file.resolve())]
+        assert "Searched 1 path grant" in result["_governed_search"]
+        mock_ops.search.assert_called_once_with(
+            pattern="*financas*",
+            path=str(finance_file.resolve()),
+            target="files",
+            file_glob=None,
+            limit=50,
+            offset=0,
+            output_mode="content",
+            context=0,
+        )
+
+    def test_search_filters_results_denied_by_more_specific_child_policy(
+        self, tmp_path
+    ):
+        from agent.governance import Actor
+        from tools.file_operations import SearchResult
+        from tools.file_tools import search_tool
+
+        shared = tmp_path / "shared"
+        allowed_file = shared / "public.txt"
+        denied_file = shared / "executive" / "budget.txt"
+        actor = Actor(platform="slack", user_id="U_FINANCE")
+        config = {
+            "enabled": True,
+            "users": {"slack:U_FINANCE": {"roles": ["viewer"]}},
+            "folder_policies": [
+                {
+                    "path": str(shared),
+                    "read_users": ["slack:U_FINANCE"],
+                },
+                {
+                    "path": str(shared / "executive"),
+                    "deny_users": ["slack:U_FINANCE"],
+                    "read_roles": ["admin"],
+                },
+            ],
+        }
+        mock_ops = MagicMock()
+        mock_ops.search.return_value = SearchResult(
+            files=[str(allowed_file), str(denied_file)],
+            total_count=2,
+            truncated=True,
+        )
+
+        with (
+            patch("tools.file_tools.current_actor", return_value=actor),
+            patch("tools.file_tools.load_governance_config", return_value=config),
+            patch("tools.file_tools._get_file_ops", return_value=mock_ops),
+        ):
+            result = json.loads(
+                search_tool(
+                    pattern="*.txt",
+                    target="files",
+                    path=str(shared),
+                    task_id="governed-child-deny",
+                )
+            )
+
+        assert result["files"] == [str(allowed_file)]
+        assert result["total_count"] == 1
+        assert "truncated" not in result
+        assert str(denied_file) not in json.dumps(result)
+
+    def test_governed_multi_scope_search_paginates_after_merge(self, tmp_path):
+        from agent.governance import Actor
+        from tools.file_operations import SearchResult
+        from tools.file_tools import search_tool
+
+        first = tmp_path / "a-financas.xlsx"
+        second = tmp_path / "b-financas.xlsx"
+        actor = Actor(platform="slack", user_id="U_FINANCE")
+        config = {
+            "enabled": True,
+            "users": {"slack:U_FINANCE": {"roles": ["viewer"]}},
+            "folder_policies": [
+                {
+                    "path": str(first),
+                    "recursive": False,
+                    "read_users": ["slack:U_FINANCE"],
+                },
+                {
+                    "path": str(second),
+                    "recursive": False,
+                    "read_users": ["slack:U_FINANCE"],
+                },
+            ],
+        }
+        mock_ops = MagicMock()
+        mock_ops.search.side_effect = lambda **kwargs: SearchResult(
+            files=[kwargs["path"]],
+            total_count=1,
+        )
+
+        with (
+            patch("tools.file_tools.current_actor", return_value=actor),
+            patch("tools.file_tools.load_governance_config", return_value=config),
+            patch("tools.file_tools._get_file_ops", return_value=mock_ops),
+        ):
+            result = json.loads(
+                search_tool(
+                    pattern="*financas*",
+                    target="files",
+                    path=str(tmp_path),
+                    limit=1,
+                    offset=1,
+                    task_id="governed-pagination",
+                )
+            )
+
+        assert result["files"] == [str(second.resolve())]
+        assert result["total_count"] == 2
+        assert "truncated" not in result
+        assert mock_ops.search.call_count == 2
+
+    def test_unrelated_denied_search_does_not_fall_back_to_other_grants(
+        self, tmp_path
+    ):
+        from agent.governance import Actor
+        from tools.file_tools import search_tool
+
+        readable = tmp_path / "finance" / "financas.xlsx"
+        unrelated = tmp_path / "legal"
+        actor = Actor(platform="slack", user_id="U_FINANCE")
+        config = {
+            "enabled": True,
+            "users": {"slack:U_FINANCE": {"roles": ["viewer"]}},
+            "folder_policies": [
+                {
+                    "path": str(readable),
+                    "recursive": False,
+                    "read_users": ["slack:U_FINANCE"],
+                }
+            ],
+        }
+        mock_ops = MagicMock()
+
+        with (
+            patch("tools.file_tools.current_actor", return_value=actor),
+            patch("tools.file_tools.load_governance_config", return_value=config),
+            patch("tools.file_tools._get_file_ops", return_value=mock_ops),
+        ):
+            result = json.loads(
+                search_tool(
+                    pattern="*",
+                    target="files",
+                    path=str(unrelated),
+                    task_id="governed-unrelated",
+                )
+            )
+
+        assert result["code"] == "governance_access_denied"
+        assert result["operation"] == "search"
+        mock_ops.search.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Tool result hint tests (#722)

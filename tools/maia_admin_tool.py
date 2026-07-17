@@ -94,6 +94,14 @@ _FILE_GRANT_SCHEMA = {
         "recursive": {"type": "boolean", "default": True},
         "read": {"type": "boolean", "default": False},
         "write": {"type": "boolean", "default": False},
+        "write_approval_roles": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "write_approval_users": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
     },
     "required": ["path"],
 }
@@ -137,7 +145,9 @@ registry.register(
         "teams, direct grants, and folder policies. Team managers may only manage folder "
         "policies under delegated roots and for their own teams. Use inspect first when the "
         "requester's scope or current names are unclear. This tool never manages provider "
-        "secrets or dashboard authentication credentials."
+        "secrets or dashboard authentication credentials. Never use this tool merely because "
+        "an approver accepted a staged file edit: edit approval is transaction-specific and "
+        "does not change file-access policy."
     ),
     schema={
         "name": "maia_admin",
@@ -145,7 +155,8 @@ registry.register(
             "Governed Maia administration for gateway users. Actions: inspect; upsert_user "
             "or remove_user; create_team, update_team, delete_team; set_file_policy or "
             "remove_file_policy. Authorization uses the authenticated sender, never an "
-            "actor/requester argument."
+            "actor/requester argument. A staged file-edit approval is not authorization to "
+            "call this tool or modify access."
         ),
         "parameters": {
             "type": "object",

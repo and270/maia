@@ -206,8 +206,10 @@ def test_tool_uses_task_local_gateway_identity_not_environment(service_state, mo
 
 
 def test_tool_schema_exposes_no_requester_or_secret_fields():
-    from tools.maia_admin_tool import _PAYLOAD_KEYS
+    from tools.maia_admin_tool import _FILE_GRANT_SCHEMA, _PAYLOAD_KEYS
 
     assert "requester" not in _PAYLOAD_KEYS
     assert "actor" not in _PAYLOAD_KEYS
     assert "api_key" not in _PAYLOAD_KEYS
+    assert "write_approval_roles" in _FILE_GRANT_SCHEMA["properties"]
+    assert "write_approval_users" in _FILE_GRANT_SCHEMA["properties"]

@@ -258,6 +258,8 @@ File authorization is configured in one place for normal operators: **Dashboard 
 
 The policy is checked before `read_file`, `search_files`, `write_file`, `patch`, delete/move operations, cron jobs, and dashboard-triggered actions. A prompt cannot grant itself a path. If the operating-system service account cannot read a folder, Maia cannot read it either; OS permissions remain the last line of defense.
 
+For gateway conversations, Maia adds the current actor's readable policy paths to the session context. This lets the agent resolve a natural-language reference such as "the finance spreadsheet" to an exact-file grant without learning any other user's paths. When `search_files` starts from `.` or another broad parent that is not itself granted, it searches only readable grants inside that scope. Every returned filename, content match, and count is authorized again, so a denied sibling or more-specific denied child is never exposed by a permitted parent search.
+
 ### What To Do First
 
 1. Ask each real user who needs dashboard or delegated file administration to run `/dashboard` in a private channel chat.
@@ -282,6 +284,11 @@ to the matching path policy, so it applies to every non-approver who has write
 access to that same path. Any grant, revocation, read/write change, or approval
 mode change replaces the affected gateway sandbox when the user's next gateway
 request starts; no new message thread or gateway restart is required.
+
+For a folder, leave **Include files and subfolders** enabled. Turning it off
+makes the grant apply to that exact path only; it does not cover files inside
+the folder. Maia reports this as a path-scope mismatch, not as a missing
+write-approval decision.
 
 ### Team Leader Flow
 
@@ -405,9 +412,13 @@ How it works:
 2. Approvers see it in the dashboard **File Approvals** panel. If the request
    came from a chat session, an approval card is also posted to that channel,
    @mentioning eligible approvers on that platform (Slack, Discord, Telegram get
-   Approve/Deny buttons; other platforms get a text notice). Button clicks are
-   validated against the approver requirement — a non-approver clicking gets a
-   private error.
+   Approve edit/Reject edit buttons; other platforms get a text notice). The
+   card states that the requester already has conditional write access and asks
+   about this exact staged edit. Button clicks are validated against the
+   approver requirement — a non-approver clicking gets a private error. An
+   eligible approver may also reply `approve` / `aprovo` in the same
+   conversation when only one edit is pending. A reply to a specific card or
+   `approve <id>` selects among multiple pending edits.
 3. Approving applies the exact reviewed content atomically and audits it. If the
    file changed on disk after staging, the request is marked `stale` instead of
    applied and must be re-staged. Denying discards the change. The requester's
@@ -417,7 +428,10 @@ How it works:
    declaring the keys empty (`write_approval_roles: []`).
 
 Unlike dangerous-command prompts, staged approvals are asynchronous and durable:
-the agent finishes its turn immediately and nothing expires.
+the agent finishes its turn immediately and nothing expires. The decision
+authorizes only the stored edit; it never grants write access or changes
+`folder_policies`. If no matching edit is pending, Maia explains that an
+approval message cannot change permissions instead of sending it to the model.
 
 ### Field Guide
 

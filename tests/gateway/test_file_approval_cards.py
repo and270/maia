@@ -8,6 +8,7 @@ and the platform mention formatting helpers.
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,8 +48,10 @@ def _ensure_slack_mock():
 _ensure_slack_mock()
 
 from gateway.platforms.base import SendResult
+from gateway.platforms.base import MessageEvent
 from gateway.platforms.slack import SlackAdapter
 from gateway.config import Platform, PlatformConfig
+from gateway.session import SessionSource
 
 
 def _make_slack_adapter():
@@ -90,6 +93,9 @@ class TestSlackFileApprovalCard:
         assert "<@U_MANAGER>" in header_text
         assert "/srv/finance/report.md" in header_text
         assert "slack:U_WRITER" in header_text
+        assert "conditional write access" in header_text
+        assert "permissions will not change" in header_text
+        assert "`approve` / `aprovo`" in header_text
 
         diff_text = blocks[1]["text"]["text"]
         assert "+new line" in diff_text
@@ -176,7 +182,8 @@ class TestSlackFileApprovalAction:
             user_name="boss",
         )
         update_kwargs = mock_client.chat_update.call_args[1]
-        assert "Approved by boss" in update_kwargs["text"]
+        assert "Staged edit approved by boss" in update_kwargs["text"]
+        assert "permissions unchanged" in update_kwargs["text"]
 
     @pytest.mark.asyncio
     async def test_unauthorized_click_gets_ephemeral_error(self, monkeypatch):
@@ -224,7 +231,8 @@ class TestSlackFileApprovalAction:
 
         assert mock_decide.call_args.kwargs["approve"] is False
         update_kwargs = mock_client.chat_update.call_args[1]
-        assert "Denied by boss" in update_kwargs["text"]
+        assert "Staged edit rejected by boss" in update_kwargs["text"]
+        assert "permissions unchanged" in update_kwargs["text"]
 
 
 # ===========================================================================
@@ -296,7 +304,9 @@ class TestGatewayCardRouting:
         with patch(
             "agent.governance.eligible_file_change_approvers",
             return_value=["slack:U_MANAGER", "slack:U_ADMIN", "discord:999"],
-        ):
+        ), patch(
+            "agent.file_change_approvals.record_file_change_approval_delivery"
+        ) as record_delivery:
             await runner._send_file_approval_card(_request(thread_id="9.9"))
 
         assert len(adapter.cards) == 1
@@ -310,6 +320,13 @@ class TestGatewayCardRouting:
         assert "999" not in card["mention_text"]
         assert "slack:U_MANAGER" in card["approver_summary"]
         assert "slack:U_ADMIN" in card["approver_summary"]
+        record_delivery.assert_called_once_with(
+            "abc123",
+            platform="slack",
+            chat_id="C1",
+            thread_id="9.9",
+            message_id="1",
+        )
 
     @pytest.mark.asyncio
     async def test_text_fallback_when_adapter_has_no_buttons(self):
@@ -324,11 +341,12 @@ class TestGatewayCardRouting:
 
         assert len(adapter.sends) == 1
         content = adapter.sends[0]["content"]
-        assert "File change awaiting approval" in content
+        assert "Specific file edit awaiting approval" in content
         assert "/srv/finance/report.md" in content
         assert "role manager" in content
         assert "original file is unchanged" in content
         assert "dashboard" in content.lower()
+        assert "does not change file-access permissions" in content
 
     @pytest.mark.asyncio
     async def test_no_origin_no_send(self):
@@ -372,6 +390,100 @@ class TestGatewayCardRouting:
             fca.set_file_approval_notifier(None)
 
         assert len(adapter.cards) == 1
+
+
+# ===========================================================================
+# GatewayRunner plain-language file-edit decisions
+# ===========================================================================
+
+def _decision_event(text: str, *, reply_to_message_id: str = "") -> MessageEvent:
+    return MessageEvent(
+        text=text,
+        source=SessionSource(
+            platform=Platform.SLACK,
+            user_id="U_MANAGER",
+            chat_id="C1",
+            thread_id="T1",
+            user_name="Manager",
+            chat_type="channel",
+        ),
+        message_id="M_DECISION",
+        reply_to_message_id=reply_to_message_id or None,
+    )
+
+
+class TestGatewayTextFileApproval:
+    @pytest.mark.asyncio
+    async def test_handle_message_resolves_file_decision_before_agent_dispatch(self):
+        runner = _make_runner(_CardAdapter())
+        runner.session_store = None
+        runner.config = SimpleNamespace(
+            group_sessions_per_user=True,
+            thread_sessions_per_user=False,
+        )
+        runner._update_prompt_pending = {}
+        runner._is_user_authorized = lambda _source, **_kwargs: True
+        runner._running_agents = {"slack:C1:U_MANAGER": object()}
+
+        with patch.object(
+            runner,
+            "_maybe_handle_file_change_text_decision",
+            AsyncMock(return_value="specific edit applied"),
+        ) as decide:
+            response = await runner._handle_message(_decision_event("aprovo"))
+
+        assert response == "specific edit applied"
+        decide.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_pending_edit_explains_that_permissions_do_not_change(self):
+        runner = _make_runner(_CardAdapter())
+        with patch(
+            "agent.file_change_approvals.decide_file_change_from_text",
+            return_value={
+                "handled": True,
+                "success": False,
+                "code": "no_pending_file_change",
+                "decision": "approve",
+                "language": "pt",
+            },
+        ) as decide:
+            response = await runner._maybe_handle_file_change_text_decision(
+                _decision_event("aprovo")
+            )
+
+        assert "não concede acesso de escrita" in response
+        assert "não altera políticas" in response
+        decide.assert_called_once_with(
+            "aprovo",
+            platform="slack",
+            chat_id="C1",
+            thread_id="T1",
+            user_id="U_MANAGER",
+            user_name="Manager",
+            reply_to_message_id="",
+        )
+
+    @pytest.mark.asyncio
+    async def test_success_response_is_scoped_to_staged_edit(self):
+        runner = _make_runner(_CardAdapter())
+        with patch(
+            "agent.file_change_approvals.decide_file_change_from_text",
+            return_value={
+                "handled": True,
+                "success": True,
+                "decision": "approve",
+                "language": "pt",
+                "path": "/srv/finance/report.md",
+                "approval": {"status": "approved"},
+            },
+        ):
+            response = await runner._maybe_handle_file_change_text_decision(
+                _decision_event("aprovo", reply_to_message_id="M_APPROVAL")
+            )
+
+        assert "Edição específica aprovada e aplicada" in response
+        assert "permissões de acesso não foram modificadas" in response
 
 
 # ===========================================================================

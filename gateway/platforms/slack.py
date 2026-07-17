@@ -2275,13 +2275,20 @@ class SlackAdapter(BasePlatformAdapter):
             thread_ts = self._resolve_thread_ts(None, metadata)
 
             header = (
-                f":page_facing_up: *File Change Approval Required*\n"
+                f":page_facing_up: *Specific File Edit Approval*\n"
                 f"Path: `{path}`\n"
                 f"Requested by: {requested_by or 'unknown'}\n"
-                "Status: original unchanged; update staged pending approval"
+                "Status: requester has conditional write access; original "
+                "unchanged; this exact edit is staged\n"
+                "Decision scope: this edit only; file-access permissions will not change\n"
+                "Use a button, or reply `approve` / `aprovo` when this is the only "
+                "pending edit in the conversation"
             )
             if mention_text:
-                header = f"{mention_text} — a file change needs your approval.\n{header}"
+                header = (
+                    f"{mention_text} — may Maia apply this specific staged edit?\n"
+                    f"{header}"
+                )
             if approver_summary:
                 header += f"\nAuthorization: {approver_summary}"
 
@@ -2301,14 +2308,14 @@ class SlackAdapter(BasePlatformAdapter):
                     "elements": [
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "Approve"},
+                            "text": {"type": "plain_text", "text": "Approve edit"},
                             "style": "primary",
                             "action_id": "hermes_file_approve",
                             "value": approval_id,
                         },
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "Deny"},
+                            "text": {"type": "plain_text", "text": "Reject edit"},
                             "style": "danger",
                             "action_id": "hermes_file_deny",
                             "value": approval_id,
@@ -2319,7 +2326,7 @@ class SlackAdapter(BasePlatformAdapter):
 
             kwargs: Dict[str, Any] = {
                 "channel": chat_id,
-                "text": f"📄 File change approval required: {path}",
+                "text": f"📄 Specific file edit approval: {path}",
                 "blocks": blocks,
             }
             if thread_ts:
@@ -2663,7 +2670,9 @@ class SlackAdapter(BasePlatformAdapter):
                 pass
             return
 
-        decision_text = ("✅ Approved" if approve else "❌ Denied") + f" by {user_name}"
+        decision_text = (
+            "✅ Staged edit approved" if approve else "❌ Staged edit rejected"
+        ) + f" by {user_name} · file-access permissions unchanged"
 
         original_text = ""
         for block in message.get("blocks", []):

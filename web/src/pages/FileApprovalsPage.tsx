@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  CheckCircle2,
-  FileCheck,
-  RefreshCw,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, FileCheck, RefreshCw, XCircle } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -90,7 +85,11 @@ function ApproverBadges({ approval }: { approval: FileChangeApproval }) {
   );
 }
 
-export default function FileApprovalsPage({ embedded = false }: { embedded?: boolean }) {
+export default function FileApprovalsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const [approvals, setApprovals] = useState<FileChangeApproval[]>([]);
   const [status, setStatus] = useState<StatusFilter>("pending");
   const [loading, setLoading] = useState(true);
@@ -118,14 +117,16 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
   }, [status]);
 
   const decide = async (approval: FileChangeApproval, approve: boolean) => {
-    const note = approve ? "" : window.prompt("Reason for denial") || "";
+    const note = approve
+      ? ""
+      : window.prompt("Reason for rejecting this staged edit") || "";
     setBusyId(approval.id);
     try {
       await api.decideFileChangeApproval(approval.id, { approve, note });
       showToast(
-        `${approve ? "Approved" : "Denied"} change to ${
+        `Staged edit ${approve ? "approved" : "rejected"} for ${
           approval.display_path || approval.path
-        }`,
+        }. File-access permissions were not changed.`,
         "success",
       );
       load();
@@ -180,12 +181,17 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
           </div>
         </div>
         <p className="text-xs normal-case leading-5 text-muted-foreground">
-          Writes to folders whose policy declares write approval roles/users
-          are staged here until an approver accepts them. Approving applies
-          the exact reviewed content; if the file changed on disk after
-          staging, the request is marked stale instead. Which folders require
-          approval, and who approves, is configured per policy in{" "}
-          <Link to="/governance?section=files" className="font-bold text-primary hover:underline">
+          The requester already has conditional write access. Maia keeps the
+          original file unchanged and stages the exact edit here until an
+          approver decides it. Approving applies only the reviewed content; it
+          never grants write access or changes a file policy. If the file
+          changed on disk after staging, the request is marked stale instead.
+          Which folders require approval, and who approves, is configured per
+          policy in{" "}
+          <Link
+            to="/governance?section=files"
+            className="font-bold text-primary hover:underline"
+          >
             Governance / File access
           </Link>
           .
@@ -278,7 +284,7 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
                             disabled={busyId === approval.id}
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                            Approve
+                            Approve edit
                           </Button>
                           <Button
                             size="sm"
@@ -287,7 +293,7 @@ export default function FileApprovalsPage({ embedded = false }: { embedded?: boo
                             disabled={busyId === approval.id}
                           >
                             <XCircle className="h-4 w-4" />
-                            Deny
+                            Reject edit
                           </Button>
                         </>
                       )}

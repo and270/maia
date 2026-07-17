@@ -11,9 +11,18 @@ import uuid
 from pathlib import Path
 
 from agent.file_safety import get_read_block_error
-from agent.governance import file_access_error, governance_tool_error
+from agent.governance import (
+    check_file_access,
+    current_actor,
+    file_access_error,
+    governance_tool_error,
+    load_governance_config,
+    readable_governed_paths,
+    resolve_governed_path,
+)
 from tools.binary_extensions import has_binary_extension
 from tools.file_operations import (
+    SearchResult,
     ShellFileOperations,
     normalize_read_pagination,
     normalize_search_pagination,
@@ -1270,6 +1279,211 @@ def _filter_read_blocked_search_results(result, task_id: str = "default") -> int
     return omitted
 
 
+def _filter_governance_blocked_search_results(
+    result,
+    *,
+    actor,
+    config: dict,
+    task_id: str = "default",
+) -> int:
+    """Remove search results the current actor cannot read.
+
+    Authorizing only the requested search root is insufficient because a more
+    specific child policy may deny access beneath an otherwise-readable parent.
+    Rechecking every result keeps searches aligned with ``read_file`` and avoids
+    leaking names, match content, or counts from denied paths.
+    """
+
+    omitted = 0
+
+    def allowed(path: str) -> bool:
+        try:
+            resolved = str(_resolve_path_for_task(path, task_id))
+        except (OSError, ValueError, RuntimeError):
+            resolved = path
+        ok, _ = check_file_access(resolved, "read", actor=actor, config=config)
+        return ok
+
+    if hasattr(result, "matches") and result.matches:
+        filtered_matches = []
+        for match in result.matches:
+            if not allowed(match.path):
+                omitted += 1
+                continue
+            filtered_matches.append(match)
+        result.matches = filtered_matches
+
+    if hasattr(result, "files") and result.files:
+        filtered_files = []
+        for file_path in result.files:
+            if not allowed(file_path):
+                omitted += 1
+                continue
+            filtered_files.append(file_path)
+        result.files = filtered_files
+
+    if hasattr(result, "counts") and result.counts:
+        filtered_counts = {}
+        for file_path, count in result.counts.items():
+            if not allowed(file_path):
+                omitted += 1
+                continue
+            filtered_counts[file_path] = count
+        result.counts = filtered_counts
+
+    if omitted:
+        # A backend's truncation flag may have been caused entirely by denied
+        # rows beyond the visible page. Do not expose that cardinality
+        # side-channel; multi-scope merging can set it again from visible data.
+        result.truncated = False
+        if getattr(result, "counts", None):
+            result.total_count = sum(result.counts.values())
+        elif getattr(result, "matches", None):
+            result.total_count = len(result.matches)
+        elif getattr(result, "files", None):
+            result.total_count = len(result.files)
+        else:
+            result.total_count = 0
+
+    return omitted
+
+
+def _path_is_within(path: str, root: str) -> bool:
+    target = resolve_governed_path(path)
+    parent = resolve_governed_path(root)
+    if target is None or parent is None:
+        return False
+    try:
+        target.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _governed_search_scopes(
+    raw_path: str,
+    resolved_path: str,
+    *,
+    actor,
+    config: dict,
+) -> list[str]:
+    """Return readable policy paths suitable for a denied broad-root search."""
+
+    grants = readable_governed_paths(actor=actor, config=config)
+    default_scope = not str(raw_path or "").strip() or str(raw_path).strip() == "."
+    candidates = [
+        grant
+        for grant in grants
+        if default_scope or _path_is_within(str(grant["path"]), resolved_path)
+    ]
+
+    # A readable recursive parent already covers its readable descendants.
+    # Collapse those redundant scopes to avoid duplicate traversal and results.
+    selected: list[dict] = []
+    for grant in sorted(candidates, key=lambda item: len(str(item["path"]))):
+        if any(
+            bool(parent.get("recursive", True))
+            and _path_is_within(str(grant["path"]), str(parent["path"]))
+            for parent in selected
+        ):
+            continue
+        selected.append(grant)
+    return [str(grant["path"]) for grant in selected]
+
+
+def _merge_governed_search_results(
+    file_ops,
+    *,
+    scopes: list[str],
+    pattern: str,
+    target: str,
+    file_glob: str | None,
+    limit: int,
+    offset: int,
+    output_mode: str,
+    context: int,
+    actor,
+    config: dict,
+    task_id: str,
+) -> tuple[SearchResult, int]:
+    """Search multiple authorized scopes and apply pagination after merging."""
+
+    fetch_limit = max(1, limit + offset)
+    merged = SearchResult()
+    all_matches = []
+    all_files: list[str] = []
+    all_counts: dict[str, tuple[str, int]] = {}
+    seen_matches: set[tuple[str, int, str]] = set()
+    seen_files: set[str] = set()
+    errors: list[str] = []
+    safety_omitted = 0
+
+    for scope in scopes:
+        if get_read_block_error(scope):
+            continue
+        result = file_ops.search(
+            pattern=pattern,
+            path=scope,
+            target=target,
+            file_glob=file_glob,
+            limit=fetch_limit,
+            offset=0,
+            output_mode=output_mode,
+            context=context,
+        )
+        safety_omitted += _filter_read_blocked_search_results(result, task_id)
+        _filter_governance_blocked_search_results(
+            result,
+            actor=actor,
+            config=config,
+            task_id=task_id,
+        )
+        merged.truncated = merged.truncated or bool(
+            getattr(result, "truncated", False)
+        )
+        if getattr(result, "error", None):
+            errors.append(str(result.error))
+
+        for match in getattr(result, "matches", []) or []:
+            key = (
+                os.path.normcase(str(match.path)),
+                int(match.line_number),
+                str(match.content),
+            )
+            if key not in seen_matches:
+                seen_matches.add(key)
+                all_matches.append(match)
+
+        for file_path in getattr(result, "files", []) or []:
+            key = os.path.normcase(str(file_path))
+            if key not in seen_files:
+                seen_files.add(key)
+                all_files.append(file_path)
+
+        for file_path, count in (getattr(result, "counts", {}) or {}).items():
+            key = os.path.normcase(str(file_path))
+            if key not in all_counts:
+                all_counts[key] = (file_path, count)
+
+    if all_matches:
+        merged.total_count = len(all_matches)
+        merged.matches = all_matches[offset:offset + limit]
+        merged.truncated = merged.truncated or len(all_matches) > offset + limit
+    elif all_files:
+        merged.total_count = len(all_files)
+        merged.files = all_files[offset:offset + limit]
+        merged.truncated = merged.truncated or len(all_files) > offset + limit
+    elif all_counts:
+        merged.counts = {
+            original_path: count for original_path, count in all_counts.values()
+        }
+        merged.total_count = sum(merged.counts.values())
+    elif errors and len(errors) == len(scopes):
+        merged.error = errors[0]
+
+    return merged, safety_omitted
+
+
 def search_tool(pattern: str, target: str = "content", path: str = ".",
                 file_glob: str = None, limit: int = 50, offset: int = 0,
                 output_mode: str = "content", context: int = 0,
@@ -1280,15 +1494,32 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             _resolved_path = str(_resolve_path_for_task(path, task_id))
         except Exception:
             _resolved_path = path
-        governance_error = file_access_error(_resolved_path, "read")
-        if governance_error:
-            return governance_tool_error(
-                governance_error, operation="search", resource=_resolved_path
-            )
         block_error = get_read_block_error(_resolved_path)
         if block_error:
             return json.dumps({"error": block_error}, ensure_ascii=False)
         offset, limit = normalize_search_pagination(offset, limit)
+        governance_config = load_governance_config()
+        actor = current_actor()
+        root_allowed, governance_error = check_file_access(
+            _resolved_path,
+            "read",
+            actor=actor,
+            config=governance_config,
+        )
+        governed_scopes: list[str] = []
+        if not root_allowed:
+            governed_scopes = _governed_search_scopes(
+                path,
+                _resolved_path,
+                actor=actor,
+                config=governance_config,
+            )
+            if not governed_scopes:
+                return governance_tool_error(
+                    governance_error,
+                    operation="search",
+                    resource=_resolved_path,
+                )
 
         # Track searches to detect *consecutive* repeated search loops.
         # Include pagination args so users can page through truncated
@@ -1325,11 +1556,33 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             }, ensure_ascii=False)
 
         file_ops = _get_file_ops(task_id)
-        result = file_ops.search(
-            pattern=pattern, path=path, target=target, file_glob=file_glob,
-            limit=limit, offset=offset, output_mode=output_mode, context=context
-        )
-        omitted = _filter_read_blocked_search_results(result, task_id)
+        if governed_scopes:
+            result, omitted = _merge_governed_search_results(
+                file_ops,
+                scopes=governed_scopes,
+                pattern=pattern,
+                target=target,
+                file_glob=file_glob,
+                limit=limit,
+                offset=offset,
+                output_mode=output_mode,
+                context=context,
+                actor=actor,
+                config=governance_config,
+                task_id=task_id,
+            )
+        else:
+            result = file_ops.search(
+                pattern=pattern, path=path, target=target, file_glob=file_glob,
+                limit=limit, offset=offset, output_mode=output_mode, context=context
+            )
+            omitted = _filter_read_blocked_search_results(result, task_id)
+            _filter_governance_blocked_search_results(
+                result,
+                actor=actor,
+                config=governance_config,
+                task_id=task_id,
+            )
         if hasattr(result, 'matches'):
             for m in result.matches:
                 if hasattr(m, 'content') and m.content:
@@ -1340,6 +1593,11 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             result_dict["_omitted"] = (
                 f"{omitted} result(s) omitted because they target credential, "
                 "token, cache, or secret-bearing environment files."
+            )
+        if governed_scopes:
+            result_dict["_governed_search"] = (
+                f"Searched {len(governed_scopes)} path grant(s) readable by "
+                "the current requester because the broader search root was not granted."
             )
 
         if count >= 3:

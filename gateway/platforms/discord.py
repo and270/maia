@@ -3768,7 +3768,7 @@ class DiscordAdapter(BasePlatformAdapter):
             max_desc = 4000
             diff_display = diff if len(diff) <= max_desc else diff[: max_desc - 3] + "..."
             embed = discord.Embed(
-                title="📄 File Change Approval Required",
+                title="📄 Specific File Edit Approval",
                 description=f"```diff\n{diff_display}\n```" if diff_display.strip() else None,
                 color=discord.Color.orange(),
             )
@@ -3778,7 +3778,10 @@ class DiscordAdapter(BasePlatformAdapter):
             )
             embed.add_field(
                 name="Status",
-                value="Original unchanged · update staged pending approval",
+                value=(
+                    "Requester has conditional write access · original unchanged "
+                    "· this exact edit is staged"
+                ),
                 inline=False,
             )
             if approver_summary:
@@ -3787,7 +3790,12 @@ class DiscordAdapter(BasePlatformAdapter):
                     value=approver_summary[:1024],
                     inline=False,
                 )
-            embed.set_footer(text="Also available in the dashboard File Approvals panel.")
+            embed.set_footer(
+                text=(
+                    "Use a button, or reply approve/aprovo when this is the "
+                    "only pending edit. File-access permissions will not change."
+                )
+            )
 
             view = FileApprovalView(
                 approval_id=approval_id,
@@ -3796,7 +3804,7 @@ class DiscordAdapter(BasePlatformAdapter):
             )
 
             content = (
-                f"{mention_text} — a file change needs your approval."
+                f"{mention_text} — may Maia apply this specific staged edit?"
                 if mention_text
                 else None
             )
@@ -4729,7 +4737,7 @@ if DISCORD_AVAILABLE:
                 await interaction.response.send_message(f"⛔ {err}", ephemeral=True)
                 return
 
-            label = "Approved" if approve else "Denied"
+            label = "Staged edit approved" if approve else "Staged edit denied"
             embed = interaction.message.embeds[0] if interaction.message.embeds else None
             if embed:
                 embed.color = discord.Color.green() if approve else discord.Color.red()
@@ -4740,13 +4748,13 @@ if DISCORD_AVAILABLE:
                 child.disabled = True
             await interaction.response.edit_message(embed=embed, view=self)
 
-        @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
+        @discord.ui.button(label="Approve edit", style=discord.ButtonStyle.green)
         async def approve(
             self, interaction: discord.Interaction, button: discord.ui.Button
         ):
             await self._resolve(interaction, True)
 
-        @discord.ui.button(label="Deny", style=discord.ButtonStyle.red)
+        @discord.ui.button(label="Reject edit", style=discord.ButtonStyle.red)
         async def deny(
             self, interaction: discord.Interaction, button: discord.ui.Button
         ):

@@ -21,8 +21,10 @@ _CONFIG_ERROR_KEY = "__config_load_error__"
 GOVERNANCE_DENIAL_CODE = "governance_access_denied"
 _ACCESS_REQUEST_GUIDANCE = (
     "Do not try another tool or alternate path. Tell the requester that Maia "
-    "Governance does not grant them access to this resource and that they must "
-    "ask an authorized manager or administrator for access."
+    "Governance does not grant them access to this resource and that an "
+    "authorized manager or administrator must review the path grant. This is "
+    "different from approving one prepared file edit: a message such as "
+    "'approve' must never be treated as permission to change access policies."
 )
 
 
@@ -437,6 +439,53 @@ def _matching_folder_policy(path: str, config: dict[str, Any]) -> Optional[dict[
     return matches[0] if matches else None
 
 
+def _allowed_nonrecursive_parent(
+    path: str,
+    operation: str,
+    *,
+    actor: Actor,
+    config: dict[str, Any],
+) -> Optional[str]:
+    """Return the nearest exact-only parent grant that explains a denial.
+
+    A non-recursive policy on a directory intentionally does not match files
+    below it.  Detecting that case lets the tool explain the actual scope
+    mismatch instead of incorrectly telling a conditional writer that they
+    have no write permission at all.
+    """
+
+    target = resolve_governed_path(path)
+    if target is None:
+        return None
+
+    candidates: list[Path] = []
+    policies = config.get("folder_policies")
+    if not isinstance(policies, list):
+        return None
+    for policy in policies:
+        if not isinstance(policy, dict) or bool(policy.get("recursive", True)):
+            continue
+        root = _resolve_policy_path(policy.get("path"))
+        if root is None or target == root:
+            continue
+        try:
+            target.relative_to(root)
+        except ValueError:
+            continue
+        candidates.append(root)
+
+    for root in sorted(candidates, key=lambda item: len(str(item)), reverse=True):
+        allowed, _ = check_file_access(
+            str(root),
+            operation,
+            actor=actor,
+            config=config,
+        )
+        if allowed:
+            return str(root)
+    return None
+
+
 def _actor_matches_any(actor: Actor, allowed: list[str]) -> bool:
     return bool(set(actor.keys).intersection(allowed))
 
@@ -529,6 +578,22 @@ def check_file_access(
             )
 
     if policy is None:
+        exact_parent = _allowed_nonrecursive_parent(
+            path,
+            op,
+            actor=who,
+            config=cfg,
+        )
+        if exact_parent:
+            return _deny(
+                "Access denied by governance: the requester has "
+                f"{op} access to {exact_parent!r}, but that grant is configured "
+                "for the exact path only and does not include files or "
+                f"subfolders such as {path!r}. An authorized administrator "
+                "must enable files and subfolders on the existing grant. This "
+                "is a path-scope mismatch, not an approval decision for a "
+                "prepared edit.",
+            )
         return _deny(
             f"Access denied by governance: no folder policy allows {op} on {path!r} for {actor_display(who)}.",
         )
@@ -581,6 +646,60 @@ def check_file_access(
         f"the matching folder policy for {path!r} has no {op} grant for "
         f"{actor_display(who)}."
     )
+
+
+def readable_governed_paths(
+    *,
+    actor: Optional[Actor] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
+    """Return the configured path roots the actor may currently read.
+
+    This is an actor-scoped projection of ``folder_policies`` for search and
+    prompt guidance.  It never broadens access: every returned path is resolved
+    through the same path normalizer and rechecked with ``check_file_access``.
+    Malformed configuration and trusted-local mode return no projected roots;
+    the former fails closed while the latter does not need an allowlist.
+    """
+
+    cfg = load_governance_config() if config is None else config
+    who = current_actor() if actor is None else actor
+    if (
+        _governance_config_error(cfg)
+        or _folder_policies_malformed(cfg)
+        or is_trusted_local_operator(who, cfg)
+    ):
+        return []
+
+    policies = cfg.get("folder_policies")
+    if not isinstance(policies, list):
+        return []
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for policy in policies:
+        if not isinstance(policy, dict):
+            continue
+        resolved = _resolve_policy_path(policy.get("path"))
+        if resolved is None:
+            continue
+        path = str(resolved)
+        allowed, _ = check_file_access(path, "read", actor=who, config=cfg)
+        if not allowed:
+            continue
+        key = os.path.normcase(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(
+            {
+                "path": path,
+                "recursive": bool(policy.get("recursive", True)),
+            }
+        )
+
+    result.sort(key=lambda item: os.path.normcase(str(item["path"])))
+    return result
 
 
 def file_access_error(path: str, operation: str) -> Optional[str]:

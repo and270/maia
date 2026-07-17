@@ -206,6 +206,8 @@ def test_stage_and_approve_applies_change(tmp_path, monkeypatch):
     assert "slack:U_MANAGER" in staged["eligible_approvers"]
     assert "slack:U_ADMIN" in staged["eligible_approvers"]
     assert "Do not say" in staged["agent_instruction"]
+    assert "conditional write access" in staged["agent_instruction"]
+    assert "Never call `maia_admin`" in staged["agent_instruction"]
     assert not target.exists()
 
     pending = list_file_change_approvals("pending")
@@ -487,6 +489,210 @@ def test_notifier_fires_on_stage(tmp_path, monkeypatch):
     assert len(seen) == 1
     assert seen[0]["id"] == staged["approval_id"]
     assert seen[0]["requirement"]["roles"] == ["manager"]
+
+
+def test_plain_text_approval_applies_only_staged_edit(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    origin = {"platform": "slack", "chat_id": "C1", "thread_id": "T1"}
+    monkeypatch.setattr(fca, "_origin_payload", lambda: origin)
+    config_before = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    target = governed / "report.md"
+    staged = fca.stage_file_change(
+        path=str(target),
+        content="approved from conversation\n",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+
+    result = fca.decide_file_change_from_text(
+        "ok, i aproove",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+        user_name="Manager",
+    )
+
+    assert result["success"] is True
+    assert result["decision"] == "approve"
+    assert result["approval_id"] == staged["approval_id"]
+    assert target.read_text(encoding="utf-8") == "approved from conversation\n"
+    assert (tmp_path / "config.yaml").read_text(encoding="utf-8") == config_before
+
+
+def test_plain_text_decision_requires_authorized_approver(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    monkeypatch.setattr(
+        fca,
+        "_origin_payload",
+        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
+    )
+    target = governed / "report.md"
+    fca.stage_file_change(
+        path=str(target),
+        content="must not apply",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+
+    result = fca.decide_file_change_from_text(
+        "aprovo",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_WRITER",
+    )
+
+    assert result["success"] is False
+    assert result["status_code"] == 403
+    assert not target.exists()
+
+
+def test_plain_text_decision_with_no_pending_edit_never_grants_access(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    from agent.file_change_approvals import decide_file_change_from_text
+
+    result = decide_file_change_from_text(
+        "aprovo",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+    )
+
+    assert result["success"] is False
+    assert result["code"] == "no_pending_file_change"
+    assert result["language"] == "pt"
+
+
+def test_plain_text_decision_disambiguates_with_approval_id(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    monkeypatch.setattr(
+        fca,
+        "_origin_payload",
+        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
+    )
+    first_target = governed / "first.md"
+    second_target = governed / "second.md"
+    first = fca.stage_file_change(
+        path=str(first_target),
+        content="first",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    fca.stage_file_change(
+        path=str(second_target),
+        content="second",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+
+    ambiguous = fca.decide_file_change_from_text(
+        "aprovo",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+    )
+    selected = fca.decide_file_change_from_text(
+        f"aprovo {first['approval_id'][:8]}",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+    )
+
+    assert ambiguous["code"] == "ambiguous_file_change"
+    assert len(ambiguous["candidates"]) == 2
+    assert selected["success"] is True
+    assert first_target.read_text(encoding="utf-8") == "first"
+    assert not second_target.exists()
+
+
+def test_reply_to_approval_message_selects_exact_pending_edit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MAIA_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    governed = tmp_path / "finance"
+    governed.mkdir()
+    _governed_config(tmp_path, governed)
+
+    from agent import file_change_approvals as fca
+    from agent.governance import Actor
+
+    monkeypatch.setattr(
+        fca,
+        "_origin_payload",
+        lambda: {"platform": "slack", "chat_id": "C1", "thread_id": "T1"},
+    )
+    first_target = governed / "first.md"
+    second_target = governed / "second.md"
+    first = fca.stage_file_change(
+        path=str(first_target),
+        content="first",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    second = fca.stage_file_change(
+        path=str(second_target),
+        content="second",
+        requirement={"roles": ["manager"], "users": []},
+        actor=Actor(platform="slack", user_id="U_WRITER"),
+    )
+    assert fca.record_file_change_approval_delivery(
+        second["approval_id"],
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        message_id="M_SECOND",
+    )
+
+    result = fca.decide_file_change_from_text(
+        "rejeito",
+        platform="slack",
+        chat_id="C1",
+        thread_id="T1",
+        user_id="U_MANAGER",
+        reply_to_message_id="M_SECOND",
+    )
+
+    assert result["success"] is True
+    assert result["approval_id"] == second["approval_id"]
+    assert fca.get_file_change_approval(second["approval_id"])["status"] == "denied"
+    assert fca.get_file_change_approval(first["approval_id"])["status"] == "pending"
+    assert not first_target.exists()
+    assert not second_target.exists()
 
 
 # ---------------------------------------------------------------------------

@@ -142,7 +142,10 @@ export function GovernanceFileGrantEditor({
               );
             });
             return (
-              <div key={index} className="space-y-4 border border-border bg-background p-4">
+              <div
+                key={index}
+                className="space-y-4 border border-border bg-background p-4"
+              >
                 <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -221,7 +224,7 @@ export function GovernanceFileGrantEditor({
                     </select>
                   </label>
                   <GrantToggle
-                    label="Include children"
+                    label="Include files and subfolders"
                     checked={grant.recursive}
                     disabled={disabled}
                     onChange={(recursive) => update(index, { recursive })}
@@ -299,8 +302,8 @@ export function GovernanceFileGrantEditor({
                       this same path. Selecting a role makes every governed
                       identity at that role or higher eligible; choosing a
                       specific approver is optional. At least one actual
-                      identity must qualify. Raw terminal and code writes
-                      remain read-only so they cannot bypass review.
+                      identity must qualify. Raw terminal and code writes remain
+                      read-only so they cannot bypass review.
                     </p>
                   </div>
                 )}

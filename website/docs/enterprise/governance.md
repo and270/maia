@@ -159,6 +159,8 @@ Before creating policies:
 
 Governance is always active. Adding a person and assigning a role admits that identity to Maia but does not grant any files. Unmatched paths are always denied. File tools enforce the policy directly; gateway `terminal` and `execute_code` sessions run through Docker or Podman with only granted paths mounted, and delegated agents inherit that boundary. If isolation is unavailable, Maia enters Restricted mode: chat and path-checked file tools continue, command automation returns `secure_execution_unavailable`, and nothing falls back to the host. Operators can run `maia secure-runtime status` or `maia secure-runtime setup`.
 
+The gateway includes only the current requester's readable policy paths in the agent's session context. A user with an exact grant for `finance/financas.xlsx` can therefore refer to "the finance spreadsheet" without knowing its full server path. If `search_files` starts at `.` or another broad parent that is not granted, Maia searches only that user's readable grants within the requested scope. It authorizes every returned filename, content match, and count again, so denied siblings and more-specific denied child paths remain invisible.
+
 System admins manage people, teams, direct grants, sensitive folders, role-wide grants, and delegated team roots. Team leaders use File Access after approved `/dashboard` access but see only the roots delegated to them.
 
 System admin workflow:
@@ -168,6 +170,18 @@ System admin workflow:
 3. Add a **Delegated management root** on the team when a team leader should manage one bounded folder.
 4. Open **File Access** for advanced role, deny, and write-approval policy fields.
 5. Save and review `governance.file_access` audit events for denied attempts.
+
+Direct grants use three write modes: no write, direct write, or write after
+approval. For a folder, keep **Include files and subfolders** enabled; disabling
+it creates an exact-path grant and does not cover files inside that folder.
+
+When write after approval is selected, Maia prepares the exact change and leaves
+the original file untouched. The chat card tags eligible approvers and clearly
+asks about that staged edit. An eligible approver can use **Approve edit** /
+**Reject edit**, or reply `approve` / `aprovo` in the same conversation when
+only one edit is pending. Replies to a card and `approve <id>` disambiguate
+multiple requests. The decision applies the stored edit directly; it never
+grants write access or changes a file policy.
 
 Team leader workflow:
 

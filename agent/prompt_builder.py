@@ -352,7 +352,11 @@ FILE_APPROVAL_GUIDANCE = (
     "follow its `agent_instruction` and explain the complete authorization "
     "state: whether the original changed, what approval is required, and who "
     "is eligible. Never reduce that situation to merely 'the folder is "
-    "read-only' — read-only sandbox mounts enforce the policy.\n"
+    "read-only' — read-only sandbox mounts enforce the policy. A gateway "
+    "approval utterance authorizes only the exact staged edit selected by "
+    "Maia; it never grants write access or changes a file policy. Never call "
+    "`maia_admin` in response to an edit approval unless the sender separately "
+    "and explicitly requests an access-policy change.\n"
 )
 
 # Model name substrings that should use the 'developer' role instead of

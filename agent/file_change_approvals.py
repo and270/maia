@@ -21,10 +21,12 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 import shutil
 import stat
 import tempfile
 import threading
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +38,35 @@ _APPROVALS_FILE = "file_changes/approvals.json"
 _ARTIFACTS_DIR = "file_changes/artifacts"
 _MAX_STORED_DIFF_CHARS = 20000
 _DEFAULT_MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
+_TEXT_APPROVAL_ID_RE = re.compile(r"#?([0-9a-f]{6,32})$")
+_TEXT_DECISION_PHRASES: tuple[tuple[str, bool, str], ...] = (
+    ("ok i aproove", True, "en"),
+    ("ok i approve", True, "en"),
+    ("yes i approve", True, "en"),
+    ("i aproove", True, "en"),
+    ("i approve", True, "en"),
+    ("aproove", True, "en"),
+    ("approved", True, "en"),
+    ("approve", True, "en"),
+    ("ok eu aprovo", True, "pt"),
+    ("sim eu aprovo", True, "pt"),
+    ("eu aprovo", True, "pt"),
+    ("ok aprovo", True, "pt"),
+    ("sim aprovo", True, "pt"),
+    ("pode aplicar", True, "pt"),
+    ("aprovado", True, "pt"),
+    ("aprovo", True, "pt"),
+    ("i do not approve", False, "en"),
+    ("not approved", False, "en"),
+    ("rejected", False, "en"),
+    ("reject", False, "en"),
+    ("deny", False, "en"),
+    ("nao aprovo", False, "pt"),
+    ("eu rejeito", False, "pt"),
+    ("rejeitado", False, "pt"),
+    ("rejeito", False, "pt"),
+    ("recuso", False, "pt"),
+)
 
 _store_lock = threading.Lock()
 
@@ -332,11 +363,15 @@ def _pending_approval_result(
         "agent_instruction": (
             "Tell the user that the requested update has been prepared, the "
             "original file is unchanged, and the change is pending human "
-            "approval. State the required roles/users and the eligible approvers "
-            "returned here. Do not say the task failed because the folder is "
-            "read-only: that read-only mount is deliberately enforcing review. "
-            "Maia posts an approval card in the originating conversation and "
-            "@mentions every eligible approver on that same platform."
+            "approval. The requester already has conditional write access; do "
+            "not say that they need a write grant. State the required roles/users "
+            "and the eligible approvers returned here. Do not say the task failed "
+            "because the folder is read-only: that read-only mount deliberately "
+            "enforces review. Maia posts an approval request in the originating "
+            "conversation and @mentions every eligible approver on that same "
+            "platform. The approval applies only to this staged edit. Never call "
+            "`maia_admin`, change a file-access policy, or interpret a plain "
+            "'approve' message as permission to grant permanent access."
         ),
     }
     if extra:
@@ -651,6 +686,192 @@ def get_file_change_approval(approval_id: str) -> Optional[dict[str, Any]]:
         if item.get("id") == approval_id:
             return item
     return None
+
+
+def record_file_change_approval_delivery(
+    approval_id: str,
+    *,
+    platform: str,
+    chat_id: str,
+    message_id: str,
+    thread_id: str = "",
+) -> bool:
+    """Persist where an approval request was delivered.
+
+    Reply-aware gateways can bind a plain-language decision to the exact
+    approval message. The pending request remains authoritative; this metadata
+    only narrows an otherwise ambiguous conversation-level decision.
+    """
+
+    if not approval_id or not message_id:
+        return False
+    with _store_lock:
+        items = _read_approvals()
+        for item in items:
+            if item.get("id") != approval_id or item.get("status") != "pending":
+                continue
+            item["delivery"] = {
+                "platform": str(platform or "").strip().lower(),
+                "chat_id": str(chat_id or "").strip(),
+                "thread_id": str(thread_id or "").strip(),
+                "message_id": str(message_id or "").strip(),
+                "delivered_at": _now(),
+            }
+            _write_approvals(items)
+            return True
+    return False
+
+
+def pending_file_change_approvals_for_origin(
+    *,
+    platform: str,
+    chat_id: str,
+    thread_id: str = "",
+) -> list[dict[str, Any]]:
+    """Return pending edits created in one exact gateway conversation."""
+
+    wanted_platform = str(platform or "").strip().lower()
+    wanted_chat = str(chat_id or "").strip()
+    wanted_thread = str(thread_id or "").strip()
+    matches = []
+    for item in _read_approvals():
+        if item.get("status") != "pending":
+            continue
+        origin = item.get("origin") or {}
+        if str(origin.get("platform") or "").strip().lower() != wanted_platform:
+            continue
+        if str(origin.get("chat_id") or "").strip() != wanted_chat:
+            continue
+        if str(origin.get("thread_id") or "").strip() != wanted_thread:
+            continue
+        matches.append(item)
+    return sorted(matches, key=lambda item: item.get("created_at", ""))
+
+
+def _normalize_text_decision(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = re.sub(r"[^a-z0-9#]+", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def _parse_text_file_change_decision(
+    value: str,
+) -> Optional[tuple[bool, Optional[str], str]]:
+    """Parse a deliberately small approval vocabulary.
+
+    Only whole-message decisions are accepted. This prevents a sentence that
+    merely discusses approval from accidentally applying a staged edit.
+    """
+
+    normalized = _normalize_text_decision(value)
+    for phrase, approve, language in sorted(
+        _TEXT_DECISION_PHRASES,
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if normalized == phrase:
+            return approve, None, language
+        prefix = f"{phrase} "
+        if not normalized.startswith(prefix):
+            continue
+        suffix = normalized[len(prefix):].strip()
+        match = _TEXT_APPROVAL_ID_RE.fullmatch(suffix)
+        if match:
+            return approve, match.group(1), language
+    return None
+
+
+def decide_file_change_from_text(
+    text: str,
+    *,
+    platform: str,
+    chat_id: str,
+    thread_id: str = "",
+    user_id: str,
+    user_name: str = "",
+    reply_to_message_id: str = "",
+) -> Optional[dict[str, Any]]:
+    """Resolve a plain-language decision without involving the model.
+
+    A decision is bound to the exact origin conversation. A reply to a stored
+    approval message or an explicit approval-id prefix selects one request;
+    otherwise the shorthand is accepted only when exactly one edit is pending.
+    """
+
+    parsed = _parse_text_file_change_decision(text)
+    if parsed is None:
+        return None
+    approve, approval_id_prefix, language = parsed
+    candidates = pending_file_change_approvals_for_origin(
+        platform=platform,
+        chat_id=chat_id,
+        thread_id=thread_id,
+    )
+
+    if approval_id_prefix:
+        candidates = [
+            item
+            for item in candidates
+            if str(item.get("id") or "").lower().startswith(approval_id_prefix.lower())
+        ]
+    elif reply_to_message_id:
+        reply_matches = [
+            item
+            for item in candidates
+            if str((item.get("delivery") or {}).get("message_id") or "")
+            == str(reply_to_message_id)
+        ]
+        if reply_matches:
+            candidates = reply_matches
+
+    decision = "approve" if approve else "deny"
+    if not candidates:
+        return {
+            "handled": True,
+            "success": False,
+            "code": "no_pending_file_change",
+            "decision": decision,
+            "language": language,
+        }
+    if len(candidates) > 1:
+        return {
+            "handled": True,
+            "success": False,
+            "code": "ambiguous_file_change",
+            "decision": decision,
+            "language": language,
+            "candidates": [
+                {
+                    "approval_id": str(item.get("id") or ""),
+                    "path": str(item.get("display_path") or item.get("path") or ""),
+                }
+                for item in candidates[:5]
+            ],
+        }
+
+    selected = candidates[0]
+    from agent.governance import Actor
+
+    actor = Actor(
+        platform=str(platform or "").strip().lower() or "local",
+        user_id=str(user_id or ""),
+        user_name=str(user_name or ""),
+    )
+    result = decide_file_change_approval(
+        str(selected.get("id") or ""),
+        approve=approve,
+        note="Decision received as a bound gateway text reply.",
+        actor=actor,
+    )
+    return {
+        "handled": True,
+        "decision": decision,
+        "language": language,
+        "approval_id": str(selected.get("id") or ""),
+        "path": str(selected.get("display_path") or selected.get("path") or ""),
+        **result,
+    }
 
 
 def _atomic_write_file(path: Path, content: str) -> None:

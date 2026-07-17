@@ -1605,13 +1605,20 @@ class TelegramAdapter(BasePlatformAdapter):
         try:
             diff_preview = diff[:3000] + "\n..." if len(diff) > 3000 else diff
             header = (
-                f"📄 <b>File Change Approval Required</b>\n\n"
+                f"📄 <b>Specific File Edit Approval</b>\n\n"
                 f"Path: <code>{_html.escape(path)}</code>\n"
                 f"Requested by: {_html.escape(requested_by or 'unknown')}\n"
-                "Status: original unchanged; update staged pending approval"
+                "Status: requester has conditional write access; original "
+                "unchanged; this exact edit is staged\n"
+                "Decision scope: this edit only; file-access permissions will not change\n"
+                "Use a button, or reply <code>approve</code> / <code>aprovo</code> "
+                "when this is the only pending edit in the conversation"
             )
             if mention_text:
-                header = f"{mention_text} — a file change needs your approval.\n{header}"
+                header = (
+                    f"{mention_text} — may Maia apply this specific staged edit?\n"
+                    f"{header}"
+                )
             if approver_summary:
                 header += f"\nAuthorization: {_html.escape(approver_summary)}"
             text = header
@@ -1621,10 +1628,10 @@ class TelegramAdapter(BasePlatformAdapter):
             keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "✅ Approve", callback_data=f"fa:approve:{approval_id}"
+                        "✅ Approve edit", callback_data=f"fa:approve:{approval_id}"
                     ),
                     InlineKeyboardButton(
-                        "❌ Deny", callback_data=f"fa:deny:{approval_id}"
+                        "❌ Reject edit", callback_data=f"fa:deny:{approval_id}"
                     ),
                 ],
             ])
@@ -2127,13 +2134,20 @@ class TelegramAdapter(BasePlatformAdapter):
                     return
 
                 user_display = query_user_name or "User"
-                label = "✅ Approved" if approve else "❌ Denied"
+                label = (
+                    "✅ Staged edit approved"
+                    if approve
+                    else "❌ Staged edit rejected"
+                )
                 await query.answer(text=label)
 
                 # Edit message to show decision, remove buttons
                 try:
                     await query.edit_message_text(
-                        text=f"{label} by {user_display}",
+                        text=(
+                            f"{label} by {user_display}. "
+                            "File-access permissions were not changed."
+                        ),
                         reply_markup=None,
                     )
                 except Exception:
