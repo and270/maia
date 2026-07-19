@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { useLocation } from "react-router-dom";
 import type { GovernanceSandboxStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -27,12 +28,23 @@ export function SecureRuntimePanel({
   onRefresh?: () => void;
   defaultExpanded?: boolean;
 }) {
+  const { hash } = useLocation();
   const [copied, setCopied] = useState<string | null>(null);
   const restricted = !status.ready;
   const canProvisionImage =
     Boolean(onSetup) &&
     status.can_auto_setup &&
     ["image_missing", "image_unusable", "image_check_failed"].includes(status.status);
+
+  useEffect(() => {
+    if (hash !== "#secure-runtime") return;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById("secure-runtime")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash]);
 
   const copyCommand = async (command: string) => {
     await navigator.clipboard.writeText(command);
@@ -42,8 +54,9 @@ export function SecureRuntimePanel({
 
   return (
     <section
+      id="secure-runtime"
       className={cn(
-        "border p-4 normal-case",
+        "scroll-mt-4 border p-4 normal-case",
         restricted
           ? "border-warning/45 bg-warning/[0.045]"
           : "border-success/40 bg-success/[0.045]",

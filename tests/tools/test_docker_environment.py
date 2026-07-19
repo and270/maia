@@ -162,6 +162,66 @@ def test_runtime_status_explains_disabled_wsl_integration(monkeypatch):
     assert status["blocked_capabilities"]
 
 
+def test_runtime_status_tells_macos_docker_users_to_reopen_desktop(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("macos", "macOS", "macos"),
+    )
+    monkeypatch.setattr(
+        docker_env,
+        "find_docker",
+        lambda: "/Applications/Docker.app/Contents/Resources/bin/docker",
+    )
+
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(docker_env.subprocess, "run", _raise_timeout)
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["status"] == "daemon_timeout"
+    assert status["runtime"] == "docker"
+    assert "reopen Docker Desktop" in status["remediation"]
+    assert status["steps"][0]["title"] == "Open or reopen Docker Desktop"
+    assert status["steps"][0]["command"] == "open -a Docker"
+
+
+def test_runtime_status_starts_existing_macos_podman_machine_first(monkeypatch):
+    monkeypatch.setattr(
+        docker_env,
+        "_secure_runtime_platform",
+        lambda: ("macos", "macOS", "macos"),
+    )
+    monkeypatch.setattr(
+        docker_env,
+        "find_docker",
+        lambda: "/opt/homebrew/bin/podman",
+    )
+    monkeypatch.setattr(
+        docker_env.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr="Cannot connect to Podman. Is the Podman machine running?",
+        ),
+    )
+
+    status = docker_env.secure_runtime_status()
+
+    assert status["status"] == "daemon_unavailable"
+    assert status["runtime"] == "podman"
+    assert "`podman machine start`" in status["remediation"]
+    assert status["steps"][0]["title"] == "Start the existing Podman machine"
+    assert status["steps"][0]["command"] == "podman machine start"
+    assert status["steps"][1]["command"] == (
+        "podman machine init && podman machine start"
+    )
+
+
 def test_runtime_status_recommends_rootless_podman_on_linux(monkeypatch):
     monkeypatch.setattr(
         docker_env,
