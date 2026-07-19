@@ -1150,6 +1150,7 @@ export default function GovernancePage() {
     try {
       const nextStatus = await api.provisionSecureRuntime();
       setSandboxStatus(nextStatus);
+      window.dispatchEvent(new Event("maia:secure-runtime-updated"));
       showToast("Secure runtime is ready", "success");
     } catch (error) {
       showToast(`Could not finish secure runtime setup: ${error}`, "error");

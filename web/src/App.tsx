@@ -53,6 +53,7 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { Typography } from "@/components/NouiTypography";
 import { cn } from "@/lib/utils";
 import { Backdrop } from "@/components/Backdrop";
+import { OperationalAlertsRibbon } from "@/components/OperationalAlertsRibbon";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { SidebarStatusStrip } from "@/components/SidebarStatusStrip";
 import { PageHeaderProvider } from "@/contexts/PageHeaderProvider";
@@ -803,6 +804,9 @@ export default function App() {
           </aside>
 
           <PageHeaderProvider pluginTabs={pluginTabMeta}>
+            <OperationalAlertsRibbon
+              gatewayConfigured={Boolean(onboardingState?.gateway_configured)}
+            />
             <div
               className={cn(
                 "relative z-2 flex min-w-0 min-h-0 flex-1 flex-col",

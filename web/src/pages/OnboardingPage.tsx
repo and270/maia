@@ -603,6 +603,7 @@ export default function OnboardingPage() {
     try {
       const nextStatus = await api.provisionSecureRuntime();
       setRuntimeStatus(nextStatus);
+      window.dispatchEvent(new Event("maia:secure-runtime-updated"));
       showRuntimeToast("Secure runtime is ready", "success");
     } catch (error) {
       showRuntimeToast(`Could not finish secure runtime setup: ${error}`, "error");

@@ -314,10 +314,11 @@ def _secure_runtime_steps(
     if platform_key == "windows_wsl":
         return [
             {
-                "title": "Install and start Docker Desktop in Windows",
+                "title": "Open or reopen Docker Desktop in Windows",
                 "detail": (
-                    "Use the WSL 2 backend. Docker Desktop is installed and opened "
-                    "from Windows, not from inside the Maia Linux terminal."
+                    "If Docker Desktop is already installed but closed, launch it "
+                    "again and wait until its engine reports Running. Docker Desktop "
+                    "is opened from Windows, not from inside the Maia Linux terminal."
                 ),
                 "url": "https://docs.docker.com/desktop/setup/install/windows-install/",
             },
@@ -396,10 +397,34 @@ def _secure_runtime_steps(
         if runtime == "docker":
             steps = [
                 {
-                    "title": "Start Docker Desktop",
-                    "detail": "Wait until Docker Desktop reports that its engine is running.",
+                    "title": "Open or reopen Docker Desktop",
+                    "detail": (
+                        "If Docker Desktop was already configured but is closed, "
+                        "launch it again and wait until its engine reports Running."
+                    ),
+                    "command": "open -a Docker",
                     "url": "https://docs.docker.com/desktop/setup/install/mac-install/",
                 }
+            ]
+        elif runtime == "podman":
+            steps = [
+                {
+                    "title": "Start the existing Podman machine",
+                    "detail": (
+                        "A configured Podman machine stops when Podman or the host is "
+                        "shut down. Start that machine again before changing any setup."
+                    ),
+                    "command": "podman machine start",
+                },
+                {
+                    "title": "Create a machine only if none exists",
+                    "detail": (
+                        "Run init once only when Podman reports that no machine has "
+                        "been created; later sessions need only `podman machine start`."
+                    ),
+                    "command": "podman machine init && podman machine start",
+                    "url": "https://podman.io/docs/installation",
+                },
             ]
         else:
             steps = [
@@ -413,7 +438,10 @@ def _secure_runtime_steps(
                 },
                 {
                     "title": "Create and start the Podman machine",
-                    "detail": "Run init once; later sessions normally need only start.",
+                    "detail": (
+                        "Run init once after installation. If this machine is stopped "
+                        "later, reopen it with `podman machine start`."
+                    ),
                     "command": "podman machine init && podman machine start",
                 },
             ]
@@ -443,6 +471,42 @@ def _secure_runtime_steps(
             "url": _SECURE_RUNTIME_DOCS_URL,
         }
     ]
+
+
+def _runtime_recovery_remediation(
+    platform_key: str,
+    runtime: Optional[str],
+) -> str:
+    """Return recovery-first guidance when an installed runtime is unavailable."""
+
+    if platform_key == "macos" and runtime == "podman":
+        return (
+            "Run `podman machine start` to reopen the existing Podman machine. "
+            "Only run `podman machine init` if Podman reports that no machine exists; "
+            "wait for `podman version` to succeed, then recheck."
+        )
+    if platform_key == "macos" and runtime == "docker":
+        return (
+            "Open or reopen Docker Desktop (or run `open -a Docker`), wait until "
+            "its engine reports Running, then recheck."
+        )
+    if platform_key == "windows_wsl" and runtime == "docker":
+        return (
+            "Open or reopen Docker Desktop in Windows, wait until it reports "
+            "Running, confirm WSL integration for this distribution, then recheck."
+        )
+    if platform_key == "linux" and runtime == "docker":
+        return (
+            "Start or restart Docker Engine (usually with "
+            "`sudo systemctl enable --now docker`), confirm this user can run "
+            "`docker version`, then recheck."
+        )
+    if platform_key == "linux" and runtime == "podman":
+        return (
+            "Run `podman info` as the same user that runs Maia and repair the "
+            "reported rootless Podman error, then recheck."
+        )
+    return "Start or repair the secure runtime, wait until it is ready, then recheck."
 
 
 def _secure_runtime_payload(
@@ -634,7 +698,7 @@ def secure_runtime_status(timeout: int = 3) -> dict[str, object]:
             ready=False,
             status="daemon_timeout",
             message=f"{(runtime or 'container').title()} is installed, but its engine is not responding.",
-            remediation="Start or repair the secure runtime, wait until it is ready, then recheck.",
+            remediation=_runtime_recovery_remediation(platform_key, runtime),
             platform_key=platform_key,
             platform_label=platform_label,
             distro=distro,
@@ -736,7 +800,7 @@ def secure_runtime_status(timeout: int = 3) -> dict[str, object]:
         ready=False,
         status="daemon_unavailable",
         message=f"{(runtime or 'The secure runtime').title()} is installed, but Maia cannot reach its engine.",
-        remediation="Start or repair the secure runtime, wait until it is ready, then recheck.",
+        remediation=_runtime_recovery_remediation(platform_key, runtime),
         platform_key=platform_key,
         platform_label=platform_label,
         distro=distro,
