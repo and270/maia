@@ -1179,18 +1179,20 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
     if path:
         _paths_to_check.append(path)
     if mode == "patch" and patch:
-        import re as _re
-        for _m in _re.finditer(r'^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$', patch, _re.MULTILINE):
-            _paths_to_check.append(_m.group(1).strip())
-        # Move File writes BOTH the destination and (by deletion) the source,
-        # so both must clear the write policy. The old regex omitted Move
-        # entirely, letting `*** Move File: governed -> /tmp/exfil` skip the
-        # governance pre-check. Mirror the parser's `src -> dst` grammar.
-        for _m in _re.finditer(
-            r'^\*\*\*\s+Move\s+File:\s*(.+?)\s*->\s*(.+)$', patch, _re.MULTILINE
-        ):
-            _paths_to_check.append(_m.group(1).strip())
-            _paths_to_check.append(_m.group(2).strip())
+        # Derive the paths to gate from the SAME parser the apply phase uses
+        # (ShellFileOperations.patch_v4a -> parse_v4a_patch). A second, hand-rolled
+        # regex here has drifted from the parser three times (Begin-marker spacing,
+        # the Move-File omission, and `\s+` vs `\s*` after `***`); each drift let a
+        # directive skip the governance / approval / sensitive-path pre-check while
+        # still being applied. Using the authoritative parser makes the gated set
+        # exactly the operated-on set, so it can never drift again.
+        from tools.patch_parser import parse_v4a_patch
+        _ops, _parse_err = parse_v4a_patch(patch)
+        for _op in _ops:
+            if _op.file_path:
+                _paths_to_check.append(_op.file_path)
+            if getattr(_op, "new_path", None):
+                _paths_to_check.append(_op.new_path)
     _approval_gated: list[tuple[str, str, dict]] = []
     for _p in _paths_to_check:
         try:
